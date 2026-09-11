@@ -43,3 +43,10 @@
   .badge-blue   { @apply bg-airbus-sky/10 text-airbus-sky; }
   .badge-gray   { @apply bg-gray-100 text-gray-600; }
 }
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-in {
+  animation: modal-in 0.18s ease-out;
+}
