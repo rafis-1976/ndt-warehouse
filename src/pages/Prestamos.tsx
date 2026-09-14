@@ -143,17 +143,26 @@ export function Prestamos() {
                         <p className="text-gray-800">{p.perfiles?.nombre_completo}</p>
                         <p className="text-xs text-gray-500">{p.perfiles?.email}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        {new Date(p.fecha_prestamo).toLocaleDateString('es-ES')}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        <span className={retrasado ? 'text-airbus-orange font-semibold flex items-center gap-1' : 'text-gray-600'}>
-                          {retrasado && <AlertTriangle className="w-3 h-3" />}
-                          {p.fecha_devolucion_prevista
-                            ? new Date(p.fecha_devolucion_prevista).toLocaleDateString('es-ES')
-                            : '—'}
-                        </span>
-                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+  {new Date(p.fecha_prestamo).toLocaleString('es-ES', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })}
+</td>
+
+<td className="px-4 py-3 text-xs whitespace-nowrap">
+  <span className={retrasado
+    ? 'text-airbus-orange font-semibold flex items-center gap-1'
+    : 'text-gray-600'}>
+    {retrasado && <AlertTriangle className="w-3 h-3" />}
+    {p.fecha_devolucion_prevista
+      ? new Date(p.fecha_devolucion_prevista).toLocaleString('es-ES', {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        })
+      : '—'}
+  </span>
+</td>
                       <td className="px-4 py-3">
                         <span className={estadoBadge[retrasado ? 'retrasado' : p.estado] ?? 'badge badge-gray'}>
                           {retrasado ? 'retrasado' : p.estado}
