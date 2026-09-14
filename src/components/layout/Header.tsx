@@ -1,10 +1,31 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { Plane, LogOut, Bell, User, Menu } from 'lucide-react';
+import { usePerfil, type Rol } from '../../hooks/usePerfil';
+import { Plane, LogOut, Bell, User, Menu, ShieldCheck } from 'lucide-react';
+
+// Estilos y etiquetas por rol
+const rolStyles: Record<Rol, { label: string; badge: string; dot: string }> = {
+  admin: {
+    label: 'Administrador',
+    badge: 'bg-airbus-red/15 text-airbus-red border-airbus-red/30',
+    dot: 'bg-airbus-red',
+  },
+  supervisor: {
+    label: 'Supervisor',
+    badge: 'bg-airbus-orange/15 text-airbus-orange border-airbus-orange/30',
+    dot: 'bg-airbus-orange',
+  },
+  tecnico: {
+    label: 'Técnico',
+    badge: 'bg-airbus-green/15 text-airbus-green border-airbus-green/30',
+    dot: 'bg-airbus-green',
+  },
+};
 
 export function Header({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
   const { user, signOut } = useAuth();
+  const { perfil } = usePerfil();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -13,9 +34,13 @@ export function Header({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
     navigate('/login');
   };
 
+  const rol = perfil?.rol ?? 'tecnico';
+  const rolInfo = rolStyles[rol];
+
   return (
     <header className="bg-airbus-blue text-white shadow-lg sticky top-0 z-30">
       <div className="px-4 py-3 flex items-center justify-between">
+        {/* Izquierda: logo + título */}
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
@@ -34,6 +59,7 @@ export function Header({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
           </div>
         </div>
 
+        {/* Derecha: notificaciones + usuario */}
         <div className="flex items-center gap-2">
           <button className="p-2 hover:bg-white/10 rounded-full transition relative">
             <Bell className="w-5 h-5" />
@@ -43,22 +69,56 @@ export function Header({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="flex items-center gap-2 p-1.5 pl-3 hover:bg-white/10 rounded-full transition"
+              className="flex items-center gap-3 p-1.5 pl-3 hover:bg-white/10 rounded-full transition"
             >
-              <span className="text-sm hidden sm:inline max-w-[180px] truncate">
-                {user?.email}
-              </span>
-              <div className="w-8 h-8 bg-airbus-light/20 rounded-full flex items-center justify-center">
-                <User className="w-4 h-4" />
+              {/* Email + Badge de rol */}
+              <div className="hidden sm:flex flex-col items-end leading-tight">
+                <span className="text-xs max-w-[180px] truncate opacity-90">
+                  {user?.email}
+                </span>
+                <span
+                  className={`mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${rolInfo.badge}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${rolInfo.dot}`} />
+                  {rolInfo.label}
+                </span>
+              </div>
+
+              {/* Avatar */}
+              <div className="w-8 h-8 bg-airbus-light/20 rounded-full flex items-center justify-center shrink-0">
+                {rol === 'admin' ? (
+                  <ShieldCheck className="w-4 h-4" />
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
               </div>
             </button>
 
+            {/* Menú desplegable */}
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white text-gray-800 rounded-lg shadow-xl border border-gray-100 py-1 overflow-hidden">
-                <div className="px-4 py-2 border-b border-gray-100">
-                  <p className="text-xs text-gray-500">Sesión iniciada como</p>
-                  <p className="text-sm font-medium truncate">{user?.email}</p>
+              <div className="absolute right-0 mt-2 w-64 bg-white text-gray-800 rounded-lg shadow-xl border border-gray-100 py-1 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-xs text-gray-500 mb-0.5">Sesión iniciada como</p>
+                  <p className="text-sm font-medium truncate">
+                    {perfil?.nombre_completo ?? user?.email}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${rolInfo.badge}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${rolInfo.dot}`} />
+                      {rolInfo.label}
+                    </span>
+                    {perfil?.activo === false && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
+                        Inactivo
+                      </span>
+                    )}
+                  </div>
                 </div>
+
                 <button
                   onClick={handleSignOut}
                   className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-airbus-red flex items-center gap-2"
