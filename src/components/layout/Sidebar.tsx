@@ -1,6 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode, Settings,
+  LayoutDashboard,
+  Package,
+  Users,
+  Calendar,
+  BarChart3,
+  Barcode,
+  Settings,
+  ArrowRightLeft,   // ← ESTE FALTABA
 } from 'lucide-react';
 
 const items = [
@@ -8,16 +15,15 @@ const items = [
   { to: '/equipos',       label: 'Equipos',        icon: Package },
   { to: '/prestamos',     label: 'Préstamos',      icon: Users },
   { to: '/calibraciones', label: 'Calibraciones',  icon: Calendar },
+  { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
   { to: '/scan',          label: 'Escanear',       icon: Barcode },
   { to: '/estadisticas',  label: 'Estadísticas',   icon: BarChart3 },
   { to: '/ajustes',       label: 'Ajustes',        icon: Settings },
-  { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
 ];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <>
-      {/* Overlay móvil */}
       {open && (
         <div
           onClick={onClose}
