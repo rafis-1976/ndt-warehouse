@@ -120,16 +120,17 @@ export function Equipos() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
-                <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-3">Código</th>
-                  <th className="px-4 py-3">Nombre</th>
-                  <th className="px-4 py-3">Técnica</th>
-                  <th className="px-4 py-3">Ubicación</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Próx. calibración</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
+  		<tr className="text-left text-xs uppercase tracking-wider text-gray-500">
+		    <th className="px-4 py-3">ID</th>
+		    <th className="px-4 py-3">Código</th>
+		    <th className="px-4 py-3">Nombre</th>
+		    <th className="px-4 py-3">Técnica</th>
+ 		   <th className="px-4 py-3">Ubicación</th>
+ 		   <th className="px-4 py-3">Estado</th>
+ 		   <th className="px-4 py-3">Próx. calibración</th>
+ 		   <th className="px-4 py-3"></th>
+ 		 </tr>
+	     </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((e) => (
                   <tr
