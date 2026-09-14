@@ -34,7 +34,7 @@ export function Equipos() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = equipos.filter((e) =>
-    [e.nombre, e.codigo_barras, e.numero_serie, e.marca, e.modelo]
+    [e.nombre, e.codigo_barras, e.numero_serie, e.marca, e.modelo, e.id_equipo]
       .join(' ').toLowerCase().includes(q.toLowerCase())
   );
 
@@ -87,7 +87,7 @@ export function Equipos() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             className="input pl-10"
-            placeholder="Buscar por nombre, código, serie, marca..."
+            placeholder="Buscar por ID, nombre, código, serie, marca..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -120,32 +120,30 @@ export function Equipos() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
-  		<tr className="text-left text-xs uppercase tracking-wider text-gray-500">
-		    <th className="px-4 py-3">ID</th>
-		    <th className="px-4 py-3">Código</th>
-		    <th className="px-4 py-3">Nombre</th>
-		    <th className="px-4 py-3">Técnica</th>
- 		   <th className="px-4 py-3">Ubicación</th>
- 		   <th className="px-4 py-3">Estado</th>
- 		   <th className="px-4 py-3">Próx. calibración</th>
- 		   <th className="px-4 py-3"></th>
- 		 </tr>
-	     </thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
+                  <th className="px-4 py-3">ID</th>
+                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Nombre</th>
+                  <th className="px-4 py-3">Técnica</th>
+                  <th className="px-4 py-3">Ubicación</th>
+                  <th className="px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">Próx. calibración</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((e) => (
-		  <tr key={e.id} className="hover:bg-gray-50 transition cursor-pointer"  onClick={() => openEdit(e.id)}>
-  			<td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">
- 			   {e.id_equipo ?? '—'}
-  			</td>
- 			 <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.codigo_barras}</td>
-			 
-		  </tr>
                   <tr
                     key={e.id}
                     className="hover:bg-gray-50 transition cursor-pointer"
                     onClick={() => openEdit(e.id)}
                   >
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.codigo_barras}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">
+                      {e.id_equipo ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                      {e.codigo_barras}
+                    </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-800">{e.nombre}</p>
                       <p className="text-xs text-gray-500">{e.marca} {e.modelo}</p>
