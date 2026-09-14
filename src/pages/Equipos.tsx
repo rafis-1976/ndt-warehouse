@@ -133,6 +133,13 @@ export function Equipos() {
 	     </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((e) => (
+		  <tr key={e.id} className="hover:bg-gray-50 transition cursor-pointer"  onClick={() => openEdit(e.id)}>
+  			<td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">
+ 			   {e.id_equipo ?? '—'}
+  			</td>
+ 			 <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.codigo_barras}</td>
+			 
+		  </tr>
                   <tr
                     key={e.id}
                     className="hover:bg-gray-50 transition cursor-pointer"
