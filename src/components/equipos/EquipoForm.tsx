@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Save, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface EquipoFormProps {
   onSuccess: () => void;
   onCancel: () => void;
-  equipoId?: string; // si se pasa, modo edición
+  equipoId?: string;
 }
 
 const initialState = {
+  id_equipo: '',
   codigo_barras: '',
   nombre: '',
   marca: '',
@@ -26,21 +27,54 @@ const initialState = {
 export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const [form, setForm] = useState(initialState);
   const [tecnicas, setTecnicas] = useState<any[]>([]);
+  const [tecnicasError, setTecnicasError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!equipoId);
   const [error, setError] = useState('');
 
-  // Cargar técnicas
+  // =========================
+  // Cargar técnicas NDT
+  // =========================
   useEffect(() => {
-    supabase
-      .from('tecnicas_ndt')
-      .select('id, codigo, nombre')
-      .eq('activa', true)
-      .order('codigo')
-      .then(({ data }) => setTecnicas(data ?? []));
+    let cancelled = false;
+
+    async function loadTecnicas() {
+      setTecnicasError('');
+      const { data, error } = await supabase
+        .from('tecnicas_ndt')
+        .select('id, codigo, nombre')
+        .eq('activa', true)
+        .order('codigo');
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error('[EquipoForm] Error cargando técnicas:', error);
+        setTecnicasError(
+          `No se pudieron cargar las técnicas: ${error.message}. ` +
+          `Revisa las políticas RLS de "tecnicas_ndt" en Supabase.`
+        );
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setTecnicasError(
+          'No hay técnicas NDT registradas. Ejecuta la migración SQL en Supabase.'
+        );
+        return;
+      }
+
+      console.info('[EquipoForm] Técnicas cargadas:', data);
+      setTecnicas(data);
+    }
+
+    loadTecnicas();
+    return () => { cancelled = true; };
   }, []);
 
-  // Cargar equipo si estamos editando
+  // =========================
+  // Cargar equipo si editamos
+  // =========================
   useEffect(() => {
     if (!equipoId) return;
     supabase
@@ -52,6 +86,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         if (error) setError(error.message);
         else if (data) {
           setForm({
+            id_equipo: data.id_equipo ?? '',
             codigo_barras: data.codigo_barras ?? '',
             nombre: data.nombre ?? '',
             marca: data.marca ?? '',
@@ -77,25 +112,26 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     e.preventDefault();
     setError('');
 
-    // Validación básica
+    if (!form.id_equipo.trim())     return setError('El ID de equipo es obligatorio');
     if (!form.codigo_barras.trim()) return setError('El código de barras es obligatorio');
-    if (!form.nombre.trim()) return setError('El nombre es obligatorio');
+    if (!form.nombre.trim())        return setError('El nombre es obligatorio');
 
     setLoading(true);
 
     const payload: any = {
-      codigo_barras: form.codigo_barras.trim(),
-      nombre: form.nombre.trim(),
-      marca: form.marca.trim() || null,
-      modelo: form.modelo.trim() || null,
-      numero_serie: form.numero_serie.trim() || null,
-      tecnica_id: form.tecnica_id || null,
-      estado: form.estado,
-      ubicacion: form.ubicacion.trim() || null,
-      fecha_adquisicion: form.fecha_adquisicion || null,
-      vida_util_meses: form.vida_util_meses ? Number(form.vida_util_meses) : null,
+      id_equipo:      form.id_equipo.trim(),
+      codigo_barras:  form.codigo_barras.trim(),
+      nombre:         form.nombre.trim(),
+      marca:          form.marca.trim() || null,
+      modelo:         form.modelo.trim() || null,
+      numero_serie:   form.numero_serie.trim() || null,
+      tecnica_id:     form.tecnica_id || null,
+      estado:         form.estado,
+      ubicacion:      form.ubicacion.trim() || null,
+      fecha_adquisicion:   form.fecha_adquisicion || null,
+      vida_util_meses:     form.vida_util_meses ? Number(form.vida_util_meses) : null,
       proxima_calibracion: form.proxima_calibracion || null,
-      observaciones: form.observaciones.trim() || null,
+      observaciones:       form.observaciones.trim() || null,
     };
 
     try {
@@ -108,9 +144,10 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       }
       onSuccess();
     } catch (err: any) {
-      // Mensajes de error de Postgres más legibles
       const msg = err.message ?? 'Error desconocido';
-      if (msg.includes('equipos_codigo_barras_key'))
+      if (msg.includes('equipos_id_equipo_key'))
+        setError('Ya existe un equipo con ese ID');
+      else if (msg.includes('equipos_codigo_barras_key'))
         setError('Ya existe un equipo con ese código de barras');
       else if (msg.includes('equipos_numero_serie_key'))
         setError('Ya existe un equipo con ese número de serie');
@@ -132,12 +169,33 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Sección: Identificación */}
+
+      {/* Aviso si fallan las técnicas */}
+      {tecnicasError && (
+        <div className="flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-sm p-3 rounded-lg">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Técnicas NDT no disponibles</p>
+            <p className="text-xs mt-0.5 opacity-80">{tecnicasError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Identificación */}
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="ID de equipo *">
+            <input
+              className="input font-mono"
+              value={form.id_equipo}
+              onChange={(e) => update('id_equipo', e.target.value.toUpperCase())}
+              placeholder="EQ-0001"
+              required
+            />
+          </Field>
           <Field label="Código de barras *">
             <input
-              className="input"
+              className="input font-mono"
               value={form.codigo_barras}
               onChange={(e) => update('codigo_barras', e.target.value)}
               placeholder="NDT-0001"
@@ -146,7 +204,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
           </Field>
           <Field label="Nombre del equipo *">
             <input
-              className="input"
+              className="input md:col-span-2"
               value={form.nombre}
               onChange={(e) => update('nombre', e.target.value)}
               placeholder="Detector de defectos por ultrasonidos"
@@ -160,17 +218,26 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             <input className="input" value={form.modelo} onChange={(e) => update('modelo', e.target.value)} placeholder="EPOCH 650" />
           </Field>
           <Field label="Número de serie">
-            <input className="input" value={form.numero_serie} onChange={(e) => update('numero_serie', e.target.value)} />
+            <input className="input font-mono" value={form.numero_serie} onChange={(e) => update('numero_serie', e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      {/* Sección: Clasificación */}
+      {/* Clasificación */}
       <Section title="Clasificación">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Técnica NDT">
-            <select className="input" value={form.tecnica_id} onChange={(e) => update('tecnica_id', e.target.value)}>
-              <option value="">— Sin asignar —</option>
+            <select
+              className="input"
+              value={form.tecnica_id}
+              onChange={(e) => update('tecnica_id', e.target.value)}
+              disabled={tecnicas.length === 0}
+            >
+              <option value="">
+                {tecnicas.length === 0
+                  ? '— Cargando técnicas... —'
+                  : '— Sin asignar —'}
+              </option>
               {tecnicas.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.codigo} · {t.nombre}
@@ -193,7 +260,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       </Section>
 
-      {/* Sección: Fechas */}
+      {/* Fechas */}
       <Section title="Fechas y vida útil">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Fecha de adquisición">
@@ -208,7 +275,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       </Section>
 
-      {/* Sección: Notas */}
+      {/* Notas */}
       <Section title="Observaciones">
         <textarea
           className="input min-h-[80px] resize-y"
