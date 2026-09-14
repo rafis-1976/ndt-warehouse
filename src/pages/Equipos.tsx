@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, Package, RefreshCw } from 'lucide-react';
+import { Search, Plus, Package, RefreshCw, Printer } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
+import Barcode from 'react-barcode';
 
 const estadoBadge: Record<string, string> = {
   disponible:    'badge badge-green',
@@ -19,6 +20,7 @@ export function Equipos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,74 @@ export function Equipos() {
     setToast(editingId ? 'Equipo actualizado correctamente' : 'Equipo creado correctamente');
     setTimeout(() => setToast(null), 3000);
     load();
+  };
+
+  // Imprimir etiqueta con código de barras
+  const imprimirEtiqueta = (equipo: any) => {
+    const win = window.open('', '_blank', 'width=500,height=400');
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Etiqueta ${equipo.id_equipo ?? equipo.codigo_barras}</title>
+        <style>
+          body {
+            font-family: Helvetica, Arial, sans-serif;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+          }
+          .etiqueta {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 16px 24px;
+            text-align: center;
+            max-width: 320px;
+          }
+          .id {
+            font-family: monospace;
+            font-size: 20px;
+            font-weight: bold;
+            color: #00205B;
+            margin-bottom: 4px;
+          }
+          .nombre {
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 2px;
+          }
+          .tecnica {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 12px;
+          }
+          .barcode svg { display: block; margin: 0 auto; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <div class="etiqueta">
+          <div class="id">${equipo.id_equipo ?? '—'}</div>
+          <div class="nombre">${equipo.nombre}</div>
+          <div class="tecnica">${equipo.tecnicas_ndt?.codigo ?? ''}</div>
+          <div class="barcode" id="barcode"></div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+        <script>
+          JsBarcode("#barcode", "${equipo.codigo_barras}", {
+            format: "CODE128",
+            displayValue: false,
+            height: 60,
+            width: 2,
+            margin: 0
+          });
+          setTimeout(() => window.print(), 300);
+        </script>
+      </body>
+      </html>
+    `);
+    win.document.close();
   };
 
   return (
@@ -122,7 +192,7 @@ export function Equipos() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
                   <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Código de barras</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3">Técnica</th>
                   <th className="px-4 py-3">Ubicación</th>
@@ -141,9 +211,30 @@ export function Equipos() {
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">
                       {e.id_equipo ?? '—'}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {e.codigo_barras}
+
+                    {/* CÓDIGO DE BARRAS VISUAL */}
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setBarcodeAbierto(e.codigo_barras);
+                        }}
+                        className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition"
+                        title="Clic para ampliar"
+                      >
+                        <Barcode
+                          value={e.codigo_barras}
+                          format="CODE128"
+                          displayValue={false}
+                          height={35}
+                          width={1.3}
+                          margin={0}
+                          background="transparent"
+                          lineColor="#00205B"
+                        />
+                      </button>
                     </td>
+
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-800">{e.nombre}</p>
                       <p className="text-xs text-gray-500">{e.marca} {e.modelo}</p>
@@ -161,12 +252,21 @@ export function Equipos() {
                       {e.proxima_calibracion ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={(ev) => { ev.stopPropagation(); openEdit(e.id); }}
-                        className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); imprimirEtiqueta(e); }}
+                          className="p-1.5 text-gray-400 hover:text-airbus-blue hover:bg-airbus-light/10 rounded transition"
+                          title="Imprimir etiqueta"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); openEdit(e.id); }}
+                          className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
+                        >
+                          Editar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -176,7 +276,32 @@ export function Equipos() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modal: ver código de barras ampliado */}
+      <Modal
+        open={!!barcodeAbierto}
+        onClose={() => setBarcodeAbierto(null)}
+        title="Código de barras"
+        size="sm"
+      >
+        {barcodeAbierto && (
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="bg-white p-6 rounded-lg border border-gray-200">
+              <Barcode
+                value={barcodeAbierto}
+                format="CODE128"
+                displayValue={false}
+                height={80}
+                width={2.5}
+                margin={0}
+                lineColor="#00205B"
+              />
+            </div>
+            <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: crear/editar equipo */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
