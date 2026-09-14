@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
-  Plus, Users, RefreshCw, CheckCircle2, AlertTriangle, Calendar,
+  Plus, Users, RefreshCw, CheckCircle2, AlertTriangle,
+  User as UserIcon, X, Package, Clock,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { PrestamoForm } from '../components/prestamos/PrestamoForm';
@@ -15,27 +16,38 @@ const estadoBadge: Record<string, string> = {
 
 export function Prestamos() {
   const [prestamos, setPrestamos] = useState<any[]>([]);
+  const [usuarios, setUsuarios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<'todos' | 'activo' | 'devuelto' | 'retrasado'>('todos');
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<string>('');
+  const [selectorAbierto, setSelectorAbierto] = useState(false);
 
   // ============================================================
-  // Cargar préstamos
+  // Cargar datos
   // ============================================================
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('prestamos')
-      .select(`
-        *,
-        equipos(id_equipo, nombre, codigo_barras, tecnicas_ndt(codigo)),
-        perfiles(nombre_completo, email)
-      `)
-      .order('fecha_prestamo', { ascending: false });
+    const [prest, us] = await Promise.all([
+      supabase
+        .from('prestamos')
+        .select(`
+          *,
+          equipos(id_equipo, nombre, codigo_barras, tecnicas_ndt(codigo)),
+          perfiles(nombre_completo, email)
+        `)
+        .order('fecha_prestamo', { ascending: false }),
+      supabase
+        .from('perfiles')
+        .select('id, nombre_completo, email')
+        .eq('activo', true)
+        .order('nombre_completo'),
+    ]);
 
-    if (error) console.error('[Prestamos] Error cargando:', error);
-    setPrestamos(data ?? []);
+    if (prest.error) console.error('[Prestamos] Error:', prest.error);
+    setPrestamos(prest.data ?? []);
+    setUsuarios(us.data ?? []);
     setLoading(false);
   }, []);
 
@@ -55,7 +67,6 @@ export function Prestamos() {
     if (!confirm(`¿Confirmar devolución de "${prestamo.equipos?.nombre}"?`)) return;
 
     try {
-      // 1. Marcar el préstamo como devuelto
       const { error: updPrestamo } = await supabase
         .from('prestamos')
         .update({
@@ -65,14 +76,11 @@ export function Prestamos() {
         .eq('id', prestamo.id);
       if (updPrestamo) throw updPrestamo;
 
-      // 2. Liberar el equipo
-      const { error: updEquipo } = await supabase
+      await supabase
         .from('equipos')
         .update({ estado: 'disponible' })
         .eq('id', prestamo.equipo_id);
-      if (updEquipo) throw updEquipo;
 
-      // 3. Registrar movimiento de entrada
       await supabase.from('movimientos').insert({
         equipo_id: prestamo.equipo_id,
         tipo: 'entrada',
@@ -104,14 +112,31 @@ export function Prestamos() {
     });
   };
 
-  // Filtrado
-  const filtrados = prestamos.filter((p) => {
-    if (filtro === 'todos') return true;
-    if (filtro === 'retrasado') return isRetrasado(p);
-    return p.estado === filtro && !isRetrasado(p);
-  });
+  const usuarioActual = usuarios.find((u) => u.id === usuarioSeleccionado);
 
-  // Contadores para las pestañas
+  // ============================================================
+  // Filtrado
+  // ============================================================
+  const filtrados = useMemo(() => {
+    return prestamos.filter((p) => {
+      // Filtro por usuario
+      if (usuarioSeleccionado) {
+        if (p.usuario_id !== usuarioSeleccionado) return false;
+        // Cuando hay usuario seleccionado, solo mostrar pendientes de devolver
+        if (p.estado !== 'activo' && p.estado !== 'retrasado') return false;
+      } else {
+        // Sin usuario seleccionado: aplicar filtro de pestaña
+        if (filtro === 'todos') return true;
+        if (filtro === 'retrasado') return isRetrasado(p);
+        return p.estado === filtro && !isRetrasado(p);
+      }
+      return true;
+    });
+  }, [prestamos, usuarioSeleccionado, filtro]);
+
+  // ============================================================
+  // Contadores
+  // ============================================================
   const contadores = {
     todos: prestamos.length,
     activo: prestamos.filter((p) => p.estado === 'activo' && !isRetrasado(p)).length,
@@ -119,6 +144,20 @@ export function Prestamos() {
     devuelto: prestamos.filter((p) => p.estado === 'devuelto').length,
   };
 
+  // Pendientes por usuario (para mostrar en el selector)
+  const pendientesPorUsuario = useMemo(() => {
+    const map: Record<string, number> = {};
+    prestamos.forEach((p) => {
+      if (p.estado === 'activo' || p.estado === 'retrasado') {
+        map[p.usuario_id] = (map[p.usuario_id] ?? 0) + 1;
+      }
+    });
+    return map;
+  }, [prestamos]);
+
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <div className="p-6 space-y-4">
       {/* Cabecera */}
@@ -146,34 +185,179 @@ export function Prestamos() {
         </div>
       )}
 
-      {/* Pestañas de filtro */}
-      <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {[
-          { key: 'todos',     label: 'Todos',      count: contadores.todos },
-          { key: 'activo',    label: 'Activos',    count: contadores.activo },
-          { key: 'retrasado', label: 'Retrasados', count: contadores.retrasado },
-          { key: 'devuelto',  label: 'Devueltos',  count: contadores.devuelto },
-        ].map((t) => (
+      {/* ==================================================== */}
+      {/* SELECTOR DE USUARIO */}
+      {/* ==================================================== */}
+      <div className="card">
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+          <UserIcon className="w-3 h-3" />
+          Ver equipos pendientes de un usuario
+        </label>
+
+        <div className="relative">
           <button
-            key={t.key}
-            onClick={() => setFiltro(t.key as any)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
-              filtro === t.key
-                ? 'bg-white text-airbus-blue shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+            type="button"
+            onClick={() => setSelectorAbierto((v) => !v)}
+            className={`input text-left flex items-center justify-between gap-3 ${
+              usuarioSeleccionado ? 'border-airbus-sky' : ''
             }`}
           >
-            {t.label}
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              filtro === t.key ? 'bg-airbus-blue/10 text-airbus-blue' : 'bg-gray-200 text-gray-500'
-            }`}>
-              {t.count}
-            </span>
+            {usuarioActual ? (
+              <span className="flex items-center gap-3 min-w-0 flex-1">
+                <span className="w-8 h-8 rounded-full bg-airbus-blue text-white flex items-center justify-center text-xs font-bold shrink-0">
+                  {usuarioActual.nombre_completo
+                    .split(' ')
+                    .map((n: string) => n[0])
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase()}
+                </span>
+                <span className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {usuarioActual.nombre_completo}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {usuarioActual.email}
+                  </p>
+                </span>
+                <span className="ml-auto shrink-0 flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 bg-airbus-orange/15 text-airbus-orange rounded-full text-[10px] font-bold">
+                    {pendientesPorUsuario[usuarioActual.id] ?? 0} pendientes
+                  </span>
+                </span>
+              </span>
+            ) : (
+              <span className="text-gray-400 text-sm">
+                — Selecciona un usuario para ver sus pendientes —
+              </span>
+            )}
+            {usuarioSeleccionado ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setUsuarioSeleccionado('');
+                }}
+                className="p-1 hover:bg-gray-100 rounded-full cursor-pointer shrink-0"
+                title="Quitar filtro"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </span>
+            ) : (
+              <Users className="w-4 h-4 text-gray-400 shrink-0" />
+            )}
           </button>
-        ))}
+
+          {/* Panel desplegable de usuarios */}
+          {selectorAbierto && (
+            <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-2xl max-h-80 overflow-y-auto">
+              {usuarios.length === 0 && (
+                <p className="px-4 py-6 text-sm text-center text-gray-400">
+                  No hay usuarios activos
+                </p>
+              )}
+
+              {usuarios.map((u) => {
+                const pendientes = pendientesPorUsuario[u.id] ?? 0;
+                const isSelected = u.id === usuarioSeleccionado;
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => {
+                      setUsuarioSeleccionado(u.id);
+                      setSelectorAbierto(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${
+                      isSelected ? 'bg-airbus-sky/10' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="w-8 h-8 rounded-full bg-airbus-blue/10 text-airbus-blue flex items-center justify-center text-xs font-bold shrink-0">
+                      {u.nombre_completo
+                        .split(' ')
+                        .map((n: string) => n[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase()}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {u.nombre_completo}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                      pendientes === 0
+                        ? 'bg-gray-100 text-gray-400'
+                        : 'bg-airbus-orange/15 text-airbus-orange'
+                    }`}>
+                      {pendientes} pendiente{pendientes !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Resumen cuando hay usuario seleccionado */}
+        {usuarioActual && (
+          <div className="mt-3 p-3 bg-airbus-orange/5 border border-airbus-orange/20 rounded-lg">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 text-sm">
+                <Package className="w-4 h-4 text-airbus-orange" />
+                <span className="font-semibold text-airbus-blue">
+                  {pendientesPorUsuario[usuarioActual.id] ?? 0}
+                </span>
+                <span className="text-gray-600">
+                  equipo{(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''} pendiente{(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''} de devolver
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4 text-airbus-red" />
+                <span className="font-semibold text-airbus-red">
+                  {prestamos.filter((p) => p.usuario_id === usuarioActual.id && isRetrasado(p)).length}
+                </span>
+                <span className="text-gray-600">retrasado(s)</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tabla */}
+      {/* ==================================================== */}
+      {/* PESTAÑAS (solo si no hay usuario seleccionado) */}
+      {/* ==================================================== */}
+      {!usuarioSeleccionado && (
+        <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+          {[
+            { key: 'todos',     label: 'Todos',      count: contadores.todos },
+            { key: 'activo',    label: 'Activos',    count: contadores.activo },
+            { key: 'retrasado', label: 'Retrasados', count: contadores.retrasado },
+            { key: 'devuelto',  label: 'Devueltos',  count: contadores.devuelto },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setFiltro(t.key as any)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
+                filtro === t.key
+                  ? 'bg-white text-airbus-blue shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                filtro === t.key ? 'bg-airbus-blue/10 text-airbus-blue' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* TABLA */}
+      {/* ==================================================== */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-400 flex items-center justify-center gap-2">
@@ -182,20 +366,41 @@ export function Prestamos() {
           </div>
         ) : filtrados.length === 0 ? (
           <div className="p-12 text-center">
-            <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500 mb-4">
-              {prestamos.length === 0
-                ? 'Aún no hay préstamos registrados'
-                : 'Sin préstamos en esta categoría'}
-            </p>
-            {prestamos.length === 0 && (
-              <button
-                onClick={() => setModalOpen(true)}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Crear el primero
-              </button>
+            {usuarioSeleccionado ? (
+              <>
+                <CheckCircle2 className="w-12 h-12 text-airbus-green mx-auto mb-3" />
+                <p className="text-gray-700 font-medium mb-1">
+                  {usuarioActual?.nombre_completo} no tiene equipos pendientes
+                </p>
+                <p className="text-sm text-gray-500 mb-4">
+                  Todos los equipos que tenía prestados han sido devueltos.
+                </p>
+                <button
+                  onClick={() => setUsuarioSeleccionado('')}
+                  className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Quitar filtro
+                </button>
+              </>
+            ) : (
+              <>
+                <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 mb-4">
+                  {prestamos.length === 0
+                    ? 'Aún no hay préstamos registrados'
+                    : 'Sin préstamos en esta categoría'}
+                </p>
+                {prestamos.length === 0 && (
+                  <button
+                    onClick={() => setModalOpen(true)}
+                    className="btn-primary inline-flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Crear el primero
+                  </button>
+                )}
+              </>
             )}
           </div>
         ) : (
@@ -218,9 +423,7 @@ export function Prestamos() {
                   return (
                     <tr
                       key={p.id}
-                      className={`hover:bg-gray-50 transition ${
-                        retrasado ? 'bg-airbus-orange/5' : ''
-                      }`}
+                      className={`hover:bg-gray-50 transition ${retrasado ? 'bg-airbus-orange/5' : ''}`}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -285,7 +488,7 @@ export function Prestamos() {
         )}
       </div>
 
-      {/* Modal de nuevo préstamo */}
+      {/* Modal nuevo préstamo */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
