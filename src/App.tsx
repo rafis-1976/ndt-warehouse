@@ -10,6 +10,11 @@ import { Prestamos } from './pages/Prestamos';
 import { Calibraciones } from './pages/Calibraciones';
 import { Estadisticas } from './pages/Estadisticas';
 import { Scan } from './pages/Scan';
+import { Movimientos } from './pages/Movimientos';
+// ...
+<Route path="/movimientos" element={
+  <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
+} />
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);

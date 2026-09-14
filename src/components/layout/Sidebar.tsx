@@ -11,6 +11,7 @@ const items = [
   { to: '/scan',          label: 'Escanear',       icon: Barcode },
   { to: '/estadisticas',  label: 'Estadísticas',   icon: BarChart3 },
   { to: '/ajustes',       label: 'Ajustes',        icon: Settings },
+  { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
 ];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
