@@ -1,16 +1,18 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Package,
-  Users,
-  Calendar,
-  BarChart3,
-  Barcode,
-  Settings,
-  ArrowRightLeft,   // ← ESTE FALTABA
+  LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode, Settings,
+  ArrowRightLeft, UserCog,
 } from 'lucide-react';
+import { usePerfil } from '../../hooks/usePerfil';
 
-const items = [
+interface Item {
+  to: string;
+  label: string;
+  icon: any;
+  soloAdmin?: boolean;
+}
+
+const items: Item[] = [
   { to: '/dashboard',     label: 'Dashboard',      icon: LayoutDashboard },
   { to: '/equipos',       label: 'Equipos',        icon: Package },
   { to: '/prestamos',     label: 'Préstamos',      icon: Users },
@@ -18,10 +20,16 @@ const items = [
   { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
   { to: '/scan',          label: 'Escanear',       icon: Barcode },
   { to: '/estadisticas',  label: 'Estadísticas',   icon: BarChart3 },
+  { to: '/usuarios',      label: 'Usuarios',       icon: UserCog, soloAdmin: true },
   { to: '/ajustes',       label: 'Ajustes',        icon: Settings },
 ];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { perfil } = usePerfil();
+  const esAdmin = perfil?.rol === 'admin';
+
+  const itemsVisibles = items.filter((it) => !it.soloAdmin || esAdmin);
+
   return (
     <>
       {open && (
@@ -39,8 +47,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-        <nav className="p-3 space-y-1">
-          {items.map((item) => (
+        <nav className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-160px)]">
+          {itemsVisibles.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
