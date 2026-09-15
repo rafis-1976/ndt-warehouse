@@ -7,11 +7,11 @@ import {
   Phone, User, X, Sparkles,
 } from 'lucide-react';
 
+// ============================================================
+// Tipos
+// ============================================================
 type Rol = 'admin' | 'supervisor' | 'tecnico';
 
-// ============================================================
-// Configuración de roles
-// ============================================================
 const roles: {
   value: Rol;
   label: string;
@@ -57,19 +57,19 @@ function generarPasswordSegura(): string {
   const todos = mayus + minus + nums + simbolos;
 
   let pwd = '';
-  // Garantizar al menos uno de cada tipo
   pwd += mayus.charAt(Math.floor(Math.random() * mayus.length));
   pwd += minus.charAt(Math.floor(Math.random() * minus.length));
   pwd += nums.charAt(Math.floor(Math.random() * nums.length));
   pwd += simbolos.charAt(Math.floor(Math.random() * simbolos.length));
 
-  // Rellenar hasta 14 caracteres
   for (let i = pwd.length; i < 14; i++) {
     pwd += todos.charAt(Math.floor(Math.random() * todos.length));
   }
 
-  // Barajar
-  return pwd.split('').sort(() => Math.random() - 0.5).join('');
+  return pwd
+    .split('')
+    .sort(() => Math.random() - 0.5)
+    .join('');
 }
 
 // ============================================================
@@ -105,14 +105,18 @@ export function UsuarioNuevo() {
   // ============================================================
   const validaciones = {
     nomina:
-      form.num_nomina.trim().length >= 3 &&
-      /^\d+$/.test(form.num_nomina.trim()),
+      form.num_nomina.trim().length >= 3 && /^\d+$/.test(form.num_nomina.trim()),
     nombre: form.nombre_completo.trim().length >= 3,
     email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()),
     password: form.password.length >= 8,
   };
 
   const formularioValido = Object.values(validaciones).every(Boolean);
+  const hayDatosIntroducidos =
+    form.num_nomina !== '' ||
+    form.nombre_completo !== '' ||
+    form.email !== '' ||
+    form.password !== '';
 
   // ============================================================
   // Enviar
@@ -122,10 +126,13 @@ export function UsuarioNuevo() {
     setError('');
     setSuccess(null);
 
-    if (!validaciones.nomina) return setError('Nº de nómina inválido (mínimo 3 dígitos)');
-    if (!validaciones.nombre) return setError('El nombre debe tener al menos 3 caracteres');
+    if (!validaciones.nomina)
+      return setError('Nº de nómina inválido (mínimo 3 dígitos)');
+    if (!validaciones.nombre)
+      return setError('El nombre debe tener al menos 3 caracteres');
     if (!validaciones.email) return setError('Email inválido');
-    if (!validaciones.password) return setError('La contraseña debe tener al menos 8 caracteres');
+    if (!validaciones.password)
+      return setError('La contraseña debe tener al menos 8 caracteres');
 
     setLoading(true);
     try {
@@ -147,7 +154,6 @@ export function UsuarioNuevo() {
       if (fnError) throw new Error(fnError.message);
       if (data?.error) throw new Error(data.error);
 
-      // Guardar datos para mostrar pantalla de éxito
       setSuccess({
         email: form.email.trim().toLowerCase(),
         password: form.password,
@@ -159,7 +165,10 @@ export function UsuarioNuevo() {
       const msg = err.message ?? 'Error desconocido';
       if (msg.includes('already registered') || msg.includes('already exists')) {
         setError('Ya existe un usuario con ese email');
-      } else if (msg.includes('perfiles_num_nomina_key') || msg.includes('num_nomina')) {
+      } else if (
+        msg.includes('perfiles_num_nomina_key') ||
+        msg.includes('num_nomina')
+      ) {
         setError('Ya existe un usuario con ese Nº de nómina');
       } else if (msg.includes('Solo administradores')) {
         setError('Solo los administradores pueden crear usuarios');
@@ -208,7 +217,6 @@ export function UsuarioNuevo() {
             El usuario ya puede iniciar sesión en el sistema
           </p>
 
-          {/* Credenciales */}
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-left max-w-md mx-auto mb-6">
             <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3">
               Credenciales de acceso
@@ -258,7 +266,6 @@ export function UsuarioNuevo() {
             </div>
           </div>
 
-          {/* Botones */}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={() => {
@@ -295,7 +302,9 @@ export function UsuarioNuevo() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
 
-      {/* Cabecera */}
+      {/* ============================================================
+          CABECERA
+          ============================================================ */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/usuarios')}
@@ -318,42 +327,59 @@ export function UsuarioNuevo() {
       <form onSubmit={handleSubmit} className="card space-y-6">
 
         {/* ============================================================
-            PREVIEW DEL USUARIO
+            PREVIEW DEL USUARIO (solo aparece cuando hay datos)
             ============================================================ */}
-        <div className="flex items-center gap-4 p-4 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl text-white">
-          <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold shrink-0">
-            {form.nombre_completo ? (
-              form.nombre_completo
-                .split(' ')
-                .map((n) => n[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase()
-            ) : (
-              <UserPlus className="w-7 h-7" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold text-lg truncate">
-              {form.nombre_completo || 'Nuevo usuario'}
-            </p>
-            <p className="text-xs text-airbus-light opacity-90 truncate">
-              {form.email || 'email@empresa.com'}
-            </p>
-            {form.num_nomina && (
-              <p className="text-xs text-airbus-light opacity-90 font-mono flex items-center gap-1 mt-0.5">
-                <Hash className="w-3 h-3" />
-                {form.num_nomina}
-              </p>
-            )}
-          </div>
-          {form.num_nomina && form.nombre_completo && form.email && form.password && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/20 rounded-full text-[10px] font-medium shrink-0">
-              <CheckCircle2 className="w-3 h-3" />
-              Listo para crear
+        {hayDatosIntroducidos ? (
+          <div className="flex items-center gap-4 p-4 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl text-white animate-in">
+            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold shrink-0">
+              {form.nombre_completo ? (
+                form.nombre_completo
+                  .split(' ')
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()
+              ) : (
+                <UserPlus className="w-7 h-7" />
+              )}
             </div>
-          )}
-        </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-lg truncate">
+                {form.nombre_completo || 'Sin nombre todavía'}
+              </p>
+              <p className="text-xs text-airbus-light opacity-90 truncate">
+                {form.email || 'Sin email todavía'}
+              </p>
+              {form.num_nomina && (
+                <p className="text-xs text-airbus-light opacity-90 font-mono flex items-center gap-1 mt-0.5">
+                  <Hash className="w-3 h-3" />
+                  {form.num_nomina}
+                </p>
+              )}
+            </div>
+            {form.num_nomina &&
+              form.nombre_completo &&
+              form.email &&
+              form.password && (
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-white/20 rounded-full text-[10px] font-medium shrink-0">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Listo para crear
+                </div>
+              )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-4 p-4 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl text-white">
+            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+              <UserPlus className="w-7 h-7 text-white/70" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-base">Nuevo usuario</p>
+              <p className="text-xs text-airbus-light opacity-75">
+                Rellena los campos para dar de alta una nueva cuenta
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ============================================================
             DATOS DEL USUARIO
@@ -554,14 +580,18 @@ export function UsuarioNuevo() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold">{r.label}</p>
-                    <p className="text-xs opacity-75 mt-0.5">{r.descripcion}</p>
+                    <p className="text-xs opacity-75 mt-0.5">
+                      {r.descripcion}
+                    </p>
                   </div>
                   <div
                     className={`w-5 h-5 rounded-full border-2 shrink-0 mt-1 flex items-center justify-center ${
                       activo ? 'border-current bg-current' : 'border-gray-300'
                     }`}
                   >
-                    {activo && <div className="w-2 h-2 rounded-full bg-white" />}
+                    {activo && (
+                      <div className="w-2 h-2 rounded-full bg-white" />
+                    )}
                   </div>
                 </button>
               );
@@ -676,7 +706,13 @@ export function UsuarioNuevo() {
 // ============================================================
 // Sub-componentes
 // ============================================================
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <h4 className="text-xs font-semibold text-airbus-blue uppercase tracking-wider mb-3">
@@ -687,10 +723,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label}
+      </label>
       {children}
     </div>
   );
