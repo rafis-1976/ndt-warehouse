@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle, AlertTriangle } from 'lucide-react';
+import {
+  Loader2, Save, AlertCircle, AlertTriangle, Wrench, CheckCircle2,
+} from 'lucide-react';
 import { estadoCalibracion } from '../../lib/calibracion';
 
 // ============================================================
@@ -40,7 +42,9 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const [tecnicasError, setTecnicasError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!equipoId);
+  const [enviandoCalibrar, setEnviandoCalibrar] = useState(false);
   const [error, setError] = useState('');
+  const [avisoExito, setAvisoExito] = useState('');
 
   // ============================================================
   // Cargar técnicas NDT
@@ -132,21 +136,82 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     !calibracionVencida &&
     estadoCalibracion(form.proxima_calibracion) === 'proxima';
 
+  // ¿Se puede enviar a calibrar?
+  // - Debe estar editando un equipo existente
+  // - La calibración debe estar vencida o próxima
+  // - El estado actual NO debe ser 'calibracion' ni 'baja'
+  const puedeEnviarACalibrar =
+    !!equipoId &&
+    (calibracionVencida || calibracionProxima) &&
+    form.estado !== 'calibracion' &&
+    form.estado !== 'baja';
+
   // ============================================================
-  // Envío
+  // Enviar a calibrar (acción rápida)
+  // ============================================================
+  const handleEnviarACalibrar = async () => {
+    if (!equipoId) return;
+
+    if (
+      !confirm(
+        `¿Marcar "${form.nombre}" como EN CALIBRACIÓN?\n\n` +
+          `El equipo quedará bloqueado para préstamos hasta que vuelva del laboratorio.`
+      )
+    ) {
+      return;
+    }
+
+    setEnviandoCalibrar(true);
+    setError('');
+    setAvisoExito('');
+
+    try {
+      const { error: updErr } = await supabase
+        .from('equipos')
+        .update({ estado: 'calibracion' })
+        .eq('id', equipoId);
+
+      if (updErr) throw updErr;
+
+      // Actualizar el estado local del formulario
+      setForm((f) => ({ ...f, estado: 'calibracion' }));
+
+      setAvisoExito(
+        'Equipo marcado como EN CALIBRACIÓN. Se ha bloqueado para préstamos.'
+      );
+
+      // Recargar la lista tras 1.2s y cerrar el modal
+      setTimeout(() => {
+        onSuccess();
+      }, 1200);
+    } catch (err: any) {
+      console.error('[EquipoForm] Error enviando a calibrar:', err);
+      setError(err.message ?? 'Error al enviar a calibrar');
+    } finally {
+      setEnviandoCalibrar(false);
+    }
+  };
+
+  // ============================================================
+  // Envío normal del formulario
   // ============================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Validaciones básicas
-    if (!form.id_equipo.trim())     return setError('El ID de equipo es obligatorio');
-    if (!form.codigo_barras.trim()) return setError('El código de barras es obligatorio');
-    if (!form.nombre.trim())        return setError('El nombre es obligatorio');
+    if (!form.id_equipo.trim()) return setError('El ID de equipo es obligatorio');
+    if (!form.codigo_barras.trim())
+      return setError('El código de barras es obligatorio');
+    if (!form.nombre.trim()) return setError('El nombre es obligatorio');
 
     // 🚫 BLOQUEO NDT: no permitir guardar como disponible si la calibración está vencida
     if (calibracionVencida) {
-      const estadosPermitidos = ['baja', 'calibracion', 'pendiente_calibracion', 'mantenimiento'];
+      const estadosPermitidos = [
+        'baja',
+        'calibracion',
+        'pendiente_calibracion',
+        'mantenimiento',
+      ];
       if (!estadosPermitidos.includes(form.estado)) {
         return setError(
           'La calibración está vencida. El estado debe ser "Pendiente de Calibración", ' +
@@ -169,14 +234,19 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       estado: form.estado,
       ubicacion: form.ubicacion.trim() || null,
       fecha_adquisicion: form.fecha_adquisicion || null,
-      vida_util_meses: form.vida_util_meses ? Number(form.vida_util_meses) : null,
+      vida_util_meses: form.vida_util_meses
+        ? Number(form.vida_util_meses)
+        : null,
       proxima_calibracion: form.proxima_calibracion || null,
       observaciones: form.observaciones.trim() || null,
     };
 
     try {
       if (equipoId) {
-        const { error } = await supabase.from('equipos').update(payload).eq('id', equipoId);
+        const { error } = await supabase
+          .from('equipos')
+          .update(payload)
+          .eq('id', equipoId);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('equipos').insert(payload);
@@ -185,10 +255,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       onSuccess();
     } catch (err: any) {
       const msg = err.message ?? 'Error desconocido';
-      if (msg.includes('equipos_id_equipo_key')) setError('Ya existe un equipo con ese ID');
-      else if (msg.includes('equipos_codigo_barras_key')) setError('Ya existe un equipo con ese código de barras');
-      else if (msg.includes('equipos_numero_serie_key')) setError('Ya existe un equipo con ese número de serie');
-      else if (msg.includes('row-level security')) setError('No tienes permisos para esta acción. Contacta con un administrador.');
+      if (msg.includes('equipos_id_equipo_key'))
+        setError('Ya existe un equipo con ese ID');
+      else if (msg.includes('equipos_codigo_barras_key'))
+        setError('Ya existe un equipo con ese código de barras');
+      else if (msg.includes('equipos_numero_serie_key'))
+        setError('Ya existe un equipo con ese número de serie');
+      else if (msg.includes('row-level security'))
+        setError('No tienes permisos para esta acción. Contacta con un administrador.');
       else setError(msg);
     } finally {
       setLoading(false);
@@ -220,6 +294,94 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             <p className="font-medium">Técnicas NDT no disponibles</p>
             <p className="text-xs mt-0.5 opacity-80">{tecnicasError}</p>
           </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          BANNER: CALIBRACIÓN VENCIDA + BOTÓN ENVIAR A CALIBRAR
+          ============================================================ */}
+      {calibracionVencida && puedeEnviarACalibrar && (
+        <div className="bg-gradient-to-r from-airbus-red to-airbus-orange rounded-xl p-4 shadow-lg">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-6 h-6 text-white animate-pulse" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-sm">
+                Calibración vencida
+              </p>
+              <p className="text-white/90 text-xs mt-1">
+                Vencida el <strong>{form.proxima_calibracion}</strong>. Este equipo
+                no puede prestarse hasta ser recalibrado.
+              </p>
+              <p className="text-white/80 text-[11px] mt-1">
+                Puedes enviarlo al laboratorio con el botón de la derecha.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleEnviarACalibrar}
+              disabled={enviandoCalibrar}
+              className="bg-white text-airbus-red px-4 py-2.5 rounded-lg font-semibold text-sm hover:bg-airbus-light transition flex items-center gap-2 whitespace-nowrap shadow-sm disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+            >
+              {enviandoCalibrar ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Wrench className="w-4 h-4" />
+              )}
+              Enviar a calibrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          BANNER: YA EN CALIBRACIÓN
+          ============================================================ */}
+      {form.estado === 'calibracion' && equipoId && (
+        <div className="bg-airbus-yellow/15 border border-airbus-yellow/40 rounded-xl p-4 flex items-start gap-3">
+          <div className="w-10 h-10 bg-airbus-yellow/30 rounded-full flex items-center justify-center shrink-0">
+            <Wrench className="w-5 h-5 text-yellow-700" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-yellow-800">
+              Equipo en calibración
+            </p>
+            <p className="text-xs text-yellow-700 mt-0.5">
+              Está bloqueado para préstamos hasta que vuelva del laboratorio y se
+              registre la nueva fecha de calibración.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          BANNER: CALIBRACIÓN PRÓXIMA (informativo)
+          ============================================================ */}
+      {calibracionProxima && form.estado !== 'calibracion' && (
+        <div className="bg-airbus-orange/10 border border-airbus-orange/30 rounded-xl p-3 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-airbus-orange shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-airbus-orange">
+              Calibración próxima a vencer
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Vence el <strong>{form.proxima_calibracion}</strong>. Programa su
+              recalibración para evitar bloqueos.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          AVISO DE ÉXITO
+          ============================================================ */}
+      {avisoExito && (
+        <div className="flex items-start gap-2 bg-airbus-green/10 border border-airbus-green/30 text-airbus-green text-sm p-3 rounded-lg">
+          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+          <p className="font-medium">{avisoExito}</p>
         </div>
       )}
 
@@ -376,8 +538,11 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             <input
               type="date"
               className={`input ${
-                calibracionVencida ? 'border-airbus-red focus:ring-airbus-red' :
-                calibracionProxima ? 'border-airbus-orange focus:ring-airbus-orange' : ''
+                calibracionVencida
+                  ? 'border-airbus-red focus:ring-airbus-red'
+                  : calibracionProxima
+                    ? 'border-airbus-orange focus:ring-airbus-orange'
+                    : ''
               }`}
               value={form.proxima_calibracion}
               onChange={(e) => update('proxima_calibracion', e.target.value)}
@@ -423,26 +588,37 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       {/* ============================================================
           BOTONES
           ============================================================ */}
-      <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="btn-ghost border border-gray-300"
-        >
-          Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-primary flex items-center gap-2"
-        >
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-2 border-t border-gray-100">
+        <div className="text-xs text-gray-500 order-2 sm:order-1">
+          {puedeEnviarACalibrar && !avisoExito && (
+            <span className="flex items-center gap-1.5 text-airbus-orange">
+              <Wrench className="w-3.5 h-3.5" />
+              Puedes enviar a calibrar con el botón superior
+            </span>
           )}
-          {equipoId ? 'Guardar cambios' : 'Crear equipo'}
-        </button>
+        </div>
+
+        <div className="flex justify-end gap-3 order-1 sm:order-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn-ghost border border-gray-300"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={loading || enviandoCalibrar}
+            className="btn-primary flex items-center gap-2"
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {equipoId ? 'Guardar cambios' : 'Crear equipo'}
+          </button>
+        </div>
       </div>
     </form>
   );
