@@ -13,10 +13,6 @@ import { Scan } from './pages/Scan';
 import { Movimientos } from './pages/Movimientos';
 import { Usuarios } from './pages/Usuarios';
 import { UsuarioNuevo } from './pages/UsuarioNuevo';
-// ...
-<Route path="/movimientos" element={
-  <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
-} />
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -36,7 +32,6 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginForm />} />
-
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route path="/dashboard" element={
@@ -51,19 +46,22 @@ export default function App() {
         <Route path="/calibraciones" element={
           <ProtectedRoute><Layout><Calibraciones /></Layout></ProtectedRoute>
         } />
-        <Route path="/estadisticas" element={
-          <ProtectedRoute><Layout><Estadisticas /></Layout></ProtectedRoute>
+        <Route path="/movimientos" element={
+          <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
         } />
         <Route path="/scan" element={
           <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
         } />
-	<Route path="/usuarios" element={
-	  <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
-	} />
-	<Route path="/usuarios/nuevo" element={
-	  <ProtectedRoute><Layout><UsuarioNuevo /></Layout></ProtectedRoute>
-	} />
-	
+        <Route path="/estadisticas" element={
+          <ProtectedRoute><Layout><Estadisticas /></Layout></ProtectedRoute>
+        } />
+        <Route path="/usuarios" element={
+          <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
+        } />
+        <Route path="/usuarios/nuevo" element={
+          <ProtectedRoute><Layout><UsuarioNuevo /></Layout></ProtectedRoute>
+        } />
+
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
