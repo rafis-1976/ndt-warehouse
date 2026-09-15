@@ -136,10 +136,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     !calibracionVencida &&
     estadoCalibracion(form.proxima_calibracion) === 'proxima';
 
-  // ¿Se puede enviar a calibrar?
-  // - Debe estar editando un equipo existente
-  // - La calibración debe estar vencida o próxima
-  // - El estado actual NO debe ser 'calibracion' ni 'baja'
   const puedeEnviarACalibrar =
     !!equipoId &&
     (calibracionVencida || calibracionProxima) &&
@@ -147,43 +143,69 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     form.estado !== 'baja';
 
   // ============================================================
-  // Enviar a calibrar (acción rápida)
+  // Enviar a calibrar
+  //  1. Marca el equipo como 'calibracion'
+  //  2. Crea un registro en 'calibraciones' con estado='pendiente'
+  //     → así aparece en el listado de Calibraciones
   // ============================================================
   const handleEnviarACalibrar = async () => {
     if (!equipoId) return;
 
-    if (
-      !confirm(
-        `¿Marcar "${form.nombre}" como EN CALIBRACIÓN?\n\n` +
-          `El equipo quedará bloqueado para préstamos hasta que vuelva del laboratorio.`
-      )
-    ) {
-      return;
-    }
+    const confirmar = confirm(
+      `¿Marcar "${form.nombre}" como EN CALIBRACIÓN?\n\n` +
+        `El equipo quedará bloqueado para préstamos y aparecerá en el listado ` +
+        `de "Equipos en calibración".`
+    );
+    if (!confirmar) return;
 
     setEnviandoCalibrar(true);
     setError('');
     setAvisoExito('');
 
     try {
+      // 1. Marcar equipo como 'calibracion'
       const { error: updErr } = await supabase
         .from('equipos')
         .update({ estado: 'calibracion' })
         .eq('id', equipoId);
-
       if (updErr) throw updErr;
 
-      // Actualizar el estado local del formulario
+      // 2. Comprobar si ya había un envío pendiente para no duplicar
+      const { data: existente } = await supabase
+        .from('calibraciones')
+        .select('id')
+        .eq('equipo_id', equipoId)
+        .eq('estado', 'pendiente')
+        .maybeSingle();
+
+      if (!existente) {
+        // 3. Crear el registro pendiente
+        const { error: insErr } = await supabase.from('calibraciones').insert({
+          equipo_id: equipoId,
+          estado: 'pendiente',
+          fecha_envio: new Date().toISOString(),
+          observaciones: 'Enviado a calibrar desde gestión de equipos',
+        });
+        if (insErr) throw insErr;
+      }
+
+      // 4. Registrar movimiento
+      await supabase.from('movimientos').insert({
+        equipo_id: equipoId,
+        tipo: 'salida',
+        observaciones: 'Equipo enviado a calibración',
+      });
+
+      // 5. Actualizar estado local
       setForm((f) => ({ ...f, estado: 'calibracion' }));
 
       setAvisoExito(
-        'Equipo marcado como EN CALIBRACIÓN. Se ha bloqueado para préstamos.'
+        '✅ Equipo enviado a calibración. Aparecerá en la sección de Calibraciones.'
       );
 
-      // Recargar la lista tras 1.2s y cerrar el modal
       setTimeout(() => {
         onSuccess();
-      }, 1200);
+      }, 1500);
     } catch (err: any) {
       console.error('[EquipoForm] Error enviando a calibrar:', err);
       setError(err.message ?? 'Error al enviar a calibrar');
@@ -204,7 +226,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       return setError('El código de barras es obligatorio');
     if (!form.nombre.trim()) return setError('El nombre es obligatorio');
 
-    // 🚫 BLOQUEO NDT: no permitir guardar como disponible si la calibración está vencida
     if (calibracionVencida) {
       const estadosPermitidos = [
         'baja',
@@ -286,7 +307,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
 
-      {/* Aviso si fallan las técnicas */}
       {tecnicasError && (
         <div className="flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-sm p-3 rounded-lg">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -297,9 +317,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
-      {/* ============================================================
-          BANNER: CALIBRACIÓN VENCIDA + BOTÓN ENVIAR A CALIBRAR
-          ============================================================ */}
+      {/* BANNER: CALIBRACIÓN VENCIDA */}
       {calibracionVencida && puedeEnviarACalibrar && (
         <div className="bg-gradient-to-r from-airbus-red to-airbus-orange rounded-xl p-4 shadow-lg">
           <div className="flex items-start gap-4">
@@ -308,15 +326,13 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             </div>
 
             <div className="flex-1 min-w-0">
-              <p className="text-white font-bold text-sm">
-                Calibración vencida
-              </p>
+              <p className="text-white font-bold text-sm">Calibración vencida</p>
               <p className="text-white/90 text-xs mt-1">
                 Vencida el <strong>{form.proxima_calibracion}</strong>. Este equipo
                 no puede prestarse hasta ser recalibrado.
               </p>
               <p className="text-white/80 text-[11px] mt-1">
-                Puedes enviarlo al laboratorio con el botón de la derecha.
+                Al enviarlo aparecerá en la sección de <strong>Calibraciones</strong> como pendiente.
               </p>
             </div>
 
@@ -337,9 +353,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
-      {/* ============================================================
-          BANNER: YA EN CALIBRACIÓN
-          ============================================================ */}
+      {/* BANNER: YA EN CALIBRACIÓN */}
       {form.estado === 'calibracion' && equipoId && (
         <div className="bg-airbus-yellow/15 border border-airbus-yellow/40 rounded-xl p-4 flex items-start gap-3">
           <div className="w-10 h-10 bg-airbus-yellow/30 rounded-full flex items-center justify-center shrink-0">
@@ -350,16 +364,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
               Equipo en calibración
             </p>
             <p className="text-xs text-yellow-700 mt-0.5">
-              Está bloqueado para préstamos hasta que vuelva del laboratorio y se
-              registre la nueva fecha de calibración.
+              Está bloqueado para préstamos. Regístralo en{' '}
+              <strong>Calibraciones → En calibración</strong> cuando vuelva del laboratorio.
             </p>
           </div>
         </div>
       )}
 
-      {/* ============================================================
-          BANNER: CALIBRACIÓN PRÓXIMA (informativo)
-          ============================================================ */}
+      {/* BANNER: CALIBRACIÓN PRÓXIMA */}
       {calibracionProxima && form.estado !== 'calibracion' && (
         <div className="bg-airbus-orange/10 border border-airbus-orange/30 rounded-xl p-3 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-airbus-orange shrink-0 mt-0.5" />
@@ -375,9 +387,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
-      {/* ============================================================
-          AVISO DE ÉXITO
-          ============================================================ */}
+      {/* AVISO DE ÉXITO */}
       {avisoExito && (
         <div className="flex items-start gap-2 bg-airbus-green/10 border border-airbus-green/30 text-airbus-green text-sm p-3 rounded-lg">
           <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
@@ -385,9 +395,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
-      {/* ============================================================
-          IDENTIFICACIÓN
-          ============================================================ */}
+      {/* IDENTIFICACIÓN */}
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="ID de equipo *">
@@ -443,9 +451,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       </Section>
 
-      {/* ============================================================
-          CLASIFICACIÓN
-          ============================================================ */}
+      {/* CLASIFICACIÓN */}
       <Section title="Clasificación">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Técnica NDT">
@@ -486,7 +492,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
               <option value="baja">Baja</option>
             </select>
 
-            {/* Aviso de calibración vencida */}
             {calibracionVencida && (
               <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/30 text-airbus-red text-xs p-2.5 rounded-lg mt-2">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -511,9 +516,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       </Section>
 
-      {/* ============================================================
-          FECHAS
-          ============================================================ */}
+      {/* FECHAS */}
       <Section title="Fechas y vida útil">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Fecha de adquisición">
@@ -563,9 +566,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       </Section>
 
-      {/* ============================================================
-          OBSERVACIONES
-          ============================================================ */}
+      {/* OBSERVACIONES */}
       <Section title="Observaciones">
         <textarea
           className="input min-h-[80px] resize-y"
@@ -575,9 +576,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         />
       </Section>
 
-      {/* ============================================================
-          ERROR GENERAL
-          ============================================================ */}
+      {/* ERROR */}
       {error && (
         <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -585,9 +584,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
-      {/* ============================================================
-          BOTONES
-          ============================================================ */}
+      {/* BOTONES */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-2 border-t border-gray-100">
         <div className="text-xs text-gray-500 order-2 sm:order-1">
           {puedeEnviarACalibrar && !avisoExito && (
