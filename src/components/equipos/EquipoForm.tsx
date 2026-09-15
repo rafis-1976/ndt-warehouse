@@ -246,14 +246,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             </select>
           </Field>
           <Field label="Estado">
-            <select className="input" value={form.estado} onChange={(e) => update('estado', e.target.value)}>
-              <option value="disponible">Disponible</option>
-              <option value="prestado">Prestado</option>
-              <option value="calibracion">En calibración</option>
-              <option value="mantenimiento">En mantenimiento</option>
-              <option value="baja">Baja</option>
-            </select>
-          </Field>
+  <select className="input" value={form.estado} onChange={(e) => update('estado', e.target.value)}>
+    <option value="disponible">Disponible</option>
+    <option value="prestado">Prestado</option>
+    <option value="calibracion">En calibración</option>
+    <option value="mantenimiento">En mantenimiento</option>
+    <option value="baja">Baja</option>
+  </select>
+</Field>
           <Field label="Ubicación">
             <input className="input" value={form.ubicacion} onChange={(e) => update('ubicacion', e.target.value)} placeholder="Estante A-3" />
           </Field>
