@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
-  Loader2, Save, AlertCircle, AlertTriangle, Wrench, CheckCircle2, FileText,
+  Loader2, Save, AlertCircle, AlertTriangle, Wrench, CheckCircle2,
+  FileText, Camera,
 } from 'lucide-react';
 import { estadoCalibracion } from '../../lib/calibracion';
 import { DocumentosUpload } from './DocumentosUpload';
+import { CamaraEquipo } from './CamaraEquipo';
 import type { DocumentoEquipo } from '../../lib/storage';
+import type { FotoEquipo } from '../../lib/storageFotos';
 
 interface EquipoFormProps {
   onSuccess: () => void;
@@ -34,6 +37,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const [tecnicas, setTecnicas] = useState<any[]>([]);
   const [tecnicasError, setTecnicasError] = useState('');
   const [documentos, setDocumentos] = useState<DocumentoEquipo[]>([]);
+  const [fotos, setFotos] = useState<FotoEquipo[]>([]);
   const [uploadKey, setUploadKey] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!equipoId);
@@ -67,7 +71,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
 
   useEffect(() => {
     if (!equipoId) {
-      // Nuevo equipo: generar ID temporal para el storage
       setUploadKey(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
       return;
     }
@@ -96,11 +99,15 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             proxima_calibracion: data.proxima_calibracion ?? '',
             observaciones: data.observaciones ?? '',
           });
-          // Cargar documentos existentes
           const docs: DocumentoEquipo[] = Array.isArray(data.documentos_urls)
             ? data.documentos_urls
             : [];
           setDocumentos(docs);
+
+          const fts: FotoEquipo[] = Array.isArray(data.fotos_urls)
+            ? data.fotos_urls
+            : [];
+          setFotos(fts);
         }
         setLoadingData(false);
       });
@@ -212,6 +219,8 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
       proxima_calibracion: form.proxima_calibracion || null,
       observaciones: form.observaciones.trim() || null,
       documentos_urls: documentos,
+      fotos_urls: fotos,
+      foto_url: fotos[0]?.url ?? null,
     };
 
     try {
@@ -311,6 +320,21 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
           <p className="font-medium">{avisoExito}</p>
         </div>
       )}
+
+      <Section title="Fotos del equipo">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <Camera className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Haz una foto con la cámara del dispositivo o sube imágenes desde el equipo.
+          </p>
+        </div>
+
+        <CamaraEquipo
+          equipoId={uploadKey}
+          fotos={fotos}
+          onChange={setFotos}
+        />
+      </Section>
 
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
