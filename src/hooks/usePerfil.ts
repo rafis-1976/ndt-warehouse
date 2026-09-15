@@ -6,6 +6,7 @@ export type Rol = 'admin' | 'supervisor' | 'tecnico';
 
 export interface Perfil {
   id: string;
+  num_nomina: string | null;
   nombre_completo: string;
   email: string;
   rol: Rol;
@@ -14,19 +15,12 @@ export interface Perfil {
 }
 
 export function usePerfil() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('[usePerfil] user =', user?.id, user?.email);
-    console.log('[usePerfil] authLoading =', authLoading);
-
-    if (authLoading) return; // esperar a que auth termine
-
     if (!user) {
-      console.log('[usePerfil] No hay usuario, reseteando');
       setPerfil(null);
       setLoading(false);
       return;
@@ -36,38 +30,36 @@ export function usePerfil() {
 
     async function load() {
       setLoading(true);
-      setError(null);
-
-      console.log('[usePerfil] Consultando perfiles para id =', user!.id);
-
       const { data, error } = await supabase
         .from('perfiles')
-        .select('id, nombre_completo, email, rol, activo, telefono')
+        .select('id, num_nomina, nombre_completo, email, rol, activo, telefono')
         .eq('id', user!.id)
         .maybeSingle();
 
       if (cancelled) return;
 
-      console.log('[usePerfil] Respuesta:', { data, error });
-
-      if (error) {
-        console.error('[usePerfil] Error:', error);
-        setError(error.message);
-        setPerfil(null);
-      } else if (!data) {
-        console.warn('[usePerfil] No existe fila en perfiles para este usuario');
-        setError('No existe perfil asociado a este usuario');
-        setPerfil(null);
-      } else {
-        console.log('[usePerfil] Perfil cargado con rol:', data.rol);
-        setPerfil(data as Perfil);
-      }
+      if (error) console.error('[usePerfil] Error:', error);
+      setPerfil(data as Perfil | null);
       setLoading(false);
     }
 
     load();
-    return () => { cancelled = true; };
-  }, [user, authLoading]);
 
-  return { perfil, loading, error };
+    // Realtime: si cambia mi perfil, se refleja al instante
+    const channel = supabase
+      .channel('perfil-cambios')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'perfiles', filter: `id=eq.${user.id}` },
+        (payload) => setPerfil(payload.new as Perfil)
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  return { perfil, loading };
 }
