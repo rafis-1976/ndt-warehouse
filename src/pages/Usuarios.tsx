@@ -1,16 +1,17 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
-  Search, Users as UsersIcon, RefreshCw, ShieldCheck, ShieldOff,
+  Search, Users as UsersIcon, RefreshCw, ShieldCheck,
   UserCog, Hash, X, Filter, Mail, CheckCircle2, AlertCircle,
-  UserCheck, UserX, KeyRound, Edit3,
+  UserCheck, UserX, Edit3, UserPlus,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { UsuarioForm } from '../components/usuarios/UsuarioForm';
 import { useAuth } from '../hooks/useAuth';
 
 // ============================================================
-// Configuración de roles
+// Tipos y estilos de rol
 // ============================================================
 type Rol = 'admin' | 'supervisor' | 'tecnico';
 
@@ -37,13 +38,17 @@ const rolStyles: Record<Rol, { label: string; badge: string; dot: string }> = {
 // ============================================================
 export function Usuarios() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [filtroRol, setFiltroRol] = useState<string>('todos');
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPerfil, setEditingPerfil] = useState<any | null>(null);
+
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
 
@@ -121,7 +126,7 @@ export function Usuarios() {
   };
 
   // ============================================================
-  // Acciones rápidas
+  // Acciones
   // ============================================================
   const cambiarRolRapido = async (perfil: any, nuevoRol: Rol) => {
     if (perfil.id === user?.id) {
@@ -129,7 +134,12 @@ export function Usuarios() {
       setTimeout(() => setToastError(null), 3000);
       return;
     }
-    if (!confirm(`¿Cambiar rol de ${perfil.nombre_completo} a "${rolStyles[nuevoRol].label}"?`)) return;
+    if (
+      !confirm(
+        `¿Cambiar rol de ${perfil.nombre_completo} a "${rolStyles[nuevoRol].label}"?`
+      )
+    )
+      return;
 
     const { error } = await supabase
       .from('perfiles')
@@ -153,7 +163,12 @@ export function Usuarios() {
       return;
     }
     const accion = perfil.activo ? 'desactivar' : 'activar';
-    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${perfil.nombre_completo}?`)) return;
+    if (
+      !confirm(
+        `¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${perfil.nombre_completo}?`
+      )
+    )
+      return;
 
     const { error } = await supabase
       .from('perfiles')
@@ -199,6 +214,13 @@ export function Usuarios() {
             {filtered.length} de {contadores.total} usuarios
           </p>
         </div>
+        <button
+          onClick={() => navigate('/usuarios/nuevo')}
+          className="btn-primary flex items-center gap-2 self-start sm:self-auto"
+        >
+          <UserPlus className="w-4 h-4" />
+          Nuevo usuario
+        </button>
       </div>
 
       {/* Toasts */}
@@ -216,7 +238,7 @@ export function Usuarios() {
       )}
 
       {/* ==================================================== */}
-      {/* ESTADÍSTICAS RÁPIDAS */}
+      {/* ESTADÍSTICAS */}
       {/* ==================================================== */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard
@@ -296,9 +318,7 @@ export function Usuarios() {
                 active={filtroRol === r}
                 onClick={() => setFiltroRol(r)}
                 count={contadores.porRol[r] ?? 0}
-                color={
-                  r === 'admin' ? 'red' : r === 'supervisor' ? 'orange' : 'green'
-                }
+                color={r === 'admin' ? 'red' : r === 'supervisor' ? 'orange' : 'green'}
               >
                 {rolStyles[r].label}
               </FilterChip>
@@ -359,13 +379,21 @@ export function Usuarios() {
                 ? 'Aún no hay usuarios registrados'
                 : 'Sin usuarios con los filtros actuales'}
             </p>
-            {hayFiltrosActivos && (
+            {hayFiltrosActivos ? (
               <button
                 onClick={limpiarFiltros}
                 className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
               >
                 <X className="w-4 h-4" />
                 Limpiar filtros
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/usuarios/nuevo')}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                Crear el primero
               </button>
             )}
           </div>
@@ -400,11 +428,13 @@ export function Usuarios() {
                             {p.num_nomina}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">Sin asignar</span>
+                          <span className="text-xs text-gray-400 italic">
+                            Sin asignar
+                          </span>
                         )}
                       </td>
 
-                      {/* Nombre + email + avatar */}
+                      {/* Usuario */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="w-9 h-9 rounded-full bg-airbus-blue text-white flex items-center justify-center text-xs font-bold shrink-0">
@@ -457,23 +487,27 @@ export function Usuarios() {
                         )}
                       </td>
 
-                      {/* Acciones rápidas */}
+                      {/* Acciones */}
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {/* Cambio rápido de rol */}
                           <select
                             value={p.rol}
-                            onChange={(e) => cambiarRolRapido(p, e.target.value as Rol)}
+                            onChange={(e) =>
+                              cambiarRolRapido(p, e.target.value as Rol)
+                            }
                             disabled={esYo}
                             className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-airbus-sky disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={esYo ? 'No puedes cambiar tu propio rol' : 'Cambiar rol'}
+                            title={
+                              esYo
+                                ? 'No puedes cambiar tu propio rol'
+                                : 'Cambiar rol'
+                            }
                           >
                             <option value="admin">Admin</option>
                             <option value="supervisor">Supervisor</option>
                             <option value="tecnico">Técnico</option>
                           </select>
 
-                          {/* Toggle activo */}
                           <button
                             onClick={() => toggleActivo(p)}
                             disabled={esYo}
@@ -497,7 +531,6 @@ export function Usuarios() {
                             )}
                           </button>
 
-                          {/* Editar */}
                           <button
                             onClick={() => openEdit(p)}
                             className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
@@ -516,7 +549,9 @@ export function Usuarios() {
         )}
       </div>
 
-      {/* Modal editar usuario */}
+      {/* ==================================================== */}
+      {/* MODAL EDITAR USUARIO */}
+      {/* ==================================================== */}
       <Modal
         open={modalOpen}
         onClose={() => {
@@ -619,7 +654,9 @@ function FilterChip({
     >
       {icon && <span className="shrink-0">{icon}</span>}
       <span>{children}</span>
-      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${countColor}`}>
+      <span
+        className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${countColor}`}
+      >
         {count}
       </span>
     </button>
