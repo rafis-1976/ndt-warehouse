@@ -11,6 +11,7 @@ import { Calibraciones } from './pages/Calibraciones';
 import { Estadisticas } from './pages/Estadisticas';
 import { Scan } from './pages/Scan';
 import { Movimientos } from './pages/Movimientos';
+import { Usuarios } from './pages/Usuarios';
 // ...
 <Route path="/movimientos" element={
   <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
@@ -55,6 +56,9 @@ export default function App() {
         <Route path="/scan" element={
           <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
         } />
+	<Route path="/usuarios" element={
+	  <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
+	} />
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
