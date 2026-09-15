@@ -7,10 +7,13 @@ import {
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 
 // ============================================================
-// Constantes de horario laboral
+// Turnos de trabajo
 // ============================================================
-const HORA_INICIO_TURNO = 8;   // 08:00
-const HORA_FIN_TURNO   = 20;   // 20:00
+const TURNOS = [
+  { id: 'mañana',  inicio: 6,  fin: 14, label: '06:00 – 14:00' },
+  { id: 'tarde',   inicio: 14, fin: 22, label: '14:00 – 22:00' },
+  { id: 'noche',   inicio: 22, fin: 6,  label: '22:00 – 06:00' },
+];
 
 // ============================================================
 // Helpers de fecha y hora
@@ -44,22 +47,43 @@ function addHours(base: string, hours: number): string {
 }
 
 /**
- * Calcula la devolución para un "día completo".
- * - Si el préstamo empieza antes de las 08:00 → devolución a las 20:00 del mismo día
- * - Si empieza entre 08:00 y 20:00 → devolución a las 20:00 del mismo día
- * - Si empieza después de las 20:00 → devolución a las 20:00 del día siguiente
+ * Devuelve la hora de fin del turno activo según la hora del préstamo.
+ *
+ * Turnos:
+ *   06:00 – 14:00  → devolución a las 14:00 (mismo día)
+ *   14:00 – 22:00  → devolución a las 22:00 (mismo día)
+ *   22:00 – 06:00  → devolución a las 06:00 (día siguiente si empieza ≥22:00)
  */
-function finDiaCompleto(fechaInicio: string): string {
+function finJornada(fechaInicio: string): string {
   const inicio = new Date(fechaInicio);
+  const h = inicio.getHours();
   const devolucion = new Date(inicio);
-  devolucion.setHours(HORA_FIN_TURNO, 0, 0, 0);
 
-  // Si ya ha pasado la hora de fin del turno, mover al día siguiente
-  if (devolucion.getTime() <= inicio.getTime()) {
-    devolucion.setDate(devolucion.getDate() + 1);
-    devolucion.setHours(HORA_FIN_TURNO, 0, 0, 0);
+  if (h >= 6 && h < 14) {
+    // Turno de mañana → termina hoy a las 14:00
+    devolucion.setHours(14, 0, 0, 0);
+  } else if (h >= 14 && h < 22) {
+    // Turno de tarde → termina hoy a las 22:00
+    devolucion.setHours(22, 0, 0, 0);
+  } else {
+    // Turno de noche (22:00 – 06:00)
+    // Si empezamos entre las 22:00 y 23:59 → termina mañana a las 06:00
+    // Si empezamos entre las 00:00 y 05:59 → termina hoy a las 06:00
+    if (h >= 22) {
+      devolucion.setDate(devolucion.getDate() + 1);
+    }
+    devolucion.setHours(6, 0, 0, 0);
   }
+
   return dateToLocal(devolucion);
+}
+
+/** Determina en qué turno cae una fecha */
+function turnoDe(fecha: string): typeof TURNOS[number] {
+  const h = new Date(fecha).getHours();
+  if (h >= 6 && h < 14) return TURNOS[0];
+  if (h >= 14 && h < 22) return TURNOS[1];
+  return TURNOS[2];
 }
 
 /** Convierte datetime-local a ISO con zona (para Supabase) */
@@ -100,15 +124,15 @@ const presets: Preset[] = [
     id: 'medio_dia',
     label: 'Medio día',
     icon: Sun,
-    descripcion: 'Devolución 4 horas después',
-    calcular: (f) => addHours(f, 4),
+    descripcion: 'Devolución 12 horas después',
+    calcular: (f) => addHours(f, 12),
   },
   {
-    id: 'dia_completo',
-    label: '1 día completo',
+    id: 'jornada',
+    label: 'Jornada de trabajo',
     icon: CalendarDays,
-    descripcion: 'Hasta fin del turno (20:00)',
-    calcular: (f) => finDiaCompleto(f),
+    descripcion: 'Hasta el fin del turno activo',
+    calcular: (f) => finJornada(f),
   },
   {
     id: 'semana',
@@ -144,19 +168,19 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   const [presetActivo, setPresetActivo] = useState<string | null>(null);
 
   const [form, setForm] = useState(() => {
-    const now = nowLocal();
-    return {
-      equipo_id: '',
-      usuario_id: '',
-      fecha_prestamo: now,
-      fecha_devolucion_prevista: finDiaCompleto(now), // por defecto: día completo
-      observaciones: '',
-    };
-  });
+  const now = nowLocal();
+  return {
+    equipo_id: '',
+    usuario_id: '',
+    fecha_prestamo: now,
+    fecha_devolucion_prevista: finJornada(now),   // ← antes era finDiaCompleto
+    observaciones: '',
+  };
+});
 
   // Marcar "día completo" como preset por defecto
   useEffect(() => {
-    setPresetActivo('dia_completo');
+    setPresetActivo('jornada');  
   }, []);
 
   // ============================================================
@@ -448,11 +472,16 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
               <div className="flex items-center gap-3 self-center">
                 <div className="hidden sm:block w-12 h-px bg-airbus-sky/40" />
                 <div className="flex flex-col items-center">
-                  <Zap className="w-4 h-4 text-airbus-orange" />
-                  <span className="text-[10px] font-bold text-airbus-orange uppercase tracking-wider mt-0.5">
-                    {duracion ?? '—'}
-                  </span>
-                </div>
+		  <Zap className="w-4 h-4 text-airbus-orange" />
+		  <span className="text-[10px] font-bold text-airbus-orange uppercase tracking-wider mt-0.5">
+		    {duracion ?? '—'}
+		  </span>
+ 		 {presetActivo === 'jornada' && form.fecha_prestamo && (
+ 		   <span className="text-[9px] text-airbus-sky font-medium uppercase tracking-wider mt-0.5">
+ 		     Turno {turnoDe(form.fecha_prestamo).label}
+		    </span>
+		  )}
+		</div>
                 <div className="hidden sm:block w-12 h-px bg-airbus-sky/40" />
               </div>
 
