@@ -1,13 +1,9 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode, Settings,
-  ArrowRightLeft, UserCog,
+  LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode,
+  Settings, ArrowRightLeft, UserCog,
 } from 'lucide-react';
 import { usePerfil } from '../../hooks/usePerfil';
-import {
-  LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode, Settings,
-  ArrowRightLeft, UserCog, UserPlus,
-} from 'lucide-react';
 
 interface Item {
   to: string;
@@ -26,7 +22,6 @@ const items: Item[] = [
   { to: '/estadisticas',  label: 'Estadísticas',   icon: BarChart3 },
   { to: '/usuarios',      label: 'Usuarios',       icon: UserCog, soloAdmin: true },
   { to: '/ajustes',       label: 'Ajustes',        icon: Settings },
-  { to: '/usuarios/nuevo', label: 'Alta de usuario', icon: UserPlus, soloAdmin: true },
 ];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
