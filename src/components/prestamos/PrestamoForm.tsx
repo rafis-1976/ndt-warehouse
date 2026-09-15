@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Package, Calendar, Clock, Sun, Zap,
-  CalendarDays, Barcode, Camera, Plus, CheckCircle2, Trash2, X,
+  CalendarDays, Barcode, Camera, Plus, CheckCircle2, Trash2, X, Hash,
 } from 'lucide-react';
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 import { Modal } from '../ui/Modal';
 import { BarcodeScanner } from '../BarcodeScanner';
-import { sePuedePrestar, motivoNoPrestable, estadoCalibracion } from '../../lib/calibracion';
+import { sePuedePrestar, motivoNoPrestable } from '../../lib/calibracion';
 
 // ============================================================
 // Helpers de fecha y hora
@@ -17,15 +17,18 @@ function nowLocal(): string {
   const tz = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - tz).toISOString().slice(0, 16);
 }
+
 function dateToLocal(d: Date): string {
   const tz = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - tz).toISOString().slice(0, 16);
 }
+
 function addDays(base: string, days: number): string {
   const d = new Date(base);
   d.setDate(d.getDate() + days);
   return dateToLocal(d);
 }
+
 function addHours(base: string, hours: number): string {
   const d = new Date(base);
   d.setHours(d.getHours() + hours);
@@ -59,8 +62,12 @@ function toISO(local: string): string | null {
 function fmt(local: string): string {
   if (!local) return '—';
   return new Date(local).toLocaleString('es-ES', {
-    weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -68,20 +75,53 @@ function fmt(local: string): string {
 // Presets de duración
 // ============================================================
 interface Preset {
-  id: string; label: string; icon: any; descripcion: string;
-  calcular: (f: string) => string;
+  id: string;
+  label: string;
+  icon: any;
+  descripcion: string;
+  calcular: (fechaInicio: string) => string;
 }
 
 const presets: Preset[] = [
-  { id: 'hora',        label: '1 hora',            icon: Clock,        descripcion: '+1 hora',              calcular: (f) => addHours(f, 1) },
-  { id: 'medio_dia',   label: 'Medio día',         icon: Sun,          descripcion: '+12 horas',            calcular: (f) => addHours(f, 12) },
-  { id: 'jornada',     label: 'Jornada de trabajo',icon: CalendarDays, descripcion: 'Hasta fin del turno',  calcular: (f) => finJornada(f) },
-  { id: 'semana',      label: '1 semana',          icon: Calendar,     descripcion: '+7 días',              calcular: (f) => addDays(f, 7) },
-  { id: 'dos_semanas', label: '2 semanas',         icon: Calendar,     descripcion: '+14 días',             calcular: (f) => addDays(f, 14) },
+  {
+    id: 'hora',
+    label: '1 hora',
+    icon: Clock,
+    descripcion: 'Devolución 1 hora después',
+    calcular: (f) => addHours(f, 1),
+  },
+  {
+    id: 'medio_dia',
+    label: 'Medio día',
+    icon: Sun,
+    descripcion: 'Devolución 12 horas después',
+    calcular: (f) => addHours(f, 12),
+  },
+  {
+    id: 'jornada',
+    label: 'Jornada de trabajo',
+    icon: CalendarDays,
+    descripcion: 'Hasta el fin del turno activo',
+    calcular: (f) => finJornada(f),
+  },
+  {
+    id: 'semana',
+    label: '1 semana',
+    icon: Calendar,
+    descripcion: 'Devolución 7 días después',
+    calcular: (f) => addDays(f, 7),
+  },
+  {
+    id: 'dos_semanas',
+    label: '2 semanas',
+    icon: Calendar,
+    descripcion: 'Devolución 14 días después',
+    calcular: (f) => addDays(f, 14),
+  },
 ];
 
 // ============================================================
-// Tipos de aviso del modal de cámara
+// Tipos
 // ============================================================
 interface ScanLog {
   code: string;
@@ -92,9 +132,6 @@ interface ScanLog {
   ts: number;
 }
 
-// ============================================================
-// Props
-// ============================================================
 interface PrestamoFormProps {
   onSuccess: () => void;
   onCancel: () => void;
@@ -137,16 +174,17 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
       const [eq, us] = await Promise.all([
         supabase
           .from('equipos')
-          .select('id, id_equipo, nombre, codigo_barras, estado, proxima_calibracion, tecnicas_ndt(codigo, nombre)')
+          .select(
+            'id, id_equipo, nombre, codigo_barras, estado, proxima_calibracion, tecnicas_ndt(codigo, nombre)'
+          )
           .eq('estado', 'disponible'),
         supabase
           .from('perfiles')
-          .select('id, nombre_completo, email')
+          .select('id, num_nomina, nombre_completo, email')
           .eq('activo', true)
           .order('nombre_completo'),
       ]);
 
-      // Filtrar solo los prestables (excluye vencidos por si acaso)
       const prestables = ((eq.data ?? []) as any[])
         .filter((e) => sePuedePrestar(e))
         .sort((a, b) => {
@@ -165,6 +203,8 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  const usuarioSeleccionado = usuarios.find((u) => u.id === form.usuario_id);
 
   // ============================================================
   // Añadir / quitar equipos
@@ -199,7 +239,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
     const eq = equiposDisponibles.find((e) => e.codigo_barras === codigo);
     if (!eq) return { estado: 'no_encontrado' };
 
-    // Comprobar regla NDT
     const motivo = motivoNoPrestable(eq as any);
     if (motivo) {
       setAviso(`🚫 ${eq.id_equipo ?? eq.nombre}: ${motivo}`);
@@ -239,7 +278,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
     const now = Date.now();
     const last = lastScanRef.current;
 
-    // Ignorar si es el mismo código en menos de 1.5 segundos
     if (last && last.code === codigo && now - last.time < 1500) return;
     lastScanRef.current = { code: codigo, time: now };
 
@@ -256,7 +294,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
     setScanLog((prev) => [log, ...prev].slice(0, 20));
 
-    // Vibración háptica en móviles
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       if (res.estado === 'ok') navigator.vibrate(80);
       else navigator.vibrate([60, 60, 60]);
@@ -327,7 +364,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
     setLoading(true);
     try {
-      // 1. Insertar un préstamo por equipo
       const prestamosPayload = equiposSeleccionados.map((eq) => ({
         equipo_id: eq.id,
         usuario_id: form.usuario_id,
@@ -340,7 +376,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
       const { error: insErr } = await supabase.from('prestamos').insert(prestamosPayload);
       if (insErr) throw insErr;
 
-      // 2. Marcar todos los equipos como prestados
       const ids = equiposSeleccionados.map((e) => e.id);
       const { error: updErr } = await supabase
         .from('equipos')
@@ -348,7 +383,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         .in('id', ids);
       if (updErr) throw updErr;
 
-      // 3. Registrar movimientos de salida
       const movimientosPayload = equiposSeleccionados.map((eq) => ({
         equipo_id: eq.id,
         tipo: 'salida',
@@ -397,11 +431,40 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
               <option value="">— Selecciona un usuario —</option>
               {usuarios.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.nombre_completo} ({u.email})
+                  {u.num_nomina ? `[${u.num_nomina}] ` : ''}
+                  {u.nombre_completo} — {u.email}
                 </option>
               ))}
             </select>
           </Field>
+
+          {/* Info del usuario seleccionado */}
+          {usuarioSeleccionado && (
+            <div className="mt-3 p-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-airbus-blue text-white flex items-center justify-center text-sm font-bold shrink-0">
+                {usuarioSeleccionado.nombre_completo
+                  .split(' ')
+                  .map((n: string) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                {usuarioSeleccionado.num_nomina && (
+                  <p className="text-xs font-mono font-bold text-airbus-blue flex items-center gap-1">
+                    <Hash className="w-3 h-3" />
+                    {usuarioSeleccionado.num_nomina}
+                  </p>
+                )}
+                <p className="text-sm font-medium text-gray-800 truncate">
+                  {usuarioSeleccionado.nombre_completo}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {usuarioSeleccionado.email}
+                </p>
+              </div>
+            </div>
+          )}
         </Section>
 
         {/* ============ EQUIPOS ============ */}
@@ -412,7 +475,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         >
           <div className="space-y-3">
 
-            {/* Selector + botón cámara */}
+            {/* Selector dropdown + botón cámara */}
             <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
               <EquipoSelect
                 equipos={equiposDisponibles.filter(
@@ -757,7 +820,8 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                         {log.code}
                       </p>
                       <p className="text-[10px] text-gray-500 truncate">
-                        {log.estado === 'ok' && `✓ Añadido: ${log.id_equipo} ${log.nombre}`}
+                        {log.estado === 'ok' &&
+                          `✓ Añadido: ${log.id_equipo} ${log.nombre}`}
                         {log.estado === 'duplicado' && '⚠ Ya estaba en la lista'}
                         {log.estado === 'no_encontrado' && '✕ No encontrado o no disponible'}
                         {log.estado === 'no_prestable' && `🚫 ${log.motivo ?? 'No prestable'}`}
