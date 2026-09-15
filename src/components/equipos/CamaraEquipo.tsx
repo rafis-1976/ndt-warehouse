@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Camera, X, Check, RotateCcw, Image as ImageIcon, Upload,
-  Loader2, AlertCircle, Trash2,
+  Camera, Check, RotateCcw, Image as ImageIcon, Loader2,
+  AlertCircle, Trash2, Scissors, Sparkles,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import {
-  subirFotoArchivo, subirFotoDataURL, eliminarFoto, type FotoEquipo,
+  subirFotoArchivo, subirFotoDataURL, subirFotoBlob,
+  eliminarFoto, type FotoEquipo,
 } from '../../lib/storageFotos';
+import { recortarFondo, dataURLtoBlob } from '../../lib/recorteFondo';
 
 interface CamaraEquipoProps {
   equipoId: string;
@@ -21,6 +23,9 @@ export function CamaraEquipo({
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [captura, setCaptura] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const [progreso, setProgreso] = useState(0);
+  const [recortarAuto, setRecortarAuto] = useState(true);
   const [error, setError] = useState('');
   const [camaraActiva, setCamaraActiva] = useState(false);
 
@@ -61,11 +66,11 @@ export function CamaraEquipo({
   };
 
   useEffect(() => {
-    if (camaraAbierta) {
-      iniciarCamara();
-    } else {
+    if (camaraAbierta) iniciarCamara();
+    else {
       detenerCamara();
       setCaptura(null);
+      setProgreso(0);
     }
     return () => { detenerCamara(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,21 +79,20 @@ export function CamaraEquipo({
   const capturar = () => {
     const video = videoRef.current;
     if (!video) return;
-
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const dataURL = canvas.toDataURL('image/jpeg', 0.85);
+    const dataURL = canvas.toDataURL('image/jpeg', 0.9);
     setCaptura(dataURL);
     detenerCamara();
   };
 
   const repetir = () => {
     setCaptura(null);
+    setProgreso(0);
     iniciarCamara();
   };
 
@@ -96,15 +100,27 @@ export function CamaraEquipo({
     if (!captura) return;
     setSubiendo(true);
     setError('');
+    setProgreso(0);
+
     try {
-      const foto = await subirFotoDataURL(captura, equipoId);
-      onChange([...fotos, foto]);
+      if (recortarAuto) {
+        setProcesando(true);
+        const originalBlob = dataURLtoBlob(captura);
+        const recortado = await recortarFondo(originalBlob, setProgreso);
+        const foto = await subirFotoBlob(recortado, equipoId, 'png');
+        onChange([...fotos, foto]);
+      } else {
+        const foto = await subirFotoDataURL(captura, equipoId);
+        onChange([...fotos, foto]);
+      }
       setCamaraAbierta(false);
       setCaptura(null);
     } catch (err: any) {
-      setError(err.message ?? 'Error al subir la foto');
+      setError(err.message ?? 'Error al procesar la imagen');
     } finally {
       setSubiendo(false);
+      setProcesando(false);
+      setProgreso(0);
     }
   };
 
@@ -157,12 +173,12 @@ export function CamaraEquipo({
         {fotos.map((foto) => (
           <div
             key={foto.path}
-            className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-gray-100"
+            className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-gradient-to-br from-gray-50 to-gray-100"
           >
             <img
               src={foto.url}
               alt="Foto equipo"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
             />
             {!disabled && (
               <button
@@ -223,7 +239,7 @@ export function CamaraEquipo({
 
       <Modal
         open={camaraAbierta}
-        onClose={() => setCamaraAbierta(false)}
+        onClose={() => { if (!subiendo) setCamaraAbierta(false); }}
         title={captura ? 'Revisar foto' : 'Hacer foto al equipo'}
         size="md"
       >
@@ -242,6 +258,10 @@ export function CamaraEquipo({
                     <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-airbus-red text-white text-xs font-bold px-2 py-1 rounded">
                       <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                       EN DIRECTO
+                    </div>
+                    <div className="absolute inset-8 border-2 border-white/40 border-dashed rounded-xl" />
+                    <div className="absolute bottom-3 left-0 right-0 text-center text-white/80 text-xs">
+                      Centra el equipo en el recuadro
                     </div>
                   </div>
                 )}
@@ -266,9 +286,74 @@ export function CamaraEquipo({
             </>
           ) : (
             <>
-              <div className="rounded-xl overflow-hidden border border-gray-200">
+              <div className="rounded-xl overflow-hidden border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100">
                 <img src={captura} alt="Captura" className="w-full" />
               </div>
+
+              <div
+                className={`flex items-start gap-3 p-3 rounded-lg border-2 transition cursor-pointer ${
+                  recortarAuto
+                    ? 'bg-airbus-sky/10 border-airbus-sky'
+                    : 'bg-gray-50 border-gray-200'
+                }`}
+                onClick={() => !subiendo && setRecortarAuto(!recortarAuto)}
+              >
+                <div
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    recortarAuto ? 'bg-airbus-sky text-white' : 'bg-gray-200 text-gray-500'
+                  }`}
+                >
+                  <Scissors className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                    Recortar fondo automáticamente
+                    {recortarAuto && <Sparkles className="w-3.5 h-3.5 text-airbus-sky" />}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {recortarAuto
+                      ? 'Se eliminará el fondo y solo se verá el equipo (PNG transparente)'
+                      : 'Se guardará la foto tal cual, con el fondo original'}
+                  </p>
+                </div>
+                <div
+                  className={`w-5 h-5 rounded-full border-2 shrink-0 mt-1 flex items-center justify-center transition ${
+                    recortarAuto ? 'border-airbus-sky bg-airbus-sky' : 'border-gray-300'
+                  }`}
+                >
+                  {recortarAuto && <div className="w-2 h-2 rounded-full bg-white" />}
+                </div>
+              </div>
+
+              {procesando && (
+                <div className="bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Loader2 className="w-4 h-4 text-airbus-sky animate-spin" />
+                    <span className="text-xs font-medium text-airbus-blue">
+                      Procesando imagen...
+                    </span>
+                    <span className="ml-auto text-xs font-bold text-airbus-sky">
+                      {progreso}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-airbus-sky transition-all duration-300"
+                      style={{ width: `${progreso}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    La primera vez puede tardar más — se descarga el modelo de IA (~40 MB)
+                  </p>
+                </div>
+              )}
+
+              {error && (
+                <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-xs p-2.5 rounded-lg">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  {error}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -291,7 +376,7 @@ export function CamaraEquipo({
                   ) : (
                     <Check className="w-4 h-4" />
                   )}
-                  Guardar foto
+                  {procesando ? 'Procesando...' : 'Guardar foto'}
                 </button>
               </div>
             </>
