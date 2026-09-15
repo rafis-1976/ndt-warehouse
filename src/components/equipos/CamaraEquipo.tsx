@@ -27,6 +27,7 @@ export function CamaraEquipo({
   const [progreso, setProgreso] = useState(0);
   const [recortarAuto, setRecortarAuto] = useState(true);
   const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
   const [camaraActiva, setCamaraActiva] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -71,6 +72,7 @@ export function CamaraEquipo({
       detenerCamara();
       setCaptura(null);
       setProgreso(0);
+      setDebugInfo('');
     }
     return () => { detenerCamara(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,6 +95,8 @@ export function CamaraEquipo({
   const repetir = () => {
     setCaptura(null);
     setProgreso(0);
+    setDebugInfo('');
+    setError('');
     iniciarCamara();
   };
 
@@ -100,27 +104,57 @@ export function CamaraEquipo({
     if (!captura) return;
     setSubiendo(true);
     setError('');
+    setDebugInfo('');
     setProgreso(0);
 
     try {
       if (recortarAuto) {
         setProcesando(true);
+        setDebugInfo('Iniciando recorte con IA...');
+
+        if (typeof recortarFondo !== 'function') {
+          throw new Error('Función recortarFondo no disponible');
+        }
+
         const originalBlob = dataURLtoBlob(captura);
-        const recortado = await recortarFondo(originalBlob, setProgreso);
+        setDebugInfo(`Imagen original: ${(originalBlob.size / 1024).toFixed(1)} KB`);
+
+        const recortado = await recortarFondo(originalBlob, (p) => {
+          setProgreso(p);
+          setDebugInfo(`Procesando: ${p}%`);
+        });
+
+        if (!recortado || recortado.size === 0) {
+          throw new Error('El recorte devolvió un archivo vacío');
+        }
+
+        if (recortado.size === originalBlob.size) {
+          throw new Error(
+            'El recorte no produjo cambios. Es posible que el modelo no se haya cargado correctamente.'
+          );
+        }
+
+        setDebugInfo(
+          `Recorte OK: ${(recortado.size / 1024).toFixed(1)} KB (${recortado.type})`
+        );
+
         const foto = await subirFotoBlob(recortado, equipoId, 'png');
         onChange([...fotos, foto]);
       } else {
         const foto = await subirFotoDataURL(captura, equipoId);
         onChange([...fotos, foto]);
       }
+
       setCamaraAbierta(false);
       setCaptura(null);
     } catch (err: any) {
-      setError(err.message ?? 'Error al procesar la imagen');
+      console.error('[CamaraEquipo] Error:', err);
+      const mensaje = err?.message ?? 'Error desconocido';
+      setError(`Error al recortar: ${mensaje}`);
+      setDebugInfo(`Detalle técnico: ${err?.name ?? 'Error'} — ${mensaje}`);
     } finally {
       setSubiendo(false);
       setProcesando(false);
-      setProgreso(0);
     }
   };
 
@@ -230,10 +264,15 @@ export function CamaraEquipo({
         </p>
       )}
 
-      {error && (
+      {error && !camaraAbierta && (
         <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-xs p-2.5 rounded-lg">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          {error}
+          <div className="flex-1">
+            <p>{error}</p>
+            {debugInfo && (
+              <p className="mt-1 opacity-70 font-mono text-[10px]">{debugInfo}</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -348,10 +387,21 @@ export function CamaraEquipo({
                 </div>
               )}
 
+              {debugInfo && !procesando && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+                  <p className="text-[10px] font-mono text-gray-600 break-all">
+                    {debugInfo}
+                  </p>
+                </div>
+              )}
+
               {error && (
-                <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-xs p-2.5 rounded-lg">
+                <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-xs p-3 rounded-lg">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  {error}
+                  <div className="flex-1">
+                    <p className="font-semibold">Error al procesar la imagen</p>
+                    <p className="mt-1 opacity-90">{error}</p>
+                  </div>
                 </div>
               )}
 
