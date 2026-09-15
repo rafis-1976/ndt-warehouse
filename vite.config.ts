@@ -7,4 +7,10 @@ export default defineConfig({
     port: 5173,
     host: true,
   },
+  optimizeDeps: {
+    exclude: ['@imgly/background-removal', 'onnxruntime-web'],
+  },
+  build: {
+    chunkSizeWarningLimit: 1000,
+  },
 });
