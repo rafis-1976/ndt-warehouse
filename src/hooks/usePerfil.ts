@@ -15,11 +15,14 @@ export interface Perfil {
 }
 
 export function usePerfil() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Esperar a que auth termine
+    if (authLoading) return;
+
     if (!user) {
       setPerfil(null);
       setLoading(false);
@@ -45,21 +48,10 @@ export function usePerfil() {
 
     load();
 
-    // Realtime: si cambia mi perfil, se refleja al instante
-    const channel = supabase
-      .channel('perfil-cambios')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'perfiles', filter: `id=eq.${user.id}` },
-        (payload) => setPerfil(payload.new as Perfil)
-      )
-      .subscribe();
-
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   return { perfil, loading };
 }
