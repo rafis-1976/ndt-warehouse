@@ -12,6 +12,7 @@ import { Estadisticas } from './pages/Estadisticas';
 import { Scan } from './pages/Scan';
 import { Movimientos } from './pages/Movimientos';
 import { Usuarios } from './pages/Usuarios';
+import { UsuarioNuevo } from './pages/UsuarioNuevo';
 // ...
 <Route path="/movimientos" element={
   <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
@@ -59,7 +60,10 @@ export default function App() {
 	<Route path="/usuarios" element={
 	  <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
 	} />
-
+	<Route path="/usuarios/nuevo" element={
+	  <ProtectedRoute><Layout><UsuarioNuevo /></Layout></ProtectedRoute>
+	} />
+	
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
