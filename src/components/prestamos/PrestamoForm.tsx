@@ -1,7 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle, Package, Calendar } from 'lucide-react';
+import {
+  Loader2, Save, AlertCircle, Package, Calendar, Clock,
+  Sun, Moon, Zap, CalendarDays,
+} from 'lucide-react';
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
+
+// ============================================================
+// Constantes de horario laboral
+// ============================================================
+const HORA_INICIO_TURNO = 8;   // 08:00
+const HORA_FIN_TURNO   = 20;   // 20:00
 
 // ============================================================
 // Helpers de fecha y hora
@@ -14,12 +23,43 @@ function nowLocal(): string {
   return new Date(d.getTime() - tz).toISOString().slice(0, 16);
 }
 
+/** Convierte un Date a formato datetime-local */
+function dateToLocal(d: Date): string {
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+}
+
 /** Suma días a un datetime-local */
 function addDays(base: string, days: number): string {
   const d = new Date(base);
   d.setDate(d.getDate() + days);
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+  return dateToLocal(d);
+}
+
+/** Suma horas a un datetime-local */
+function addHours(base: string, hours: number): string {
+  const d = new Date(base);
+  d.setHours(d.getHours() + hours);
+  return dateToLocal(d);
+}
+
+/**
+ * Calcula la devolución para un "día completo".
+ * - Si el préstamo empieza antes de las 08:00 → devolución a las 20:00 del mismo día
+ * - Si empieza entre 08:00 y 20:00 → devolución a las 20:00 del mismo día
+ * - Si empieza después de las 20:00 → devolución a las 20:00 del día siguiente
+ */
+function finDiaCompleto(fechaInicio: string): string {
+  const inicio = new Date(fechaInicio);
+  const devolucion = new Date(inicio);
+  devolucion.setHours(HORA_FIN_TURNO, 0, 0, 0);
+
+  // Si ya ha pasado la hora de fin del turno, mover al día siguiente
+  if (devolucion.getTime() <= inicio.getTime()) {
+    devolucion.setDate(devolucion.getDate() + 1);
+    devolucion.setHours(HORA_FIN_TURNO, 0, 0, 0);
+  }
+  return dateToLocal(devolucion);
 }
 
 /** Convierte datetime-local a ISO con zona (para Supabase) */
@@ -27,6 +67,68 @@ function toISO(local: string): string | null {
   return local ? new Date(local).toISOString() : null;
 }
 
+/** Formatea un datetime-local a texto legible */
+function fmt(local: string): string {
+  if (!local) return '—';
+  return new Date(local).toLocaleString('es-ES', {
+    weekday: 'short',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// ============================================================
+// Presets de duración
+// ============================================================
+interface Preset {
+  id: string;
+  label: string;
+  icon: any;
+  descripcion: string;
+  calcular: (fechaInicio: string) => string;
+}
+
+const presets: Preset[] = [
+  {
+    id: 'hora',
+    label: '1 hora',
+    icon: Clock,
+    descripcion: 'Devolución 1 hora después',
+    calcular: (f) => addHours(f, 1),
+  },
+  {
+    id: 'medio_dia',
+    label: 'Medio día',
+    icon: Sun,
+    descripcion: 'Devolución 4 horas después',
+    calcular: (f) => addHours(f, 4),
+  },
+  {
+    id: 'dia_completo',
+    label: '1 día completo',
+    icon: CalendarDays,
+    descripcion: 'Hasta fin del turno (20:00)',
+    calcular: (f) => finDiaCompleto(f),
+  },
+  {
+    id: 'semana',
+    label: '1 semana',
+    icon: Calendar,
+    descripcion: 'Devolución 7 días después',
+    calcular: (f) => addDays(f, 7),
+  },
+  {
+    id: 'dos_semanas',
+    label: '2 semanas',
+    icon: Calendar,
+    descripcion: 'Devolución 14 días después',
+    calcular: (f) => addDays(f, 14),
+  },
+];
+
+// ============================================================
+// Componente principal
+// ============================================================
 interface PrestamoFormProps {
   onSuccess: () => void;
   onCancel: () => void;
@@ -39,19 +141,26 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
 
+  const [presetActivo, setPresetActivo] = useState<string | null>(null);
+
   const [form, setForm] = useState(() => {
     const now = nowLocal();
     return {
       equipo_id: '',
       usuario_id: '',
       fecha_prestamo: now,
-      fecha_devolucion_prevista: addDays(now, 7),
+      fecha_devolucion_prevista: finDiaCompleto(now), // por defecto: día completo
       observaciones: '',
     };
   });
 
+  // Marcar "día completo" como preset por defecto
+  useEffect(() => {
+    setPresetActivo('dia_completo');
+  }, []);
+
   // ============================================================
-  // Cargar equipos disponibles y usuarios
+  // Cargar datos
   // ============================================================
   useEffect(() => {
     async function load() {
@@ -67,7 +176,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           .order('nombre_completo'),
       ]);
 
-      // Ordenar equipos por técnica y luego por ID
       const sorted = ((eq.data ?? []) as EquipoOption[]).sort((a, b) => {
         const ta = a.tecnicas_ndt?.codigo ?? 'ZZZ';
         const tb = b.tecnicas_ndt?.codigo ?? 'ZZZ';
@@ -84,6 +192,50 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  // ============================================================
+  // Aplicar preset
+  // ============================================================
+  const aplicarPreset = (preset: Preset) => {
+    setPresetActivo(preset.id);
+    const nuevaDevolucion = preset.calcular(form.fecha_prestamo);
+    setForm((f) => ({ ...f, fecha_devolucion_prevista: nuevaDevolucion }));
+  };
+
+  // Si el usuario cambia manualmente la fecha de préstamo, recalcular el preset activo
+  const cambiarFechaPrestamo = (valor: string) => {
+    setForm((f) => {
+      const actualizado = { ...f, fecha_prestamo: valor };
+      // Si hay un preset activo, recalcular la devolución
+      if (presetActivo) {
+        const preset = presets.find((p) => p.id === presetActivo);
+        if (preset) {
+          actualizado.fecha_devolucion_prevista = preset.calcular(valor);
+        }
+      }
+      return actualizado;
+    });
+  };
+
+  // ============================================================
+  // Duración calculada (para mostrar resumen)
+  // ============================================================
+  const duracion = useMemo(() => {
+    if (!form.fecha_prestamo || !form.fecha_devolucion_prevista) return null;
+    const diff = new Date(form.fecha_devolucion_prevista).getTime() -
+                 new Date(form.fecha_prestamo).getTime();
+    if (diff <= 0) return null;
+
+    const horas = Math.floor(diff / 3600000);
+    const minutos = Math.floor((diff % 3600000) / 60000);
+    const dias = Math.floor(horas / 24);
+
+    if (dias >= 1) {
+      const horasRestantes = horas % 24;
+      return `${dias} día${dias !== 1 ? 's' : ''}${horasRestantes ? ` y ${horasRestantes}h` : ''}`;
+    }
+    return `${horas}h${minutos ? ` ${minutos}min` : ''}`;
+  }, [form.fecha_prestamo, form.fecha_devolucion_prevista]);
 
   // ============================================================
   // Enviar formulario
@@ -103,7 +255,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
     setLoading(true);
     try {
-      // 1. Crear el préstamo
       const { error: insErr } = await supabase.from('prestamos').insert({
         equipo_id: form.equipo_id,
         usuario_id: form.usuario_id,
@@ -114,13 +265,11 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
       });
       if (insErr) throw insErr;
 
-      // 2. Marcar equipo como prestado
       await supabase
         .from('equipos')
         .update({ estado: 'prestado' })
         .eq('id', form.equipo_id);
 
-      // 3. Registrar movimiento de salida
       await supabase.from('movimientos').insert({
         equipo_id: form.equipo_id,
         tipo: 'salida',
@@ -167,7 +316,9 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
 
-      {/* ------------------ EQUIPO Y USUARIO ------------------ */}
+      {/* ============================================================
+          EQUIPO Y USUARIO
+          ============================================================ */}
       <Section title="Equipo y usuario">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Equipo *">
@@ -195,7 +346,53 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         </div>
       </Section>
 
-      {/* ------------------ FECHAS Y HORAS ------------------ */}
+      {/* ============================================================
+          PRESETS DE DURACIÓN
+          ============================================================ */}
+      <Section title="Duración del préstamo">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+          {presets.map((preset) => {
+            const Icon = preset.icon;
+            const activo = presetActivo === preset.id;
+            const esDestacado = preset.id === 'dia_completo';
+
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => aplicarPreset(preset)}
+                title={preset.descripcion}
+                className={`
+                  relative flex flex-col items-center justify-center gap-1.5
+                  px-3 py-3 rounded-lg border-2 transition-all
+                  ${activo
+                    ? esDestacado
+                      ? 'bg-airbus-sky text-white border-airbus-sky shadow-md'
+                      : 'bg-airbus-blue text-white border-airbus-blue shadow-md'
+                    : esDestacado
+                      ? 'bg-airbus-sky/5 text-airbus-sky border-airbus-sky/30 hover:border-airbus-sky hover:bg-airbus-sky/10'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-xs font-semibold text-center leading-tight">
+                  {preset.label}
+                </span>
+                {esDestacado && !activo && (
+                  <span className="absolute -top-2 -right-2 bg-airbus-orange text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    NUEVO
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* ============================================================
+          FECHAS Y HORAS
+          ============================================================ */}
       <Section title="Fechas y horas">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -206,7 +403,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                 type="datetime-local"
                 className="input pl-10"
                 value={form.fecha_prestamo}
-                onChange={(e) => update('fecha_prestamo', e.target.value)}
+                onChange={(e) => cambiarFechaPrestamo(e.target.value)}
                 required
               />
             </div>
@@ -222,40 +419,59 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                 type="datetime-local"
                 className="input pl-10"
                 value={form.fecha_devolucion_prevista}
-                onChange={(e) => update('fecha_devolucion_prevista', e.target.value)}
+                onChange={(e) => {
+                  update('fecha_devolucion_prevista', e.target.value);
+                  setPresetActivo(null); // personalizado
+                }}
               />
             </div>
             <p className="mt-1 text-[11px] text-gray-400">
-              Por defecto: 7 días después del préstamo
+              Se recalcula automáticamente al cambiar la duración
             </p>
           </Field>
 
         </div>
 
-        {/* Resumen legible de las fechas */}
-        {form.fecha_prestamo && (
-          <div className="mt-3 p-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg text-xs">
-            <p className="text-gray-600">
-              <span className="font-semibold text-airbus-blue">Préstamo:</span>{' '}
-              {new Date(form.fecha_prestamo).toLocaleString('es-ES', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit',
-              })}
-            </p>
-            {form.fecha_devolucion_prevista && (
-              <p className="text-gray-600 mt-1">
-                <span className="font-semibold text-airbus-blue">Devolución:</span>{' '}
-                {new Date(form.fecha_devolucion_prevista).toLocaleString('es-ES', {
-                  day: '2-digit', month: '2-digit', year: 'numeric',
-                  hour: '2-digit', minute: '2-digit',
-                })}
-              </p>
-            )}
+        {/* Resumen visual */}
+        {form.fecha_prestamo && form.fecha_devolucion_prevista && (
+          <div className="mt-3 p-4 bg-gradient-to-br from-airbus-sky/5 to-airbus-blue/5 border border-airbus-sky/20 rounded-lg">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Desde
+                </p>
+                <p className="text-sm font-medium text-airbus-blue capitalize">
+                  {fmt(form.fecha_prestamo)}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 self-center">
+                <div className="hidden sm:block w-12 h-px bg-airbus-sky/40" />
+                <div className="flex flex-col items-center">
+                  <Zap className="w-4 h-4 text-airbus-orange" />
+                  <span className="text-[10px] font-bold text-airbus-orange uppercase tracking-wider mt-0.5">
+                    {duracion ?? '—'}
+                  </span>
+                </div>
+                <div className="hidden sm:block w-12 h-px bg-airbus-sky/40" />
+              </div>
+
+              <div className="flex-1 min-w-[200px] sm:text-right">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Hasta
+                </p>
+                <p className="text-sm font-medium text-airbus-blue capitalize">
+                  {fmt(form.fecha_devolucion_prevista)}
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </Section>
 
-      {/* ------------------ OBSERVACIONES ------------------ */}
+      {/* ============================================================
+          OBSERVACIONES
+          ============================================================ */}
       <Section title="Observaciones">
         <textarea
           className="input min-h-[80px] resize-y"
@@ -265,7 +481,9 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         />
       </Section>
 
-      {/* ------------------ ERROR ------------------ */}
+      {/* ============================================================
+          ERROR
+          ============================================================ */}
       {error && (
         <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -273,7 +491,9 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         </div>
       )}
 
-      {/* ------------------ BOTONES ------------------ */}
+      {/* ============================================================
+          BOTONES
+          ============================================================ */}
       <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
         <button type="button" onClick={onCancel} className="btn-ghost border border-gray-300">
           Cancelar
