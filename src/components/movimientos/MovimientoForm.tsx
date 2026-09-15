@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Save, AlertCircle, Package, ArrowRight } from 'lucide-react';
+import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 
 interface MovimientoFormProps {
   onSuccess: () => void;
@@ -15,7 +16,7 @@ const tipos = [
 ];
 
 export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
-  const [equipos, setEquipos] = useState<any[]>([]);
+  const [equipos, setEquipos] = useState<EquipoOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
@@ -32,10 +33,10 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
   useEffect(() => {
     supabase
       .from('equipos')
-      .select('id, id_equipo, nombre, codigo_barras, ubicacion')
+      .select('id, id_equipo, nombre, codigo_barras, ubicacion, tecnicas_ndt(codigo, nombre)')
       .order('nombre')
       .then(({ data }) => {
-        setEquipos(data ?? []);
+        setEquipos((data ?? []) as EquipoOption[]);
         setLoadingData(false);
       });
   }, []);
@@ -43,9 +44,8 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
-  // Al seleccionar equipo, autorellenar origen con su ubicación actual
   const handleEquipoChange = (id: string) => {
-    const eq = equipos.find((e) => e.id === id);
+    const eq = equipos.find((e) => e.id === id) as any;
     setForm((f) => ({
       ...f,
       equipo_id: id,
@@ -56,13 +56,10 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
     if (!form.equipo_id) return setError('Selecciona un equipo');
 
     setLoading(true);
-
     try {
-      // 1. Crear el movimiento
       const { error: insErr } = await supabase.from('movimientos').insert({
         equipo_id: form.equipo_id,
         tipo: form.tipo,
@@ -73,7 +70,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       });
       if (insErr) throw insErr;
 
-      // 2. Actualizar ubicación del equipo si es transferencia
       if (form.tipo === 'transferencia' && form.ubicacion_destino.trim()) {
         await supabase
           .from('equipos')
@@ -105,19 +101,12 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       <Section title="Equipo y tipo">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Equipo *">
-            <select
-              className="input"
+            <EquipoSelect
+              equipos={equipos}
               value={form.equipo_id}
-              onChange={(e) => handleEquipoChange(e.target.value)}
-              required
-            >
-              <option value="">— Selecciona un equipo —</option>
-              {equipos.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.id_equipo ? `[${eq.id_equipo}] ` : ''}{eq.nombre} · {eq.codigo_barras}
-                </option>
-              ))}
-            </select>
+              onChange={handleEquipoChange}
+              placeholder="— Selecciona un equipo —"
+            />
           </Field>
           <Field label="Tipo de movimiento *">
             <select
@@ -134,7 +123,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       </Section>
 
       <Section title="Ubicaciones">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
           <Field label="Ubicación origen">
             <input
               className="input"
@@ -143,6 +132,9 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               placeholder="Estante A-3"
             />
           </Field>
+          <div className="hidden md:flex items-center justify-center pb-2">
+            <ArrowRight className="w-5 h-5 text-airbus-sky" />
+          </div>
           <Field label="Ubicación destino">
             <input
               className="input"
