@@ -414,7 +414,7 @@ export function UsuarioNuevo() {
                   onChange={(e) =>
                     update('num_nomina', e.target.value.replace(/\D/g, ''))
                   }
-                  placeholder="471796"
+                  placeholder=""
                   maxLength={10}
                   autoFocus
                   required
@@ -457,7 +457,7 @@ export function UsuarioNuevo() {
                   }`}
                   value={form.nombre_completo}
                   onChange={(e) => update('nombre_completo', e.target.value)}
-                  placeholder="R. Sánchez Ce"
+                  placeholder=""
                   required
                 />
               </div>
