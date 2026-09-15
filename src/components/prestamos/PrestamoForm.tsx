@@ -7,6 +7,7 @@ import {
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 import { Modal } from '../ui/Modal';
 import { BarcodeScanner } from '../BarcodeScanner';
+import { sePuedePrestar, motivoNoPrestable, estadoCalibracion } from '../../lib/calibracion';
 
 // ============================================================
 // Helpers de fecha y hora
@@ -30,21 +31,31 @@ function addHours(base: string, hours: number): string {
   d.setHours(d.getHours() + hours);
   return dateToLocal(d);
 }
+
+/**
+ * Devuelve la hora de fin del turno activo según la hora del préstamo.
+ * Turnos: 06:00-14:00 | 14:00-22:00 | 22:00-06:00
+ */
 function finJornada(fechaInicio: string): string {
   const inicio = new Date(fechaInicio);
   const h = inicio.getHours();
   const d = new Date(inicio);
-  if (h >= 6 && h < 14) d.setHours(14, 0, 0, 0);
-  else if (h >= 14 && h < 22) d.setHours(22, 0, 0, 0);
-  else {
+
+  if (h >= 6 && h < 14) {
+    d.setHours(14, 0, 0, 0);
+  } else if (h >= 14 && h < 22) {
+    d.setHours(22, 0, 0, 0);
+  } else {
     if (h >= 22) d.setDate(d.getDate() + 1);
     d.setHours(6, 0, 0, 0);
   }
   return dateToLocal(d);
 }
+
 function toISO(local: string): string | null {
   return local ? new Date(local).toISOString() : null;
 }
+
 function fmt(local: string): string {
   if (!local) return '—';
   return new Date(local).toLocaleString('es-ES', {
@@ -54,12 +65,13 @@ function fmt(local: string): string {
 }
 
 // ============================================================
-// Presets
+// Presets de duración
 // ============================================================
 interface Preset {
   id: string; label: string; icon: any; descripcion: string;
   calcular: (f: string) => string;
 }
+
 const presets: Preset[] = [
   { id: 'hora',        label: '1 hora',            icon: Clock,        descripcion: '+1 hora',              calcular: (f) => addHours(f, 1) },
   { id: 'medio_dia',   label: 'Medio día',         icon: Sun,          descripcion: '+12 horas',            calcular: (f) => addHours(f, 12) },
@@ -73,9 +85,10 @@ const presets: Preset[] = [
 // ============================================================
 interface ScanLog {
   code: string;
-  estado: 'ok' | 'duplicado' | 'no_encontrado' | 'ya_prestado';
+  estado: 'ok' | 'duplicado' | 'no_encontrado' | 'no_prestable';
   nombre?: string;
   id_equipo?: string;
+  motivo?: string;
   ts: number;
 }
 
@@ -104,7 +117,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   const [scanLog, setScanLog] = useState<ScanLog[]>([]);
 
   const barcodeRef = useRef<HTMLInputElement>(null);
-  // Debounce del escáner: guarda el último código y su timestamp
   const lastScanRef = useRef<{ code: string; time: number } | null>(null);
 
   const [form, setForm] = useState(() => {
@@ -118,28 +130,33 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   });
 
   // ============================================================
-  // Cargar equipos + usuarios
+  // Cargar equipos prestables + usuarios
   // ============================================================
   useEffect(() => {
     async function load() {
       const [eq, us] = await Promise.all([
-        supabase.from('equipos')
-          .select('id, id_equipo, nombre, codigo_barras, estado, tecnicas_ndt(codigo, nombre)')
+        supabase
+          .from('equipos')
+          .select('id, id_equipo, nombre, codigo_barras, estado, proxima_calibracion, tecnicas_ndt(codigo, nombre)')
           .eq('estado', 'disponible'),
-        supabase.from('perfiles')
+        supabase
+          .from('perfiles')
           .select('id, nombre_completo, email')
           .eq('activo', true)
           .order('nombre_completo'),
       ]);
 
-      const sorted = ((eq.data ?? []) as EquipoOption[]).sort((a, b) => {
-        const ta = a.tecnicas_ndt?.codigo ?? 'ZZZ';
-        const tb = b.tecnicas_ndt?.codigo ?? 'ZZZ';
-        if (ta !== tb) return ta.localeCompare(tb);
-        return (a.id_equipo ?? '').localeCompare(b.id_equipo ?? '');
-      });
+      // Filtrar solo los prestables (excluye vencidos por si acaso)
+      const prestables = ((eq.data ?? []) as any[])
+        .filter((e) => sePuedePrestar(e))
+        .sort((a, b) => {
+          const ta = a.tecnicas_ndt?.codigo ?? 'ZZZ';
+          const tb = b.tecnicas_ndt?.codigo ?? 'ZZZ';
+          if (ta !== tb) return ta.localeCompare(tb);
+          return (a.id_equipo ?? '').localeCompare(b.id_equipo ?? '');
+        });
 
-      setEquiposDisponibles(sorted);
+      setEquiposDisponibles(prestables);
       setUsuarios(us.data ?? []);
       setLoadingData(false);
     }
@@ -156,6 +173,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
     if (!id) return;
     const eq = equiposDisponibles.find((e) => e.id === id);
     if (!eq) return;
+
     if (equiposSeleccionados.some((e) => e.id === id)) {
       setAviso(`El equipo ${eq.id_equipo ?? eq.nombre} ya está en la lista`);
       setTimeout(() => setAviso(null), 2500);
@@ -170,17 +188,24 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   };
 
   // ============================================================
-  // Añadir por código de barras (usada por input y por cámara)
-  // Devuelve el resultado para poder mostrarlo en el modal de cámara
+  // Añadir por código de barras
   // ============================================================
   const addByBarcode = (
     texto: string
-  ): { estado: ScanLog['estado']; eq?: EquipoOption } => {
+  ): { estado: ScanLog['estado']; eq?: EquipoOption; motivo?: string } => {
     const codigo = texto.trim();
     if (!codigo) return { estado: 'no_encontrado' };
 
     const eq = equiposDisponibles.find((e) => e.codigo_barras === codigo);
     if (!eq) return { estado: 'no_encontrado' };
+
+    // Comprobar regla NDT
+    const motivo = motivoNoPrestable(eq as any);
+    if (motivo) {
+      setAviso(`🚫 ${eq.id_equipo ?? eq.nombre}: ${motivo}`);
+      setTimeout(() => setAviso(null), 4000);
+      return { estado: 'no_prestable', eq, motivo };
+    }
 
     if (equiposSeleccionados.some((e) => e.id === eq.id)) {
       return { estado: 'duplicado', eq };
@@ -195,32 +220,27 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
     if (e.key === 'Enter') {
       e.preventDefault();
       const res = addByBarcode(barcodeInput);
-      if (res.estado === 'no_encontrado') {
+      if (res.estado === 'ok') {
+        setBarcodeInput('');
+      } else if (res.estado === 'no_encontrado') {
         setAviso(`No hay equipo disponible con código "${barcodeInput.trim()}"`);
         setTimeout(() => setAviso(null), 3000);
       } else if (res.estado === 'duplicado') {
         setAviso(`${res.eq?.id_equipo ?? res.eq?.nombre} ya está en la lista`);
         setTimeout(() => setAviso(null), 2500);
-      } else {
-        setBarcodeInput('');
       }
     }
   };
 
   // ============================================================
-  // Handler del escáner de cámara
-  // - Aplica debounce por código (1.5s)
-  // - NO cierra el modal
-  // - Registra el intento en scanLog
+  // Handler del escáner de cámara (con debounce)
   // ============================================================
   const handleScanFromCamera = (codigo: string) => {
     const now = Date.now();
     const last = lastScanRef.current;
 
     // Ignorar si es el mismo código en menos de 1.5 segundos
-    if (last && last.code === codigo && now - last.time < 1500) {
-      return;
-    }
+    if (last && last.code === codigo && now - last.time < 1500) return;
     lastScanRef.current = { code: codigo, time: now };
 
     const res = addByBarcode(codigo);
@@ -230,12 +250,13 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
       estado: res.estado,
       nombre: res.eq?.nombre,
       id_equipo: res.eq?.id_equipo ?? undefined,
+      motivo: res.motivo,
       ts: now,
     };
 
-    setScanLog((prev) => [log, ...prev].slice(0, 20)); // máximo 20 en el historial
+    setScanLog((prev) => [log, ...prev].slice(0, 20));
 
-    // Vibración breve en móviles compatibles (feedback táctil)
+    // Vibración háptica en móviles
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       if (res.estado === 'ok') navigator.vibrate(80);
       else navigator.vibrate([60, 60, 60]);
@@ -245,7 +266,6 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   const cerrarCamara = () => {
     setCamaraAbierta(false);
     lastScanRef.current = null;
-    // Mantener scanLog durante un momento, luego limpiar
     setTimeout(() => setScanLog([]), 500);
   };
 
@@ -307,6 +327,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
 
     setLoading(true);
     try {
+      // 1. Insertar un préstamo por equipo
       const prestamosPayload = equiposSeleccionados.map((eq) => ({
         equipo_id: eq.id,
         usuario_id: form.usuario_id,
@@ -319,6 +340,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
       const { error: insErr } = await supabase.from('prestamos').insert(prestamosPayload);
       if (insErr) throw insErr;
 
+      // 2. Marcar todos los equipos como prestados
       const ids = equiposSeleccionados.map((e) => e.id);
       const { error: updErr } = await supabase
         .from('equipos')
@@ -326,6 +348,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
         .in('id', ids);
       if (updErr) throw updErr;
 
+      // 3. Registrar movimientos de salida
       const movimientosPayload = equiposSeleccionados.map((eq) => ({
         equipo_id: eq.id,
         tipo: 'salida',
@@ -345,7 +368,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
   };
 
   // ============================================================
-  // Render
+  // Loading
   // ============================================================
   if (loadingData) {
     return (
@@ -355,11 +378,14 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
     );
   }
 
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-5">
 
-        {/* USUARIO */}
+        {/* ============ USUARIO ============ */}
         <Section title="Usuario">
           <Field label="Asignado a *">
             <select
@@ -378,13 +404,15 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           </Field>
         </Section>
 
-        {/* EQUIPOS */}
+        {/* ============ EQUIPOS ============ */}
         <Section
           title={`Equipos a prestar ${
             equiposSeleccionados.length > 0 ? `(${equiposSeleccionados.length})` : ''
           }`}
         >
           <div className="space-y-3">
+
+            {/* Selector + botón cámara */}
             <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
               <EquipoSelect
                 equipos={equiposDisponibles.filter(
@@ -405,6 +433,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
               </button>
             </div>
 
+            {/* Input de código de barras */}
             <div className="relative">
               <Barcode className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -419,14 +448,13 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                 type="button"
                 onClick={() => {
                   const res = addByBarcode(barcodeInput);
-                  if (res.estado === 'no_encontrado') {
+                  if (res.estado === 'ok') setBarcodeInput('');
+                  else if (res.estado === 'no_encontrado') {
                     setAviso(`No hay equipo disponible con código "${barcodeInput.trim()}"`);
                     setTimeout(() => setAviso(null), 3000);
                   } else if (res.estado === 'duplicado') {
                     setAviso(`${res.eq?.id_equipo ?? res.eq?.nombre} ya está en la lista`);
                     setTimeout(() => setAviso(null), 2500);
-                  } else {
-                    setBarcodeInput('');
                   }
                 }}
                 disabled={!barcodeInput.trim()}
@@ -437,6 +465,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
               </button>
             </div>
 
+            {/* Lista de equipos seleccionados */}
             {equiposSeleccionados.length === 0 ? (
               <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
                 <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
@@ -478,6 +507,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
               </div>
             )}
 
+            {/* Aviso */}
             {aviso && (
               <div className="flex items-center gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-xs p-2.5 rounded-lg">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -487,13 +517,14 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           </div>
         </Section>
 
-        {/* DURACIÓN */}
+        {/* ============ DURACIÓN ============ */}
         <Section title="Duración del préstamo">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
             {presets.map((preset) => {
               const Icon = preset.icon;
               const activo = presetActivo === preset.id;
               const esDestacado = preset.id === 'jornada';
+
               return (
                 <button
                   key={preset.id}
@@ -524,7 +555,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           </div>
         </Section>
 
-        {/* FECHAS */}
+        {/* ============ FECHAS ============ */}
         <Section title="Fechas y horas">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Fecha y hora del préstamo *">
@@ -589,7 +620,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           )}
         </Section>
 
-        {/* OBSERVACIONES */}
+        {/* ============ OBSERVACIONES ============ */}
         <Section title="Observaciones">
           <textarea
             className="input min-h-[70px] resize-y"
@@ -599,7 +630,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           />
         </Section>
 
-        {/* ERROR */}
+        {/* ============ ERROR ============ */}
         {error && (
           <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -607,7 +638,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
           </div>
         )}
 
-        {/* BOTONES */}
+        {/* ============ BOTONES ============ */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pt-3 border-t border-gray-100">
           <div className="text-xs text-gray-500 order-2 sm:order-1">
             {equiposSeleccionados.length > 0 && (
@@ -654,9 +685,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
             <div className="flex items-center justify-between bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-airbus-green" />
-                <span className="text-xs text-gray-600">
-                  Añadidos en esta sesión:
-                </span>
+                <span className="text-xs text-gray-600">Añadidos en esta sesión:</span>
               </div>
               <span className="font-bold text-airbus-blue text-sm">
                 {scanLog.filter((s) => s.estado === 'ok').length}
@@ -697,9 +726,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
             {scanLog.length === 0 ? (
               <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
                 <Barcode className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-xs text-gray-400">
-                  Los escaneos aparecerán aquí
-                </p>
+                <p className="text-xs text-gray-400">Los escaneos aparecerán aquí</p>
               </div>
             ) : (
               <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
@@ -721,7 +748,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                       {log.estado === 'duplicado' && (
                         <AlertCircle className="w-4 h-4 text-airbus-orange" />
                       )}
-                      {log.estado === 'no_encontrado' && (
+                      {(log.estado === 'no_encontrado' || log.estado === 'no_prestable') && (
                         <X className="w-4 h-4 text-airbus-red" />
                       )}
                     </span>
@@ -733,6 +760,7 @@ export function PrestamoForm({ onSuccess, onCancel }: PrestamoFormProps) {
                         {log.estado === 'ok' && `✓ Añadido: ${log.id_equipo} ${log.nombre}`}
                         {log.estado === 'duplicado' && '⚠ Ya estaba en la lista'}
                         {log.estado === 'no_encontrado' && '✕ No encontrado o no disponible'}
+                        {log.estado === 'no_prestable' && `🚫 ${log.motivo ?? 'No prestable'}`}
                       </p>
                     </div>
                   </div>
