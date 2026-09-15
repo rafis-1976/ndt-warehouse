@@ -1,12 +1,15 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, Users, RefreshCw, CheckCircle2, AlertTriangle,
-  User as UserIcon, X, Package, Clock,
+  User as UserIcon, X, Package, Hash,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { PrestamoForm } from '../components/prestamos/PrestamoForm';
 
+// ============================================================
+// Estilos por estado
+// ============================================================
 const estadoBadge: Record<string, string> = {
   activo:    'badge badge-blue',
   devuelto:  'badge badge-green',
@@ -14,6 +17,9 @@ const estadoBadge: Record<string, string> = {
   perdido:   'badge badge-red',
 };
 
+// ============================================================
+// Componente principal
+// ============================================================
 export function Prestamos() {
   const [prestamos, setPrestamos] = useState<any[]>([]);
   const [usuarios, setUsuarios] = useState<any[]>([]);
@@ -23,6 +29,20 @@ export function Prestamos() {
   const [filtro, setFiltro] = useState<'todos' | 'activo' | 'devuelto' | 'retrasado'>('todos');
   const [usuarioSeleccionado, setUsuarioSeleccionado] = useState<string>('');
   const [selectorAbierto, setSelectorAbierto] = useState(false);
+  const selectorRef = useRef<HTMLDivElement>(null);
+
+  // ============================================================
+  // Cerrar selector al hacer clic fuera
+  // ============================================================
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
+        setSelectorAbierto(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // ============================================================
   // Cargar datos
@@ -35,12 +55,12 @@ export function Prestamos() {
         .select(`
           *,
           equipos(id_equipo, nombre, codigo_barras, tecnicas_ndt(codigo)),
-          perfiles(nombre_completo, email)
+          perfiles(num_nomina, nombre_completo, email)
         `)
         .order('fecha_prestamo', { ascending: false }),
       supabase
         .from('perfiles')
-        .select('id, nombre_completo, email')
+        .select('id, num_nomina, nombre_completo, email')
         .eq('activo', true)
         .order('nombre_completo'),
     ]);
@@ -51,7 +71,9 @@ export function Prestamos() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // ============================================================
   // Acciones
@@ -107,8 +129,11 @@ export function Prestamos() {
   const fmtFechaHora = (iso: string | null) => {
     if (!iso) return '—';
     return new Date(iso).toLocaleString('es-ES', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -119,13 +144,10 @@ export function Prestamos() {
   // ============================================================
   const filtrados = useMemo(() => {
     return prestamos.filter((p) => {
-      // Filtro por usuario
       if (usuarioSeleccionado) {
         if (p.usuario_id !== usuarioSeleccionado) return false;
-        // Cuando hay usuario seleccionado, solo mostrar pendientes de devolver
         if (p.estado !== 'activo' && p.estado !== 'retrasado') return false;
       } else {
-        // Sin usuario seleccionado: aplicar filtro de pestaña
         if (filtro === 'todos') return true;
         if (filtro === 'retrasado') return isRetrasado(p);
         return p.estado === filtro && !isRetrasado(p);
@@ -144,7 +166,6 @@ export function Prestamos() {
     devuelto: prestamos.filter((p) => p.estado === 'devuelto').length,
   };
 
-  // Pendientes por usuario (para mostrar en el selector)
   const pendientesPorUsuario = useMemo(() => {
     const map: Record<string, number> = {};
     prestamos.forEach((p) => {
@@ -160,7 +181,10 @@ export function Prestamos() {
   // ============================================================
   return (
     <div className="p-6 space-y-4">
-      {/* Cabecera */}
+
+      {/* ==================================================== */}
+      {/* CABECERA */}
+      {/* ==================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Préstamos</h1>
@@ -194,7 +218,7 @@ export function Prestamos() {
           Ver equipos pendientes de un usuario
         </label>
 
-        <div className="relative">
+        <div ref={selectorRef} className="relative">
           <button
             type="button"
             onClick={() => setSelectorAbierto((v) => !v)}
@@ -204,7 +228,7 @@ export function Prestamos() {
           >
             {usuarioActual ? (
               <span className="flex items-center gap-3 min-w-0 flex-1">
-                <span className="w-8 h-8 rounded-full bg-airbus-blue text-white flex items-center justify-center text-xs font-bold shrink-0">
+                <span className="w-9 h-9 rounded-full bg-airbus-blue text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {usuarioActual.nombre_completo
                     .split(' ')
                     .map((n: string) => n[0])
@@ -213,7 +237,12 @@ export function Prestamos() {
                     .toUpperCase()}
                 </span>
                 <span className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">
+                  <p className="text-sm font-medium text-gray-800 truncate flex items-center gap-1.5">
+                    {usuarioActual.num_nomina && (
+                      <span className="font-mono text-airbus-blue">
+                        #{usuarioActual.num_nomina}
+                      </span>
+                    )}
                     {usuarioActual.nombre_completo}
                   </p>
                   <p className="text-xs text-gray-500 truncate">
@@ -271,7 +300,7 @@ export function Prestamos() {
                       isSelected ? 'bg-airbus-sky/10' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <span className="w-8 h-8 rounded-full bg-airbus-blue/10 text-airbus-blue flex items-center justify-center text-xs font-bold shrink-0">
+                    <span className="w-9 h-9 rounded-full bg-airbus-blue/10 text-airbus-blue flex items-center justify-center text-xs font-bold shrink-0">
                       {u.nombre_completo
                         .split(' ')
                         .map((n: string) => n[0])
@@ -280,16 +309,23 @@ export function Prestamos() {
                         .toUpperCase()}
                     </span>
                     <span className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
+                      <p className="text-sm font-medium text-gray-800 truncate flex items-center gap-1.5">
+                        {u.num_nomina && (
+                          <span className="font-mono text-airbus-blue text-xs">
+                            #{u.num_nomina}
+                          </span>
+                        )}
                         {u.nombre_completo}
                       </p>
                       <p className="text-xs text-gray-500 truncate">{u.email}</p>
                     </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
-                      pendientes === 0
-                        ? 'bg-gray-100 text-gray-400'
-                        : 'bg-airbus-orange/15 text-airbus-orange'
-                    }`}>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        pendientes === 0
+                          ? 'bg-gray-100 text-gray-400'
+                          : 'bg-airbus-orange/15 text-airbus-orange'
+                      }`}
+                    >
                       {pendientes} pendiente{pendientes !== 1 ? 's' : ''}
                     </span>
                   </button>
@@ -299,7 +335,7 @@ export function Prestamos() {
           )}
         </div>
 
-        {/* Resumen cuando hay usuario seleccionado */}
+        {/* Resumen del usuario seleccionado */}
         {usuarioActual && (
           <div className="mt-3 p-3 bg-airbus-orange/5 border border-airbus-orange/20 rounded-lg">
             <div className="flex items-center gap-4 flex-wrap">
@@ -309,13 +345,19 @@ export function Prestamos() {
                   {pendientesPorUsuario[usuarioActual.id] ?? 0}
                 </span>
                 <span className="text-gray-600">
-                  equipo{(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''} pendiente{(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''} de devolver
+                  equipo
+                  {(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''}{' '}
+                  pendiente
+                  {(pendientesPorUsuario[usuarioActual.id] ?? 0) !== 1 ? 's' : ''} de
+                  devolver
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <AlertTriangle className="w-4 h-4 text-airbus-red" />
                 <span className="font-semibold text-airbus-red">
-                  {prestamos.filter((p) => p.usuario_id === usuarioActual.id && isRetrasado(p)).length}
+                  {prestamos.filter(
+                    (p) => p.usuario_id === usuarioActual.id && isRetrasado(p)
+                  ).length}
                 </span>
                 <span className="text-gray-600">retrasado(s)</span>
               </div>
@@ -330,10 +372,10 @@ export function Prestamos() {
       {!usuarioSeleccionado && (
         <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1 w-fit">
           {[
-            { key: 'todos',     label: 'Todos',      count: contadores.todos },
-            { key: 'activo',    label: 'Activos',    count: contadores.activo },
+            { key: 'todos', label: 'Todos', count: contadores.todos },
+            { key: 'activo', label: 'Activos', count: contadores.activo },
             { key: 'retrasado', label: 'Retrasados', count: contadores.retrasado },
-            { key: 'devuelto',  label: 'Devueltos',  count: contadores.devuelto },
+            { key: 'devuelto', label: 'Devueltos', count: contadores.devuelto },
           ].map((t) => (
             <button
               key={t.key}
@@ -345,9 +387,13 @@ export function Prestamos() {
               }`}
             >
               {t.label}
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                filtro === t.key ? 'bg-airbus-blue/10 text-airbus-blue' : 'bg-gray-200 text-gray-500'
-              }`}>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  filtro === t.key
+                    ? 'bg-airbus-blue/10 text-airbus-blue'
+                    : 'bg-gray-200 text-gray-500'
+                }`}
+              >
                 {t.count}
               </span>
             </button>
@@ -423,7 +469,9 @@ export function Prestamos() {
                   return (
                     <tr
                       key={p.id}
-                      className={`hover:bg-gray-50 transition ${retrasado ? 'bg-airbus-orange/5' : ''}`}
+                      className={`hover:bg-gray-50 transition ${
+                        retrasado ? 'bg-airbus-orange/5' : ''
+                      }`}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -446,26 +494,45 @@ export function Prestamos() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-gray-800 truncate">
-                          {p.perfiles?.nombre_completo ?? '—'}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {p.perfiles?.email}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          {p.perfiles?.num_nomina && (
+                            <span className="font-mono font-bold text-airbus-blue text-xs shrink-0 flex items-center gap-0.5">
+                              <Hash className="w-3 h-3" />
+                              {p.perfiles.num_nomina}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-gray-800 truncate">
+                              {p.perfiles?.nombre_completo ?? '—'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {p.perfiles?.email}
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                         {fmtFechaHora(p.fecha_prestamo)}
                       </td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
-                        <span className={retrasado
-                          ? 'text-airbus-orange font-semibold flex items-center gap-1'
-                          : 'text-gray-600'}>
+                        <span
+                          className={
+                            retrasado
+                              ? 'text-airbus-orange font-semibold flex items-center gap-1'
+                              : 'text-gray-600'
+                          }
+                        >
                           {retrasado && <AlertTriangle className="w-3 h-3" />}
                           {fmtFechaHora(p.fecha_devolucion_prevista)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={estadoBadge[retrasado ? 'retrasado' : p.estado] ?? 'badge badge-gray'}>
+                        <span
+                          className={
+                            estadoBadge[retrasado ? 'retrasado' : p.estado] ??
+                            'badge badge-gray'
+                          }
+                        >
                           {retrasado ? 'retrasado' : p.estado}
                         </span>
                       </td>
