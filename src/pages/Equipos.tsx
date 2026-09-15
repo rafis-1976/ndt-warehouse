@@ -2,30 +2,68 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Package, RefreshCw, Printer, X, Filter,
-  AlertTriangle, Calendar, CheckCircle2, AlertCircle,
+  AlertTriangle, Calendar, CheckCircle2, AlertCircle, Bell,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
 import Barcode from 'react-barcode';
 
+// ============================================================
+// Estados y badges
+// ============================================================
 const estadoBadge: Record<string, string> = {
-  disponible:    'badge badge-green',
-  prestado:      'badge badge-blue',
-  calibracion:   'badge badge-yellow',
-  mantenimiento: 'badge badge-yellow',
-  baja:          'badge badge-red',
+  disponible:            'badge badge-green',
+  prestado:              'badge badge-blue',
+  calibracion:           'badge badge-yellow',
+  mantenimiento:         'badge badge-yellow',
+  baja:                  'badge badge-red',
+  pendiente_calibracion: 'badge badge-red',
 };
 
-const estados = [
-  { value: 'disponible',    label: 'Disponible' },
-  { value: 'prestado',      label: 'Prestado' },
-  { value: 'calibracion',   label: 'En calibración' },
-  { value: 'mantenimiento', label: 'En mantenimiento' },
-  { value: 'baja',          label: 'Baja' },
+const estadosFiltro = [
+  { value: 'disponible',            label: 'Disponible' },
+  { value: 'prestado',              label: 'Prestado' },
+  { value: 'pendiente_calibracion', label: 'Pendiente de Calibración' },
+  { value: 'calibracion',           label: 'En calibración' },
+  { value: 'mantenimiento',         label: 'En mantenimiento' },
+  { value: 'baja',                  label: 'Baja' },
 ];
 
 type FiltroCalibracion = 'todas' | 'vencida' | 'proxima' | 'ok' | 'sin_fecha';
 
+// ============================================================
+// Helpers de calibración
+// ============================================================
+/** Determina el estado de calibración según la fecha */
+function estadoCalibracion(fecha: string | null): 'vencida' | 'proxima' | 'ok' | 'sin_fecha' {
+  if (!fecha) return 'sin_fecha';
+  const diff = new Date(fecha).getTime() - Date.now();
+  if (diff < 0) return 'vencida';
+  if (diff < 30 * 864e5) return 'proxima';
+  return 'ok';
+}
+
+/**
+ * Estado efectivo del equipo: si la calibración está vencida,
+ * se muestra como "pendiente_calibracion" (salvo si está dado de baja).
+ */
+function estadoEfectivo(eq: any): string {
+  if (eq.estado === 'baja') return 'baja';
+  if (estadoCalibracion(eq.proxima_calibracion) === 'vencida') {
+    return 'pendiente_calibracion';
+  }
+  return eq.estado;
+}
+
+/** Etiqueta legible para el estado */
+function estadoLabel(estado: string): string {
+  if (estado === 'pendiente_calibracion') return 'Pendiente de Calibración';
+  return estado;
+}
+
+// ============================================================
+// Componente principal
+// ============================================================
 export function Equipos() {
   const [equipos, setEquipos] = useState<any[]>([]);
   const [tecnicas, setTecnicas] = useState<any[]>([]);
@@ -39,6 +77,7 @@ export function Equipos() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
+  const [avisoCerrado, setAvisoCerrado] = useState(false);
 
   // ============================================================
   // Cargar datos
@@ -65,15 +104,20 @@ export function Equipos() {
   useEffect(() => { load(); }, [load]);
 
   // ============================================================
-  // Helpers de calibración
+  // Alertas: equipos pendientes de calibración
   // ============================================================
-  const estadoCalibracion = (fecha: string | null): 'vencida' | 'proxima' | 'ok' | 'sin_fecha' => {
-    if (!fecha) return 'sin_fecha';
-    const diff = new Date(fecha).getTime() - Date.now();
-    if (diff < 0) return 'vencida';
-    if (diff < 30 * 864e5) return 'proxima';
-    return 'ok';
-  };
+  const equiposPendientesCalibracion = useMemo(
+    () => equipos.filter((e) => estadoEfectivo(e) === 'pendiente_calibracion'),
+    [equipos]
+  );
+
+  const equiposProximosCalibracion = useMemo(
+    () =>
+      equipos.filter(
+        (e) => estadoCalibracion(e.proxima_calibracion) === 'proxima'
+      ),
+    [equipos]
+  );
 
   // ============================================================
   // Filtrado combinado
@@ -81,17 +125,21 @@ export function Equipos() {
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return equipos.filter((e) => {
-      // Buscador
-      const coincideBusqueda = qLower === '' ||
+      const coincideBusqueda =
+        qLower === '' ||
         [e.nombre, e.codigo_barras, e.numero_serie, e.marca, e.modelo, e.id_equipo]
-          .join(' ').toLowerCase().includes(qLower);
+          .join(' ')
+          .toLowerCase()
+          .includes(qLower);
       if (!coincideBusqueda) return false;
 
-      // Técnica
       if (filtroTecnica !== 'todas' && e.tecnicas_ndt?.codigo !== filtroTecnica) return false;
 
-      // Estado
-      if (filtroEstado !== 'todos' && e.estado !== filtroEstado) return false;
+      // Estado (usando estado efectivo)
+      if (filtroEstado !== 'todos') {
+        const efectivo = estadoEfectivo(e);
+        if (efectivo !== filtroEstado) return false;
+      }
 
       // Calibración
       if (filtroCalibracion !== 'todas') {
@@ -103,7 +151,7 @@ export function Equipos() {
   }, [equipos, q, filtroTecnica, filtroEstado, filtroCalibracion]);
 
   // ============================================================
-  // Contadores para mostrar en cada chip
+  // Contadores para los chips
   // ============================================================
   const contadores = useMemo(() => {
     const porTecnica: Record<string, number> = {};
@@ -115,7 +163,10 @@ export function Equipos() {
     equipos.forEach((e) => {
       const t = e.tecnicas_ndt?.codigo ?? 'sin';
       porTecnica[t] = (porTecnica[t] ?? 0) + 1;
-      porEstado[e.estado] = (porEstado[e.estado] ?? 0) + 1;
+
+      const ef = estadoEfectivo(e);
+      porEstado[ef] = (porEstado[ef] ?? 0) + 1;
+
       porCalibracion[estadoCalibracion(e.proxima_calibracion)]++;
     });
 
@@ -183,7 +234,95 @@ export function Equipos() {
   // ============================================================
   return (
     <div className="p-6 space-y-4">
-      {/* Cabecera */}
+
+      {/* ==================================================== */}
+      {/* BANNER DE AVISO: equipos pendientes de calibración */}
+      {/* ==================================================== */}
+      {!avisoCerrado && equiposPendientesCalibracion.length > 0 && (
+        <div className="bg-gradient-to-r from-airbus-red to-airbus-orange rounded-xl shadow-lg overflow-hidden animate-in">
+          <div className="flex items-start gap-4 p-4">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+              <Bell className="w-6 h-6 text-white animate-pulse" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-white font-bold text-base">
+                  {equiposPendientesCalibracion.length} equipo
+                  {equiposPendientesCalibracion.length !== 1 ? 's' : ''} con calibración vencida
+                </h3>
+                <span className="px-2 py-0.5 bg-white/20 text-white text-[10px] font-bold rounded-full">
+                  ACCIÓN REQUERIDA
+                </span>
+              </div>
+
+              <p className="text-white/90 text-sm mt-1">
+                Los equipos con calibración vencida no deben usarse para inspecciones hasta
+                que se recalibren. Revisa la lista a continuación.
+              </p>
+
+              {/* Preview de los 3 primeros */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {equiposPendientesCalibracion.slice(0, 3).map((e) => (
+                  <button
+                    key={e.id}
+                    onClick={() => openEdit(e.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-full text-xs text-white transition"
+                  >
+                    <span className="font-mono font-bold">{e.id_equipo}</span>
+                    <span className="opacity-80 truncate max-w-[140px]">{e.nombre}</span>
+                  </button>
+                ))}
+                {equiposPendientesCalibracion.length > 3 && (
+                  <button
+                    onClick={() => {
+                      setFiltroEstado('pendiente_calibracion');
+                      setAvisoCerrado(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/25 hover:bg-white/35 rounded-full text-xs text-white font-semibold transition"
+                  >
+                    +{equiposPendientesCalibracion.length - 3} más →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setAvisoCerrado(true)}
+              className="p-1.5 hover:bg-white/10 rounded-full transition shrink-0"
+              title="Cerrar aviso"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso secundario: próximos a vencer */}
+      {!avisoCerrado && equiposPendientesCalibracion.length === 0 && equiposProximosCalibracion.length > 0 && (
+        <div className="bg-airbus-orange/10 border border-airbus-orange/30 rounded-xl p-4 flex items-start gap-3 animate-in">
+          <AlertTriangle className="w-5 h-5 text-airbus-orange shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-airbus-orange">
+              {equiposProximosCalibracion.length} equipo
+              {equiposProximosCalibracion.length !== 1 ? 's' : ''} con calibración próxima a vencer (menos de 30 días)
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Programa su recalibración para evitar que caduquen.
+            </p>
+          </div>
+          <button
+            onClick={() => setAvisoCerrado(true)}
+            className="p-1 rounded hover:bg-airbus-orange/20 transition"
+          >
+            <X className="w-4 h-4 text-airbus-orange" />
+          </button>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* CABECERA */}
+      {/* ==================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Equipos NDT</h1>
@@ -211,7 +350,6 @@ export function Equipos() {
       {/* PANEL DE FILTROS */}
       {/* ==================================================== */}
       <div className="card space-y-4">
-        {/* Buscador + botón limpiar */}
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -276,17 +414,34 @@ export function Equipos() {
             >
               Todos
             </FilterChip>
-            {estados.map((e) => (
-              <FilterChip
-                key={e.value}
-                active={filtroEstado === e.value}
-                onClick={() => setFiltroEstado(e.value)}
-                count={contadores.porEstado[e.value] ?? 0}
-                color={e.value === 'disponible' ? 'green' : e.value === 'baja' ? 'red' : 'default'}
-              >
-                {e.label}
-              </FilterChip>
-            ))}
+            {estadosFiltro.map((e) => {
+              const count = contadores.porEstado[e.value] ?? 0;
+              const esPendiente = e.value === 'pendiente_calibracion';
+              return (
+                <FilterChip
+                  key={e.value}
+                  active={filtroEstado === e.value}
+                  onClick={() => setFiltroEstado(e.value)}
+                  count={count}
+                  color={
+                    e.value === 'disponible'
+                      ? 'green'
+                      : e.value === 'baja' || esPendiente
+                        ? 'red'
+                        : esPendiente
+                          ? 'red'
+                          : 'default'
+                  }
+                  icon={
+                    esPendiente && count > 0 ? (
+                      <AlertTriangle className="w-3 h-3" />
+                    ) : undefined
+                  }
+                >
+                  {e.label}
+                </FilterChip>
+              );
+            })}
           </div>
         </div>
 
@@ -361,7 +516,10 @@ export function Equipos() {
                 : 'Sin resultados con los filtros actuales'}
             </p>
             {hayFiltrosActivos ? (
-              <button onClick={limpiarFiltros} className="btn-ghost border border-gray-300 inline-flex items-center gap-2">
+              <button
+                onClick={limpiarFiltros}
+                className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
+              >
                 <X className="w-4 h-4" />
                 Limpiar filtros
               </button>
@@ -390,10 +548,15 @@ export function Equipos() {
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((e) => {
                   const cal = estadoCalibracion(e.proxima_calibracion);
+                  const efectivo = estadoEfectivo(e);
+                  const esPendienteCalib = efectivo === 'pendiente_calibracion';
+
                   return (
                     <tr
                       key={e.id}
-                      className="hover:bg-gray-50 transition cursor-pointer"
+                      className={`hover:bg-gray-50 transition cursor-pointer ${
+                        esPendienteCalib ? 'bg-airbus-red/5' : ''
+                      }`}
                       onClick={() => openEdit(e.id)}
                     >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">
@@ -402,7 +565,10 @@ export function Equipos() {
 
                       <td className="px-4 py-3">
                         <button
-                          onClick={(ev) => { ev.stopPropagation(); setBarcodeAbierto(e.codigo_barras); }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            setBarcodeAbierto(e.codigo_barras);
+                          }}
                           className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition"
                           title="Clic para ampliar"
                         >
@@ -432,13 +598,21 @@ export function Equipos() {
 
                       <td className="px-4 py-3 text-gray-600">{e.ubicacion ?? '—'}</td>
 
+                      {/* ESTADO con override si está pendiente de calibración */}
                       <td className="px-4 py-3">
-                        <span className={estadoBadge[e.estado] ?? 'badge badge-gray'}>
-                          {e.estado}
+                        <span
+                          className={`${estadoBadge[efectivo] ?? 'badge badge-gray'} ${
+                            esPendienteCalib ? 'inline-flex items-center gap-1' : ''
+                          }`}
+                        >
+                          {esPendienteCalib && (
+                            <AlertTriangle className="w-3 h-3" />
+                          )}
+                          {estadoLabel(efectivo)}
                         </span>
                       </td>
 
-                      {/* Calibración con color según estado */}
+                      {/* Próxima calibración con color según estado */}
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         {cal === 'vencida' && (
                           <span className="text-airbus-red font-semibold flex items-center gap-1">
@@ -466,14 +640,20 @@ export function Equipos() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={(ev) => { ev.stopPropagation(); imprimirEtiqueta(e); }}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              imprimirEtiqueta(e);
+                            }}
                             className="p-1.5 text-gray-400 hover:text-airbus-blue hover:bg-airbus-light/10 rounded transition"
                             title="Imprimir etiqueta"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={(ev) => { ev.stopPropagation(); openEdit(e.id); }}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              openEdit(e.id);
+                            }}
                             className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
                           >
                             Editar
@@ -489,7 +669,7 @@ export function Equipos() {
         )}
       </div>
 
-      {/* Modal: barcode ampliado */}
+      {/* Modal barcode */}
       <Modal
         open={!!barcodeAbierto}
         onClose={() => setBarcodeAbierto(null)}
@@ -514,7 +694,7 @@ export function Equipos() {
         )}
       </Modal>
 
-      {/* Modal: crear/editar */}
+      {/* Modal crear/editar */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -560,7 +740,9 @@ function FilterChip({
     <button
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition ${
-        active ? activeColor : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+        active
+          ? activeColor
+          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
       }`}
     >
       {icon && <span className="shrink-0">{icon}</span>}
