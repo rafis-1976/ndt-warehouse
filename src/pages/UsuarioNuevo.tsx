@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
@@ -47,6 +47,19 @@ const roles: {
 ];
 
 // ============================================================
+// Estado inicial vacío (fuera del componente para reutilizarlo)
+// ============================================================
+const FORM_INICIAL = {
+  num_nomina: '',
+  nombre_completo: '',
+  email: '',
+  telefono: '',
+  password: '',
+  rol: 'tecnico' as Rol,
+  activo: true,
+};
+
+// ============================================================
 // Generador de contraseñas seguras
 // ============================================================
 function generarPasswordSegura(): string {
@@ -66,10 +79,7 @@ function generarPasswordSegura(): string {
     pwd += todos.charAt(Math.floor(Math.random() * todos.length));
   }
 
-  return pwd
-    .split('')
-    .sort(() => Math.random() - 0.5)
-    .join('');
+  return pwd.split('').sort(() => Math.random() - 0.5).join('');
 }
 
 // ============================================================
@@ -78,19 +88,22 @@ function generarPasswordSegura(): string {
 export function UsuarioNuevo() {
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({
-    num_nomina: '',
-    nombre_completo: '',
-    email: '',
-    telefono: '',
-    password: '',
-    rol: 'tecnico' as Rol,
-    activo: true,
-  });
+  const [form, setForm] = useState({ ...FORM_INICIAL });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<any | null>(null);
+
+  // ============================================================
+  // Resetear formulario al montar (anti-autofill + React reutilización)
+  // ============================================================
+  useEffect(() => {
+    setForm({ ...FORM_INICIAL });
+    setShowPassword(false);
+    setError('');
+    setSuccess(null);
+    setLoading(false);
+  }, []);
 
   const update = (field: string, value: any) =>
     setForm((f) => ({ ...f, [field]: value }));
@@ -105,13 +118,15 @@ export function UsuarioNuevo() {
   // ============================================================
   const validaciones = {
     nomina:
-      form.num_nomina.trim().length >= 3 && /^\d+$/.test(form.num_nomina.trim()),
+      form.num_nomina.trim().length >= 3 &&
+      /^\d+$/.test(form.num_nomina.trim()),
     nombre: form.nombre_completo.trim().length >= 3,
     email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()),
     password: form.password.length >= 8,
   };
 
   const formularioValido = Object.values(validaciones).every(Boolean);
+
   const hayDatosIntroducidos =
     form.num_nomina !== '' ||
     form.nombre_completo !== '' ||
@@ -185,15 +200,7 @@ export function UsuarioNuevo() {
   };
 
   const resetFormulario = () => {
-    setForm({
-      num_nomina: '',
-      nombre_completo: '',
-      email: '',
-      telefono: '',
-      password: '',
-      rol: 'tecnico',
-      activo: true,
-    });
+    setForm({ ...FORM_INICIAL });
     setSuccess(null);
     setError('');
     setShowPassword(false);
@@ -302,9 +309,7 @@ export function UsuarioNuevo() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
 
-      {/* ============================================================
-          CABECERA
-          ============================================================ */}
+      {/* CABECERA */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/usuarios')}
@@ -324,7 +329,12 @@ export function UsuarioNuevo() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="card space-y-6">
+      {/* FORMULARIO con autoComplete off a nivel global */}
+      <form
+        onSubmit={handleSubmit}
+        autoComplete="off"
+        className="card space-y-6"
+      >
 
         {/* ============================================================
             PREVIEW DEL USUARIO (solo aparece cuando hay datos)
@@ -390,6 +400,9 @@ export function UsuarioNuevo() {
               <div className="relative">
                 <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
+                  type="text"
+                  name="new-user-nomina"
+                  autoComplete="off"
                   className={`input pl-10 font-mono ${
                     form.num_nomina && !validaciones.nomina
                       ? 'border-airbus-red focus:ring-airbus-red'
@@ -419,6 +432,9 @@ export function UsuarioNuevo() {
               <div className="relative">
                 <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
+                  type="tel"
+                  name="new-user-phone"
+                  autoComplete="off"
                   className="input pl-10"
                   value={form.telefono}
                   onChange={(e) => update('telefono', e.target.value)}
@@ -431,6 +447,9 @@ export function UsuarioNuevo() {
               <div className="relative">
                 <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
+                  type="text"
+                  name="new-user-name"
+                  autoComplete="off"
                   className={`input pl-10 ${
                     form.nombre_completo && !validaciones.nombre
                       ? 'border-airbus-red focus:ring-airbus-red'
@@ -449,6 +468,8 @@ export function UsuarioNuevo() {
                 <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="email"
+                  name="new-user-email"
+                  autoComplete="off"
                   className={`input pl-10 ${
                     form.email && !validaciones.email
                       ? 'border-airbus-red focus:ring-airbus-red'
@@ -478,6 +499,8 @@ export function UsuarioNuevo() {
               <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type={showPassword ? 'text' : 'password'}
+                name="new-user-password"
+                autoComplete="new-password"
                 className={`input pl-10 pr-10 font-mono ${
                   form.password && !validaciones.password
                     ? 'border-airbus-red'
