@@ -41,14 +41,13 @@ export async function subirFotoArchivo(
   };
 }
 
-export async function subirFotoDataURL(
-  dataURL: string,
-  equipoId: string
+export async function subirFotoBlob(
+  blob: Blob,
+  equipoId: string,
+  extension: string = 'png'
 ): Promise<FotoEquipo> {
-  const blob = dataURLtoBlob(dataURL);
-  const ext = blob.type.includes('png') ? 'png' : 'jpg';
   const timestamp = Date.now();
-  const path = `${equipoId}/${timestamp}.${ext}`;
+  const path = `${equipoId}/${timestamp}.${extension}`;
 
   const { error } = await supabase.storage
     .from(BUCKET)
@@ -63,6 +62,15 @@ export async function subirFotoDataURL(
     path,
     subida_en: new Date().toISOString(),
   };
+}
+
+export async function subirFotoDataURL(
+  dataURL: string,
+  equipoId: string
+): Promise<FotoEquipo> {
+  const blob = dataURLtoBlob(dataURL);
+  const ext = blob.type.includes('png') ? 'png' : 'jpg';
+  return subirFotoBlob(blob, equipoId, ext);
 }
 
 export async function eliminarFoto(path: string): Promise<void> {
