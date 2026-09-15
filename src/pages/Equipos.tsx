@@ -603,9 +603,25 @@ export function Equipos() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-800">{e.nombre}</p>
-                        <p className="text-xs text-gray-500">{e.marca} {e.modelo}</p>
-                      </td>
+  <div className="flex items-center gap-3">
+    {e.foto_url ? (
+      <img
+        src={e.foto_url}
+        alt={e.nombre}
+        className="w-10 h-10 rounded-lg object-cover border border-gray-200 shrink-0"
+        onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }}
+      />
+    ) : (
+      <div className="w-10 h-10 rounded-lg bg-airbus-blue/10 flex items-center justify-center shrink-0">
+        <Package className="w-4 h-4 text-airbus-blue/50" />
+      </div>
+    )}
+    <div className="min-w-0">
+      <p className="font-medium text-gray-800 truncate">{e.nombre}</p>
+      <p className="text-xs text-gray-500 truncate">{e.marca} {e.modelo}</p>
+    </div>
+  </div>
+</td>
 
                       <td className="px-4 py-3">
                         <span className="badge badge-blue">
