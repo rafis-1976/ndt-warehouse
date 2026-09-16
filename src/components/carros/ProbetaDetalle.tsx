@@ -320,9 +320,6 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
               <p className="font-semibold text-gray-800 mt-0.5 truncate">
                 {probeta?.nombre}
               </p>
-              {probeta?.tipo && (
-                <p className="text-xs text-gray-500 mt-0.5">{probeta.tipo}</p>
-              )}
             </div>
           </div>
         </div>
@@ -416,7 +413,6 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <DatoItem icon={Hash} label="P/N" value={probeta?.pn} mono />
           <DatoItem icon={Barcode} label="Código barras" value={probeta?.codigo_barras || '—'} mono />
-          <DatoItem icon={Package} label="Tipo" value={probeta?.tipo || '—'} />
           <DatoItem icon={Wrench} label="Nº serie" value={probeta?.numero_serie || '—'} mono />
           <DatoItem icon={Palette} label="Material" value={probeta?.material || '—'} />
           <DatoItem icon={Ruler} label="Dimensiones" value={probeta?.dimensiones || '—'} />
