@@ -1,0 +1,310 @@
+import { useEffect, useState } from 'react';
+import {
+  Layers, Package, Hash, Calendar, AlertTriangle, CheckCircle2,
+  Ruler, Box, Palette, X, Wrench,
+} from 'lucide-react';
+
+interface ProbetaDetalleProps {
+  probeta: any;
+  carro: any;
+  onClose: () => void;
+}
+
+export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps) {
+  const [animando, setAnimando] = useState(false);
+  const [fotoCargada, setFotoCargada] = useState(false);
+
+  const totalBandejas = carro?.num_bandejas ?? 0;
+  const bandejaActiva = probeta?.num_bandeja ?? null;
+
+  useEffect(() => {
+    setAnimando(false);
+    setFotoCargada(false);
+    const t1 = setTimeout(() => setAnimando(true), 150);
+    const t2 = setTimeout(() => setFotoCargada(true), 900);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [probeta?.id]);
+
+  const vencida = probeta?.proxima_calibracion &&
+    new Date(probeta.proxima_calibracion) < new Date();
+  const proxima = !vencida && probeta?.proxima_calibracion &&
+    new Date(probeta.proxima_calibracion).getTime() - Date.now() < 30 * 864e5;
+
+  const bandejas = Array.from({ length: totalBandejas }, (_, i) => i + 1).reverse();
+
+  return (
+    <div className="space-y-4">
+      <div className="relative bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-2xl p-6 overflow-hidden">
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-airbus-light rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-airbus-sky rounded-full blur-3xl" />
+        </div>
+
+        <div className="relative flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xs text-airbus-light uppercase tracking-wider font-semibold">
+              Carro
+            </p>
+            <p className="text-white font-bold text-lg">
+              {carro?.codigo} · {carro?.nombre}
+            </p>
+            {carro?.ubicacion && (
+              <p className="text-xs text-airbus-light/80 mt-0.5">
+                📍 {carro.ubicacion}
+              </p>
+            )}
+          </div>
+          {bandejaActiva && (
+            <div className="text-right">
+              <p className="text-xs text-airbus-light uppercase tracking-wider font-semibold">
+                Bandeja
+              </p>
+              <p className="text-white font-bold text-3xl leading-none">
+                {bandejaActiva}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="relative flex justify-center items-end gap-2 min-h-[280px]">
+          <div className="relative flex flex-col-reverse items-center">
+            {bandejas.map((n) => {
+              const esActiva = n === bandejaActiva;
+              const fueraDeRango = !bandejaActiva;
+
+              return (
+                <div
+                  key={n}
+                  className="relative"
+                  style={{ zIndex: esActiva ? 50 : 1 }}
+                >
+                  <div
+                    className={`
+                      relative flex items-center justify-center
+                      transition-all duration-700 ease-out
+                      ${esActiva && animando ? '-translate-x-32 md:-translate-x-44' : 'translate-x-0'}
+                    `}
+                    style={{
+                      transitionDelay: esActiva ? '400ms' : '0ms',
+                    }}
+                  >
+                    <div
+                      className={`
+                        relative w-64 md:w-80 h-12 rounded-md border-2
+                        flex items-center justify-between px-3
+                        transition-all duration-500
+                        ${esActiva
+                          ? 'bg-airbus-sky border-airbus-light shadow-[0_0_30px_rgba(116,210,231,0.6)]'
+                          : 'bg-gradient-to-b from-gray-100 to-gray-200 border-gray-400 shadow-inner'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${
+                          esActiva ? 'bg-white animate-pulse' : 'bg-gray-400'
+                        }`} />
+                        <span className={`text-xs font-bold ${
+                          esActiva ? 'text-white' : 'text-gray-600'
+                        }`}>
+                          Bandeja {n}
+                        </span>
+                      </div>
+                      <Layers className={`w-4 h-4 ${
+                        esActiva ? 'text-white' : 'text-gray-400'
+                      }`} />
+                    </div>
+
+                    {esActiva && (
+                      <div
+                        className={`
+                          absolute top-1/2 -translate-y-1/2 left-full ml-3
+                          w-32 h-24 md:w-40 md:h-28 rounded-lg
+                          bg-white border-2 border-airbus-sky shadow-2xl
+                          flex items-center justify-center overflow-hidden
+                          transition-all duration-700 ease-out
+                          ${animando && fotoCargada
+                            ? 'opacity-100 scale-100'
+                            : 'opacity-0 scale-50'
+                          }
+                        `}
+                      >
+                        {probeta?.foto_url ? (
+                          <img
+                            src={probeta.foto_url}
+                            alt={probeta.nombre}
+                            className="w-full h-full object-contain p-1"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-airbus-sky">
+                            <Package className="w-8 h-8" />
+                            <span className="text-[9px] font-bold uppercase">
+                              Sin foto
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="w-72 md:w-88 h-3 bg-gradient-to-b from-gray-600 to-gray-800 rounded-b-md mt-0.5 shadow-lg" />
+
+            <div className="flex justify-between w-72 md:w-88 mt-1">
+              <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-500" />
+              <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-500" />
+            </div>
+          </div>
+        </div>
+
+        {totalBandejas === 0 && (
+          <div className="relative mt-4 flex items-center justify-center gap-2 bg-airbus-orange/20 border border-airbus-orange/40 text-white text-xs p-3 rounded-lg">
+            <AlertTriangle className="w-4 h-4" />
+            Este carro no tiene bandejas definidas
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-start gap-3">
+            {probeta?.foto_url ? (
+              <div className="w-20 h-20 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+                <img
+                  src={probeta.foto_url}
+                  alt={probeta.nombre}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="w-20 h-20 rounded-lg border border-gray-200 shrink-0 bg-gray-50 flex items-center justify-center">
+                <Package className="w-8 h-8 text-gray-300" />
+              </div>
+            )}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono font-bold text-airbus-blue text-sm">
+                  {probeta?.codigo}
+                </span>
+                {probeta?.tecnicas_ndt && (
+                  <span className="badge badge-blue">
+                    {probeta.tecnicas_ndt.codigo}
+                  </span>
+                )}
+                {!probeta?.activa && (
+                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-semibold rounded-full uppercase">
+                    Inactiva
+                  </span>
+                )}
+              </div>
+              <p className="font-semibold text-gray-800 mt-0.5 truncate">
+                {probeta?.nombre}
+              </p>
+              {probeta?.tipo && (
+                <p className="text-xs text-gray-500 mt-0.5">{probeta.tipo}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Estado de calibración
+          </p>
+          {probeta?.proxima_calibracion ? (
+            <>
+              <div className={`flex items-center gap-2 ${
+                vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-airbus-green'
+              }`}>
+                {vencida || proxima ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5" />
+                )}
+                <span className="font-bold text-sm">
+                  {vencida ? 'Vencida' : proxima ? 'Próxima a vencer' : 'Al día'}
+                </span>
+              </div>
+              <p className={`text-xs mt-1 ${vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-gray-500'}`}>
+                {vencida ? 'Venció el ' : proxima ? 'Vence el ' : 'Próxima: '}
+                <strong>{probeta.proxima_calibracion}</strong>
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 italic">Sin fecha de calibración</p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          Información técnica
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <DatoItem icon={Hash} label="Código" value={probeta?.codigo} mono />
+          <DatoItem icon={Package} label="Tipo" value={probeta?.tipo || '—'} />
+          <DatoItem icon={Wrench} label="Nº serie" value={probeta?.numero_serie || '—'} mono />
+          <DatoItem icon={Palette} label="Material" value={probeta?.material || '—'} />
+          <DatoItem icon={Ruler} label="Dimensiones" value={probeta?.dimensiones || '—'} />
+          <DatoItem icon={Box} label="Carro" value={carro?.codigo || '—'} mono />
+          <DatoItem icon={Layers} label="Bandeja" value={bandejaActiva ? String(bandejaActiva) : '—'} />
+          <DatoItem icon={Calendar} label="Adquisición" value={probeta?.fecha_adquisicion || '—'} />
+          <DatoItem
+            icon={CheckCircle2}
+            label="Próx. calibración"
+            value={probeta?.proxima_calibracion || '—'}
+            color={vencida ? 'red' : proxima ? 'orange' : 'green'}
+          />
+        </div>
+      </div>
+
+      {probeta?.observaciones && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Observaciones
+          </p>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">
+            {probeta.observaciones}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DatoItem({
+  icon: Icon, label, value, mono, color,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  mono?: boolean;
+  color?: 'red' | 'orange' | 'green';
+}) {
+  const colorClass = color === 'red'
+    ? 'text-airbus-red'
+    : color === 'orange'
+      ? 'text-airbus-orange'
+      : color === 'green'
+        ? 'text-airbus-green'
+        : 'text-gray-800';
+
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wider">
+          {label}
+        </p>
+        <p className={`text-sm font-medium truncate ${mono ? 'font-mono' : ''} ${colorClass}`}>
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
