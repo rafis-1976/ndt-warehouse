@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import {
-  Upload, X, FileText, Download, AlertCircle, Loader2, FolderOpen,
+  Upload, X, Download, AlertCircle, Loader2,
 } from 'lucide-react';
 import {
   subirDocumento, eliminarDocumento, formatearTamano, iconoDocumento,
-  type DocumentoEquipo,
+  BUCKET_EQUIPOS_DOCS, type DocumentoEquipo,
 } from '../../lib/storage';
 
 interface DocumentosUploadProps {
@@ -12,10 +12,23 @@ interface DocumentosUploadProps {
   documentos: DocumentoEquipo[];
   onChange: (docs: DocumentoEquipo[]) => void;
   disabled?: boolean;
+  bucket?: string;
+  categoria?: 'manual' | 'certificado' | 'otros';
+  titulo?: string;
+  hint?: string;
+  emptyText?: string;
 }
 
 export function DocumentosUpload({
-  equipoId, documentos, onChange, disabled,
+  equipoId,
+  documentos,
+  onChange,
+  disabled,
+  bucket = BUCKET_EQUIPOS_DOCS,
+  categoria = 'otros',
+  titulo,
+  hint,
+  emptyText,
 }: DocumentosUploadProps) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +46,7 @@ export function DocumentosUpload({
           setError(`"${file.name}" supera los 20 MB. Se ha omitido.`);
           continue;
         }
-        const doc = await subirDocumento(file, equipoId, 'otros');
+        const doc = await subirDocumento(file, equipoId, categoria, bucket);
         subidos.push(doc);
       }
       onChange([...documentos, ...subidos]);
@@ -48,7 +61,7 @@ export function DocumentosUpload({
   const handleEliminar = async (doc: DocumentoEquipo) => {
     if (!confirm(`¿Eliminar "${doc.nombre}"?`)) return;
     try {
-      await eliminarDocumento(doc.url);
+      await eliminarDocumento(doc.url, bucket);
       onChange(documentos.filter((d) => d.url !== doc.url));
     } catch (err: any) {
       setError(err.message ?? 'Error al eliminar');
@@ -57,6 +70,10 @@ export function DocumentosUpload({
 
   return (
     <div className="space-y-3">
+      {titulo && (
+        <p className="text-xs text-gray-500">{titulo}</p>
+      )}
+
       <div
         onDragOver={(e) => { e.preventDefault(); }}
         onDrop={(e) => {
@@ -71,6 +88,7 @@ export function DocumentosUpload({
           ref={inputRef}
           type="file"
           multiple
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
           disabled={disabled || subiendo}
@@ -96,7 +114,7 @@ export function DocumentosUpload({
               </button>
             </p>
             <p className="text-[11px] text-gray-400">
-              PDF, imágenes, Word, Excel, ZIP · máx. 20 MB por archivo
+              {hint ?? 'PDF, imágenes, Word, Excel, ZIP · máx. 20 MB por archivo'}
             </p>
           </div>
         )}
@@ -109,15 +127,19 @@ export function DocumentosUpload({
         </div>
       )}
 
-      {documentos.length > 0 && (
+      {documentos.length > 0 ? (
         <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
           {documentos.map((doc) => (
-            <div key={doc.url} className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition">
+            <div
+              key={doc.url}
+              className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition"
+            >
               <span className="text-lg shrink-0">{iconoDocumento(doc.tipo)}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-800 truncate">{doc.nombre}</p>
                 <p className="text-[10px] text-gray-400">
-                  {formatearTamano(doc.tamano)} · {new Date(doc.subido_en).toLocaleDateString('es-ES')}
+                  {formatearTamano(doc.tamano)} ·{' '}
+                  {new Date(doc.subido_en).toLocaleDateString('es-ES')}
                 </p>
               </div>
               <a
@@ -142,6 +164,12 @@ export function DocumentosUpload({
             </div>
           ))}
         </div>
+      ) : (
+        emptyText && !disabled ? (
+          <p className="text-xs text-gray-400 italic text-center py-2">
+            {emptyText}
+          </p>
+        ) : null
       )}
     </div>
   );
