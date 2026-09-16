@@ -23,7 +23,7 @@ type TipoObjeto = 'equipo' | 'probeta';
 
 const tiposMovimiento: { value: TipoMov; label: string; descripcion: string; requiereDestinoExterno?: boolean }[] = [
   { value: 'entrada', label: 'Entrada al almacén', descripcion: 'Ingreso de un objeto al almacén' },
-  { value: 'salida', label: 'Salida del almacén', descripcion: 'Retirada definitiva del almacén' },
+  { value: 'salida', label: 'Salida del almacén', descripcion: 'Retirada definitiva. Deja de estar en el inventario' },
   { value: 'transferencia', label: 'Transferencia interna', descripcion: 'Cambio de ubicación dentro del almacén' },
   { value: 'ajuste', label: 'Ajuste de inventario', descripcion: 'Corrección de inventario' },
   { value: 'prestamo_externo', label: 'Préstamo a terceros', descripcion: 'Envío a otro almacén, sección o compañía', requiereDestinoExterno: true },
@@ -65,7 +65,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
     Promise.all([
       supabase
         .from('equipos')
-        .select('id, id_equipo, nombre, codigo_barras, ubicacion, tecnicas_ndt(codigo, nombre)')
+        .select('id, id_equipo, nombre, codigo_barras, ubicacion, estado, tecnicas_ndt(codigo, nombre)')
         .order('nombre'),
       supabase
         .from('probetas')
@@ -116,6 +116,19 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       if (!form.destino_nombre.trim()) return setError('Indica el nombre del destino');
     }
 
+    // Confirmación extra para salida del almacén
+    if (form.tipo === 'salida') {
+      const nombre = tipoObjeto === 'equipo'
+        ? (equipos.find((e) => e.id === form.equipo_id) as any)?.nombre
+        : probetaSeleccionada?.nombre;
+      const confirmar = confirm(
+        `⚠️ ¿Confirmar SALIDA DEFINITIVA del almacén?\n\n` +
+        `"${nombre}" dejará de aparecer en el inventario y no podrá prestarse.\n\n` +
+        `Solo se podrá recuperar registrando una nueva "Entrada al almacén".`
+      );
+      if (!confirmar) return;
+    }
+
     setLoading(true);
     try {
       const payload: any = {
@@ -138,25 +151,44 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       const { error: insErr } = await supabase.from('movimientos').insert(payload);
       if (insErr) throw insErr;
 
-      // Actualizar ubicación del equipo si es transferencia interna
-      if (form.tipo === 'transferencia' && form.ubicacion_destino.trim() && tipoObjeto === 'equipo') {
-        await supabase
-          .from('equipos')
-          .update({ ubicacion: form.ubicacion_destino.trim() })
-          .eq('id', form.equipo_id);
-      }
-
-      // Actualizar estado según el tipo de movimiento
+      // Aplicar efectos según tipo de movimiento
       if (tipoObjeto === 'equipo') {
-        if (form.tipo === 'prestamo_externo') {
+        if (form.tipo === 'transferencia' && form.ubicacion_destino.trim()) {
+          await supabase
+            .from('equipos')
+            .update({ ubicacion: form.ubicacion_destino.trim() })
+            .eq('id', form.equipo_id);
+        } else if (form.tipo === 'prestamo_externo') {
           await supabase.from('equipos').update({ estado: 'prestado' }).eq('id', form.equipo_id);
         } else if (form.tipo === 'devolucion_externa') {
           await supabase.from('equipos').update({ estado: 'disponible' }).eq('id', form.equipo_id);
+        } else if (form.tipo === 'salida') {
+          // Sale del almacén: desaparece de listados
+          await supabase.from('equipos').update({ estado: 'salida' }).eq('id', form.equipo_id);
+        } else if (form.tipo === 'entrada') {
+          // Vuelve al almacén: recupera disponibilidad
+          const { data: eqActual } = await supabase
+            .from('equipos')
+            .select('estado, proxima_calibracion')
+            .eq('id', form.equipo_id)
+            .single();
+          if (eqActual?.estado === 'salida') {
+            const vencida = eqActual.proxima_calibracion &&
+              new Date(eqActual.proxima_calibracion) < new Date();
+            await supabase
+              .from('equipos')
+              .update({ estado: vencida ? 'pendiente_calibracion' : 'disponible' })
+              .eq('id', form.equipo_id);
+          }
         }
       } else {
         if (form.tipo === 'prestamo_externo') {
           await supabase.from('probetas').update({ estado: 'prestado' }).eq('id', form.probeta_id);
         } else if (form.tipo === 'devolucion_externa') {
+          await supabase.from('probetas').update({ estado: 'disponible' }).eq('id', form.probeta_id);
+        } else if (form.tipo === 'salida') {
+          await supabase.from('probetas').update({ estado: 'salida' }).eq('id', form.probeta_id);
+        } else if (form.tipo === 'entrada') {
           await supabase.from('probetas').update({ estado: 'disponible' }).eq('id', form.probeta_id);
         }
       }
@@ -184,7 +216,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* TIPO DE OBJETO */}
       <Section title="¿Qué se mueve?">
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -214,7 +245,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </div>
       </Section>
 
-      {/* OBJETO */}
       <Section title={tipoObjeto === 'equipo' ? 'Equipo' : 'Probeta'}>
         {tipoObjeto === 'equipo' ? (
           <EquipoSelect
@@ -268,7 +298,9 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
                         ? 'bg-airbus-green/15 text-airbus-green'
                         : probetaSeleccionada.estado === 'prestado'
                           ? 'bg-airbus-orange/15 text-airbus-orange'
-                          : 'bg-gray-100 text-gray-500'
+                          : probetaSeleccionada.estado === 'salida'
+                            ? 'bg-airbus-red/15 text-airbus-red'
+                            : 'bg-gray-100 text-gray-500'
                     }`}>
                       {probetaSeleccionada.estado}
                     </span>
@@ -280,12 +312,12 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         )}
       </Section>
 
-      {/* TIPO DE MOVIMIENTO */}
       <Section title="Tipo de movimiento">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {tiposMovimiento.map((t) => {
             const activo = form.tipo === t.value;
             const esExterno = t.requiereDestinoExterno;
+            const esSalida = t.value === 'salida';
             return (
               <button
                 key={t.value}
@@ -293,15 +325,17 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
                 onClick={() => update('tipo', t.value)}
                 className={`text-left p-3 rounded-lg border-2 transition ${
                   activo
-                    ? esExterno
-                      ? 'bg-airbus-orange/10 border-airbus-orange text-airbus-orange shadow-sm'
-                      : 'bg-airbus-blue/5 border-airbus-blue text-airbus-blue shadow-sm'
+                    ? esSalida
+                      ? 'bg-airbus-red/10 border-airbus-red text-airbus-red shadow-sm'
+                      : esExterno
+                        ? 'bg-airbus-orange/10 border-airbus-orange text-airbus-orange shadow-sm'
+                        : 'bg-airbus-blue/5 border-airbus-blue text-airbus-blue shadow-sm'
                     : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  {esExterno && (
-                    <Truck className={`w-4 h-4 shrink-0 ${activo ? '' : 'text-airbus-orange'}`} />
+                  {(esExterno || esSalida) && (
+                    <Truck className={`w-4 h-4 shrink-0 ${activo ? '' : esSalida ? 'text-airbus-red' : 'text-airbus-orange'}`} />
                   )}
                   <span className="font-semibold text-sm">{t.label}</span>
                 </div>
@@ -312,9 +346,21 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
             );
           })}
         </div>
+
+        {form.tipo === 'salida' && (
+          <div className="mt-3 flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/30 text-airbus-red text-xs p-3 rounded-lg">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Salida definitiva del almacén</p>
+              <p className="opacity-80 mt-0.5">
+                El objeto dejará de aparecer en el inventario y no podrá prestarse.
+                Solo se puede recuperar registrando una nueva "Entrada al almacén".
+              </p>
+            </div>
+          </div>
+        )}
       </Section>
 
-      {/* DESTINO EXTERNO (solo si es préstamo/devolución externa) */}
       {requiereDestinoExterno && (
         <Section title="Destino externo">
           <div className="p-4 bg-airbus-orange/5 border-2 border-airbus-orange/30 rounded-lg space-y-4">
@@ -325,7 +371,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               </p>
             </div>
 
-            {/* Tipo de destino */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2">
                 Tipo de destino *
@@ -353,7 +398,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               </div>
             </div>
 
-            {/* Nombre y contacto */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -387,7 +431,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               </div>
             </div>
 
-            {/* Fecha de devolución prevista */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
@@ -404,7 +447,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               </p>
             </div>
 
-            {/* Preview destino */}
             {form.destino_tipo && form.destino_nombre && (
               <div className="pt-3 border-t border-airbus-orange/20 flex items-center gap-3">
                 <div className="w-10 h-10 bg-airbus-orange/20 rounded-lg flex items-center justify-center shrink-0">
@@ -429,7 +471,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </Section>
       )}
 
-      {/* UBICACIONES (no aplica para préstamos externos) */}
       {!requiereDestinoExterno && (
         <Section title="Ubicaciones">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
@@ -490,6 +531,8 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
+          ) : form.tipo === 'salida' ? (
+            <AlertCircle className="w-4 h-4" />
           ) : requiereDestinoExterno && form.tipo === 'prestamo_externo' ? (
             <Truck className="w-4 h-4" />
           ) : requiereDestinoExterno && form.tipo === 'devolucion_externa' ? (
@@ -497,11 +540,13 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
           ) : (
             <Save className="w-4 h-4" />
           )}
-          {requiereDestinoExterno && form.tipo === 'prestamo_externo'
-            ? 'Registrar préstamo externo'
-            : requiereDestinoExterno && form.tipo === 'devolucion_externa'
-              ? 'Registrar devolución'
-              : 'Registrar movimiento'}
+          {form.tipo === 'salida'
+            ? 'Registrar salida del almacén'
+            : requiereDestinoExterno && form.tipo === 'prestamo_externo'
+              ? 'Registrar préstamo externo'
+              : requiereDestinoExterno && form.tipo === 'devolucion_externa'
+                ? 'Registrar devolución'
+                : 'Registrar movimiento'}
         </button>
       </div>
     </form>
