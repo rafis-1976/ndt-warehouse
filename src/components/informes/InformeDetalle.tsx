@@ -144,6 +144,17 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 9px;
             opacity: 0.9;
           }
+          .step-header .res {
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+          }
+          .step-header .res.aprobado    { background: #009F4D; color: white; }
+          .step-header .res.condicional { background: #FE5000; color: white; }
+          .step-header .res.rechazado   { background: #E4002B; color: white; }
+          .step-header .res.pendiente   { background: #666; color: white; }
           .step-body { padding: 8px 10px; background: #fafafa; }
           .step-body .row { margin-bottom: 6px; }
           .step-body .row:last-child { margin-bottom: 0; }
@@ -178,19 +189,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-style: italic;
             color: #999;
           }
-          .resultado {
-            display: inline-block;
-            padding: 8px 20px;
-            border-radius: 6px;
-            font-weight: 800;
-            font-size: 12px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-          }
-          .resultado.aprobado { background: #009F4D; color: white; }
-          .resultado.rechazado { background: #E4002B; color: white; }
-          .resultado.condicional { background: #FE5000; color: white; }
-          .resultado.pendiente { background: #666; color: white; }
           .texto-largo {
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -250,13 +248,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     setTimeout(() => win.print(), 300);
   };
 
-  const ResultadoIcone = () => {
-    if (informe.resultado === 'aprobado') return <CheckCircle2 className="w-5 h-5" />;
-    if (informe.resultado === 'rechazado') return <XCircle className="w-5 h-5" />;
-    if (informe.resultado === 'condicional') return <AlertTriangle className="w-5 h-5" />;
-    return <Clock className="w-5 h-5" />;
-  };
-
   const getNtmSteps = () => {
     if (Array.isArray(informe.ntm_steps) && informe.ntm_steps.length > 0) {
       return informe.ntm_steps
@@ -265,6 +256,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           step: String(s.step ?? '').trim(),
           metodo: String(s.metodo ?? '').trim(),
           fecha: String(s.fecha ?? '').trim(),
+          resultado: String(s.resultado ?? 'pendiente').trim(),
           equipos: Array.isArray(s.equipos) ? s.equipos : [],
           probetas: Array.isArray(s.probetas) ? s.probetas : [],
           inspector_nombre: String(s.inspector_nombre ?? '').trim(),
@@ -278,6 +270,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           step: String(informe.ntm_step ?? '').trim(),
           metodo: String(informe.metodo ?? '').trim(),
           fecha: String(informe.fecha_inspeccion ?? '').trim(),
+          resultado: String(informe.resultado ?? 'pendiente').trim(),
           equipos: [],
           probetas: [],
           inspector_nombre: '',
@@ -298,13 +291,19 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     }
   };
 
-  // Normalizar la estación para mostrar solo Madrid o Barcelona
   const estacionMostrar =
     informe.estacion === 'MADET' ? 'Madrid'
     : informe.estacion === 'BCNET' ? 'Barcelona'
     : informe.estacion === 'MADRID' ? 'Madrid'
     : informe.estacion === 'BARCELONA' ? 'Barcelona'
     : (informe.estacion || '—');
+
+  const ResultadoIcone = () => {
+    if (informe.resultado === 'aprobado') return <CheckCircle2 className="w-5 h-5" />;
+    if (informe.resultado === 'rechazado') return <XCircle className="w-5 h-5" />;
+    if (informe.resultado === 'condicional') return <AlertTriangle className="w-5 h-5" />;
+    return <Clock className="w-5 h-5" />;
+  };
 
   return (
     <div className="space-y-4">
@@ -374,7 +373,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <Box label="Operador" value={informe.operador || '—'} />
               </div>
 
-              {/* NTM + STEPS */}
               <div className="section-title">Inspecciones realizadas (NTM / Steps)</div>
               {ntmSteps.length === 0 ? (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
@@ -387,14 +385,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                       <div className="step-header">
                         <div className="num">{i + 1}</div>
                         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {s.ntm || 'Sin NTM'}
-                          {s.step ? ` · ${s.step}` : ''}
+                          {s.ntm || 'Sin NTM'}{s.step ? ` · ${s.step}` : ''}
                         </span>
                         {s.metodo && <span className="badge">{s.metodo}</span>}
                         {s.fecha && (
-                          <span className="fecha">
-                            📅 {fmtFecha(s.fecha)}
-                          </span>
+                          <span className="fecha">📅 {fmtFecha(s.fecha)}</span>
+                        )}
+                        {s.resultado && (
+                          <span className={`res ${s.resultado}`}>{s.resultado}</span>
                         )}
                       </div>
 
@@ -472,39 +470,23 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               )}
 
-              <div className="section-title">Resultado de la Inspección</div>
-              <div className="mb-3">
-                <div className={`resultado ${informe.resultado || 'pendiente'}`}>
-                  {informe.resultado === 'aprobado' && '✓ Aprobado'}
-                  {informe.resultado === 'rechazado' && '✗ Rechazado'}
-                  {informe.resultado === 'condicional' && '⚠ Condicional'}
-                  {informe.resultado === 'pendiente' && '● Pendiente'}
-                </div>
-              </div>
-
               {informe.hallazgos && (
                 <>
-                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                    Hallazgos
-                  </div>
+                  <div className="section-title">Hallazgos</div>
                   <div className="texto-largo">{informe.hallazgos}</div>
                 </>
               )}
 
               {informe.conclusion && (
                 <>
-                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                    Conclusión
-                  </div>
+                  <div className="section-title">Conclusión</div>
                   <div className="texto-largo">{informe.conclusion}</div>
                 </>
               )}
 
               {informe.observaciones && (
                 <>
-                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                    Observaciones
-                  </div>
+                  <div className="section-title">Observaciones</div>
                   <div className="texto-largo">{informe.observaciones}</div>
                 </>
               )}
@@ -564,7 +546,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                         background: '#fafafa',
                         marginBottom: 6,
                         display: 'grid',
-                        gridTemplateColumns: '30px 1fr 80px 90px 120px',
+                        gridTemplateColumns: '30px 1fr 70px 80px 90px 100px',
                         gap: 8,
                         alignItems: 'center',
                       }}
@@ -585,8 +567,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           {s.ntm || '—'}{s.step ? ` · ${s.step}` : ''}
                         </div>
                         <div style={{ fontSize: 8, color: '#666', marginTop: 1 }}>
-                          {s.equipos.length} equipo{s.equipos.length !== 1 ? 's' : ''} ·{' '}
-                          {s.probetas.length} probeta{s.probetas.length !== 1 ? 's' : ''}
+                          {s.equipos.length} eq · {s.probetas.length} pb
                         </div>
                       </div>
                       <div style={{ textAlign: 'center' }}>
@@ -604,8 +585,26 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                       <div style={{ fontSize: 8, color: '#666', textAlign: 'center' }}>
                         {fmtFecha(s.fecha)}
                       </div>
-                      <div style={{ fontSize: 8, color: '#666', textAlign: 'right' }}>
+                      <div style={{ fontSize: 8, color: '#666', textAlign: 'center' }}>
                         {s.inspector_nombre || '—'}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            fontSize: 9, fontWeight: 800,
+                            padding: '2px 8px', borderRadius: 10,
+                            textTransform: 'uppercase',
+                            background:
+                              s.resultado === 'aprobado' ? '#009F4D'
+                              : s.resultado === 'condicional' ? '#FE5000'
+                              : s.resultado === 'rechazado' ? '#E4002B'
+                              : '#666',
+                            color: 'white',
+                          }}
+                        >
+                          {s.resultado || '—'}
+                        </span>
                       </div>
                     </div>
                   ))}
