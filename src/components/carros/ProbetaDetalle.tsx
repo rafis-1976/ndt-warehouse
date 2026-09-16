@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Layers, Package, Hash, AlertTriangle, CheckCircle2,
-  Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye, FileCheck2,
+  Layers, Package, Hash, AlertTriangle,
+  Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye, FileCheck2, Barcode,
 } from 'lucide-react';
+import BarcodeLib from 'react-barcode';
 
 interface ProbetaDetalleProps {
   probeta: any;
@@ -87,11 +88,7 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
             {bandejas.map((n) => {
               const esActiva = n === bandejaActiva;
               return (
-                <div
-                  key={n}
-                  className="relative"
-                  style={{ zIndex: esActiva ? 50 : 1 }}
-                >
+                <div key={n} className="relative" style={{ zIndex: esActiva ? 50 : 1 }}>
                   <div
                     className={`
                       relative flex items-center justify-center
@@ -240,7 +237,7 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
                     <Package className="w-4 h-4 text-white" />
                   </div>
                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-airbus-green text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap shadow-lg">
-                    {probeta.codigo}
+                    {probeta.pn}
                   </div>
                 </div>
               </div>
@@ -264,7 +261,7 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
                       <Package className="w-3 h-3 text-white" />
                     </div>
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 bg-airbus-red text-white text-[8px] font-bold px-1 py-0.5 rounded whitespace-nowrap">
-                      {p.codigo}
+                      {p.pn}
                     </div>
                   </div>
                 </div>
@@ -307,7 +304,7 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono font-bold text-airbus-blue text-sm">
-                  {probeta?.codigo}
+                  {probeta?.pn}
                 </span>
                 {probeta?.tecnicas_ndt && (
                   <span className="badge badge-blue">
@@ -352,9 +349,7 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
               ) : probeta?.pos_x !== null && probeta?.pos_y !== null ? (
                 <div className="flex items-center gap-2 text-airbus-green">
                   <MapPin className="w-4 h-4" />
-                  <span className="text-sm font-semibold">
-                    Marcada en foto
-                  </span>
+                  <span className="text-sm font-semibold">Marcada en foto</span>
                 </div>
               ) : (
                 <p className="text-xs text-gray-400 italic">
@@ -369,6 +364,31 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
           )}
         </div>
       </div>
+
+      {probeta?.codigo_barras && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Barcode className="w-3.5 h-3.5" />
+            Código de barras
+          </p>
+          <div className="flex flex-col items-center gap-2 py-2">
+            <div className="bg-white p-3 rounded-lg border border-gray-200">
+              <BarcodeLib
+                value={probeta.codigo_barras}
+                format="CODE128"
+                displayValue={false}
+                height={70}
+                width={2.2}
+                margin={0}
+                lineColor="#00205B"
+              />
+            </div>
+            <p className="font-mono text-xs text-gray-500">
+              {probeta.codigo_barras}
+            </p>
+          </div>
+        </div>
+      )}
 
       {ntms.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -394,7 +414,8 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
           Información técnica
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <DatoItem icon={Hash} label="Código" value={probeta?.codigo} mono />
+          <DatoItem icon={Hash} label="P/N" value={probeta?.pn} mono />
+          <DatoItem icon={Barcode} label="Código barras" value={probeta?.codigo_barras || '—'} mono />
           <DatoItem icon={Package} label="Tipo" value={probeta?.tipo || '—'} />
           <DatoItem icon={Wrench} label="Nº serie" value={probeta?.numero_serie || '—'} mono />
           <DatoItem icon={Palette} label="Material" value={probeta?.material || '—'} />
