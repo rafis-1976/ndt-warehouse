@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, FileText, Plane, Calendar, User,
   Building2, Wrench, Package, Hash, CheckCircle2, XCircle, AlertTriangle,
-  Stamp,
+  Plus, X,
 } from 'lucide-react';
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 
@@ -27,6 +27,11 @@ const ESTACIONES = [
   { value: 'BIOET', label: 'BIOET — Bilbao' },
 ];
 
+interface NtmStep {
+  ntm: string;
+  step: string;
+}
+
 export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps) {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!informeId);
@@ -37,6 +42,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
   const [inspectorActual, setInspectorActual] = useState<any>(null);
 
   const hoy = new Date().toISOString().split('T')[0];
+
+  const [ntmSteps, setNtmSteps] = useState<NtmStep[]>([{ ntm: '', step: '' }]);
 
   const [form, setForm] = useState({
     numero_informe: '',
@@ -57,8 +64,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     cliente: '',
 
     metodo: 'UT',
-    ntm_referencia: '',
-    ntm_step: '',
 
     fecha_inspeccion: hoy,
     seleccionar: '',
@@ -74,7 +79,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     inspector_nombre: '',
     inspector_licencia: '',
     inspector_email: '',
-    sello_texto: 'IBERIA MANTENIMIENTO · NDT',
     estado: 'borrador',
   });
 
@@ -159,8 +163,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             operador: data.operador ?? 'IBERIA',
             cliente: data.cliente ?? '',
             metodo: data.metodo ?? 'UT',
-            ntm_referencia: data.ntm_referencia ?? '',
-            ntm_step: data.ntm_step ?? '',
             fecha_inspeccion: data.fecha_inspeccion ?? hoy,
             seleccionar: data.seleccionar ?? '',
             equipo_id: data.equipo_id ?? '',
@@ -172,9 +174,18 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             inspector_nombre: data.inspector_nombre ?? '',
             inspector_licencia: data.inspector_licencia ?? '',
             inspector_email: data.inspector_email ?? '',
-            sello_texto: data.sello_texto ?? 'IBERIA MANTENIMIENTO · NDT',
             estado: data.estado ?? 'borrador',
           });
+
+          // Cargar NTM/STEP
+          if (Array.isArray(data.ntm_steps) && data.ntm_steps.length > 0) {
+            setNtmSteps(data.ntm_steps);
+          } else if (data.ntm_referencia || data.ntm_step) {
+            setNtmSteps([{
+              ntm: data.ntm_referencia ?? '',
+              step: data.ntm_step ?? '',
+            }]);
+          }
         }
         setLoadingData(false);
       });
@@ -182,6 +193,20 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
   const update = (field: string, value: any) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  const addNtmStep = () => {
+    setNtmSteps((prev) => [...prev, { ntm: '', step: '' }]);
+  };
+
+  const updateNtmStep = (index: number, field: keyof NtmStep, value: string) => {
+    setNtmSteps((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const removeNtmStep = (index: number) => {
+    setNtmSteps((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const probetaSeleccionada = useMemo(
     () => probetas.find((p) => p.id === form.probeta_id),
@@ -198,6 +223,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
     setLoading(true);
     try {
+      const ntmStepsLimpio = ntmSteps
+        .map((s) => ({ ntm: s.ntm.trim(), step: s.step.trim() }))
+        .filter((s) => s.ntm || s.step);
+
       const payload: any = {
         numero_informe: form.numero_informe.trim(),
         numero_sap: form.numero_sap.trim() || null,
@@ -214,8 +243,11 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         operador: form.operador.trim() || null,
         cliente: form.cliente.trim() || null,
         metodo: form.metodo,
-        ntm_referencia: form.ntm_referencia.trim() || null,
-        ntm_step: form.ntm_step.trim() || null,
+        // Compatibilidad con columnas antiguas
+        ntm_referencia: ntmStepsLimpio[0]?.ntm ?? null,
+        ntm_step: ntmStepsLimpio[0]?.step ?? null,
+        // Nueva estructura
+        ntm_steps: ntmStepsLimpio,
         fecha_inspeccion: form.fecha_inspeccion,
         seleccionar: form.seleccionar.trim() || null,
         equipo_id: form.equipo_id || null,
@@ -228,7 +260,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         inspector_nombre: form.inspector_nombre.trim() || null,
         inspector_licencia: form.inspector_licencia.trim() || null,
         inspector_email: form.inspector_email.trim() || null,
-        sello_texto: form.sello_texto.trim() || null,
         estado: form.estado,
       };
 
@@ -425,24 +456,70 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Norma NTM">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="NTM Doc. Ref. (N°)">
-            <input
-              className="input font-mono"
-              value={form.ntm_referencia}
-              onChange={(e) => update('ntm_referencia', e.target.value.toUpperCase())}
-              placeholder="NTM 51-10-01"
-            />
-          </Field>
-          <Field label="Step NTM">
-            <input
-              className="input font-mono"
-              value={form.ntm_step}
-              onChange={(e) => update('ntm_step', e.target.value)}
-              placeholder="Step 5.A.3"
-            />
-          </Field>
+      <Section title="Normas NTM y Steps">
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+            <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-600">
+              Añade todas las normas NTM y sus correspondientes steps utilizados en la inspección.
+              Puedes añadir tantas filas como necesites.
+            </p>
+          </div>
+
+          {ntmSteps.map((item, index) => (
+            <div
+              key={index}
+              className="flex items-end gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-full bg-airbus-blue text-white text-xs font-bold shrink-0">
+                {index + 1}
+              </div>
+
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    NTM Doc. Ref.
+                  </label>
+                  <input
+                    className="input font-mono"
+                    value={item.ntm}
+                    onChange={(e) => updateNtmStep(index, 'ntm', e.target.value.toUpperCase())}
+                    placeholder="NTM 51-10-01"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Step
+                  </label>
+                  <input
+                    className="input font-mono"
+                    value={item.step}
+                    onChange={(e) => updateNtmStep(index, 'step', e.target.value)}
+                    placeholder="Step 5.A.3"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => removeNtmStep(index)}
+                disabled={ntmSteps.length === 1}
+                className="p-2 text-gray-400 hover:text-airbus-red hover:bg-airbus-red/10 rounded-lg transition shrink-0 disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
+                title="Eliminar fila"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addNtmStep}
+            className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-airbus-sky/40 rounded-lg text-airbus-sky hover:bg-airbus-sky/5 hover:border-airbus-sky transition text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Añadir otra NTM / Step
+          </button>
         </div>
       </Section>
 
@@ -508,11 +585,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
                   {probetaSeleccionada.numero_serie && (
                     <span className="font-mono text-[11px] text-gray-600">
                       S/N: {probetaSeleccionada.numero_serie}
-                    </span>
-                  )}
-                  {probetaSeleccionada.codigo_barras && (
-                    <span className="text-[10px] font-mono text-gray-400">
-                      CB: {probetaSeleccionada.codigo_barras}
                     </span>
                   )}
                 </div>
@@ -632,21 +704,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               placeholder="inspector@iberia.es"
             />
           </Field>
-        </div>
-
-        <div className="mt-4 p-3 bg-airbus-yellow/10 border border-airbus-yellow/40 rounded-lg flex items-start gap-2">
-          <Stamp className="w-4 h-4 text-yellow-700 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <label className="text-[10px] font-semibold text-yellow-800 uppercase tracking-wider">
-              Texto del sello
-            </label>
-            <input
-              className="input mt-1"
-              value={form.sello_texto}
-              onChange={(e) => update('sello_texto', e.target.value)}
-              placeholder="IBERIA MANTENIMIENTO · NDT"
-            />
-          </div>
         </div>
       </Section>
 
