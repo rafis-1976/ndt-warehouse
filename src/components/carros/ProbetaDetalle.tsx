@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Layers, Package, Hash, Calendar, AlertTriangle, CheckCircle2,
-  Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye,
+  Layers, Package, Hash, AlertTriangle, CheckCircle2,
+  Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye, FileCheck2,
 } from 'lucide-react';
 
 interface ProbetaDetalleProps {
@@ -14,7 +14,6 @@ interface ProbetaDetalleProps {
 export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = [] }: ProbetaDetalleProps) {
   const [animando, setAnimando] = useState(false);
   const [fotoCargada, setFotoCargada] = useState(false);
-  const [verFotoBandeja, setVerFotoBandeja] = useState(false);
 
   const totalBandejas = carro?.num_bandejas ?? 0;
   const bandejaActiva = probeta?.num_bandeja ?? null;
@@ -27,6 +26,13 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
 
   const fotoMostrar = fotoBandeja?.url ?? probeta?.foto_url ?? null;
 
+  const ntms: string[] = probeta?.normas_ntm
+    ? String(probeta.normas_ntm)
+        .split(',')
+        .map((s: string) => s.trim())
+        .filter(Boolean)
+    : [];
+
   useEffect(() => {
     setAnimando(false);
     setFotoCargada(false);
@@ -37,11 +43,6 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
       clearTimeout(t2);
     };
   }, [probeta?.id]);
-
-  const vencida = probeta?.proxima_calibracion &&
-    new Date(probeta.proxima_calibracion) < new Date();
-  const proxima = !vencida && probeta?.proxima_calibracion &&
-    new Date(probeta.proxima_calibracion).getTime() - Date.now() < 30 * 864e5;
 
   const bandejas = Array.from({ length: totalBandejas }, (_, i) => i + 1).reverse();
 
@@ -85,7 +86,6 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
           <div className="relative flex flex-col-reverse items-center">
             {bandejas.map((n) => {
               const esActiva = n === bandejaActiva;
-
               return (
                 <div
                   key={n}
@@ -207,22 +207,13 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
         )}
       </div>
 
-      {fotoBandeja && (probeta?.pos_x !== null && probeta?.pos_y !== null || otrasProbetas.some((p) => p.pos_x !== null)) && (
+      {fotoBandeja && ((probeta?.pos_x !== null && probeta?.pos_y !== null) || otrasProbetas.some((p) => p.pos_x !== null)) && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-airbus-sky" />
-              <p className="text-xs font-semibold text-airbus-blue uppercase tracking-wider">
-                Vista de la bandeja {bandejaActiva}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setVerFotoBandeja(!verFotoBandeja)}
-              className="text-[11px] text-airbus-sky hover:bg-airbus-sky/10 px-2 py-1 rounded transition"
-            >
-              {verFotoBandeja ? 'Ocultar' : 'Ampliar'}
-            </button>
+          <div className="flex items-center gap-2 mb-3">
+            <Eye className="w-4 h-4 text-airbus-sky" />
+            <p className="text-xs font-semibold text-airbus-blue uppercase tracking-wider">
+              Vista de la bandeja {bandejaActiva}
+            </p>
           </div>
 
           <div className="relative inline-block w-full rounded-lg overflow-hidden border border-gray-200">
@@ -379,33 +370,24 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-          Estado de calibración
-        </p>
-        {probeta?.proxima_calibracion ? (
-          <>
-            <div className={`flex items-center gap-2 ${
-              vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-airbus-green'
-            }`}>
-              {vencida || proxima ? (
-                <AlertTriangle className="w-5 h-5" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5" />
-              )}
-              <span className="font-bold text-sm">
-                {vencida ? 'Vencida' : proxima ? 'Próxima a vencer' : 'Al día'}
+      {ntms.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <FileCheck2 className="w-3.5 h-3.5" />
+            Normas NTM donde es necesaria ({ntms.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {ntms.map((ntm) => (
+              <span
+                key={ntm}
+                className="inline-flex items-center px-2.5 py-1 bg-airbus-sky/10 text-airbus-sky border border-airbus-sky/30 rounded-full text-xs font-mono font-bold"
+              >
+                {ntm}
               </span>
-            </div>
-            <p className={`text-xs mt-1 ${vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-gray-500'}`}>
-              {vencida ? 'Venció el ' : proxima ? 'Vence el ' : 'Próxima: '}
-              <strong>{probeta.proxima_calibracion}</strong>
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-gray-400 italic">Sin fecha de calibración</p>
-        )}
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -419,8 +401,17 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
           <DatoItem icon={Ruler} label="Dimensiones" value={probeta?.dimensiones || '—'} />
           <DatoItem icon={Box} label="Carro" value={carro?.codigo || '—'} mono />
           <DatoItem icon={Layers} label="Bandeja" value={bandejaActiva ? String(bandejaActiva) : '—'} />
-          <DatoItem icon={Grid3x3} label="Posición" value={posicionActiva ? String(posicionActiva) : (probeta?.pos_x !== null ? 'En foto' : '—')} />
-          <DatoItem icon={Calendar} label="Adquisición" value={probeta?.fecha_adquisicion || '—'} />
+          <DatoItem
+            icon={Grid3x3}
+            label="Posición"
+            value={
+              posicionActiva
+                ? String(posicionActiva)
+                : probeta?.pos_x !== null
+                  ? 'En foto'
+                  : '—'
+            }
+          />
         </div>
       </div>
 
@@ -439,22 +430,13 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
 }
 
 function DatoItem({
-  icon: Icon, label, value, mono, color,
+  icon: Icon, label, value, mono,
 }: {
   icon: any;
   label: string;
   value: string;
   mono?: boolean;
-  color?: 'red' | 'orange' | 'green';
 }) {
-  const colorClass = color === 'red'
-    ? 'text-airbus-red'
-    : color === 'orange'
-      ? 'text-airbus-orange'
-      : color === 'green'
-        ? 'text-airbus-green'
-        : 'text-gray-800';
-
   return (
     <div className="flex items-start gap-2">
       <Icon className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
@@ -462,7 +444,7 @@ function DatoItem({
         <p className="text-[10px] text-gray-400 uppercase tracking-wider">
           {label}
         </p>
-        <p className={`text-sm font-medium truncate ${mono ? 'font-mono' : ''} ${colorClass}`}>
+        <p className={`text-sm font-medium truncate text-gray-800 ${mono ? 'font-mono' : ''}`}>
           {value}
         </p>
       </div>
