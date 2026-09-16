@@ -29,7 +29,7 @@ export function Carros() {
     setLoading(true);
     const [c, p] = await Promise.all([
       supabase.from('carros').select('*').order('codigo'),
-      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('codigo'),
+      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('num_bandeja', { ascending: true, nullsFirst: false }).order('codigo'),
     ]);
     if (c.error) console.error(c.error);
     if (p.error) console.error(p.error);
@@ -55,6 +55,14 @@ export function Carros() {
       const key = p.carro_id ?? '__sin_carro__';
       if (!map[key]) map[key] = [];
       map[key].push(p);
+    });
+    Object.keys(map).forEach((key) => {
+      map[key].sort((a, b) => {
+        const ba = a.num_bandeja ?? 999;
+        const bb = b.num_bandeja ?? 999;
+        if (ba !== bb) return ba - bb;
+        return (a.codigo ?? '').localeCompare(b.codigo ?? '');
+      });
     });
     return map;
   }, [probetas]);
@@ -146,12 +154,6 @@ export function Carros() {
     return diff < 30 * 864e5;
   };
 
-  const porcentajeOcupacion = (carro: any, listaProbetas: any[]) => {
-    if (!carro.num_bandejas || carro.num_bandejas === 0) return null;
-    const pct = Math.round((listaProbetas.length / carro.num_bandejas) * 100);
-    return Math.min(100, pct);
-  };
-
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -216,7 +218,16 @@ export function Carros() {
           {carrosFiltrados.map((carro) => {
             const listaProbetas = probetasPorCarro[carro.id] ?? [];
             const expandido = expandidos.has(carro.id);
-            const pct = porcentajeOcupacion(carro, listaProbetas);
+            const pct = carro.num_bandejas > 0
+              ? Math.min(100, Math.round((listaProbetas.length / carro.num_bandejas) * 100))
+              : null;
+
+            const porBandeja = new Map<number | null, any[]>();
+            listaProbetas.forEach((pb) => {
+              const k = pb.num_bandeja ?? null;
+              if (!porBandeja.has(k)) porBandeja.set(k, []);
+              porBandeja.get(k)!.push(pb);
+            });
 
             return (
               <div key={carro.id} className="card p-0 overflow-hidden">
@@ -375,6 +386,12 @@ export function Carros() {
                                   {probeta.tecnicas_ndt && (
                                     <span className="badge badge-blue">
                                       {probeta.tecnicas_ndt.codigo}
+                                    </span>
+                                  )}
+                                  {probeta.num_bandeja && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[10px] font-bold">
+                                      <Layers className="w-3 h-3" />
+                                      Bandeja {probeta.num_bandeja}
                                     </span>
                                   )}
                                   {!probeta.activa && (
