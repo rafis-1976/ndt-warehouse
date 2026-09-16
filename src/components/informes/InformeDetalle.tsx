@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../../lib/supabase';
 import {
   Printer, X, CheckCircle2, XCircle, AlertTriangle, Clock,
 } from 'lucide-react';
@@ -9,13 +8,6 @@ interface InformeDetalleProps {
   informe: any;
   onClose: () => void;
 }
-
-const METODO_NOMBRE: Record<string, string> = {
-  UT: 'Ultrasonic Testing',
-  RT: 'Radiographic Testing',
-  ET: 'Eddy Current Testing',
-  TT: 'Thermographic Testing',
-};
 
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   const [cargando, setCargando] = useState(true);
@@ -47,7 +39,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             padding: 0;
             background: white;
           }
-
           .page {
             page-break-after: always;
             padding: 0;
@@ -56,7 +47,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             flex-direction: column;
           }
           .page:last-child { page-break-after: auto; }
-
           .head {
             display: flex;
             align-items: center;
@@ -79,12 +69,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .doc-title .sub { font-size: 9px; color: #666; }
           .doc-title .num { font-family: monospace; font-size: 11px; color: #111; margin-top: 2px; font-weight: 700; }
           .doc-title .pagina { font-size: 9px; color: #666; margin-top: 2px; font-weight: 600; }
-
           .grid { display: grid; gap: 6px; margin-bottom: 10px; }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-4 { grid-template-columns: repeat(4, 1fr); }
-
           .box {
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -106,7 +94,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             word-break: break-word;
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
-
           .section-title {
             background: #00205B;
             color: white;
@@ -119,23 +106,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-top: 10px;
             margin-bottom: 6px;
           }
-
-          .metodos { display: flex; gap: 4px; flex-wrap: wrap; }
-          .metodo {
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 4px 10px;
-            font-weight: 700;
-            font-size: 10px;
-            background: white;
-            color: #999;
-          }
-          .metodo.activo {
-            background: #00205B;
-            color: white;
-            border-color: #00205B;
-          }
-
           .step-block {
             border: 1px solid #00205B;
             border-radius: 6px;
@@ -169,10 +139,13 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-radius: 10px;
             font-size: 9px;
           }
-          .step-body { padding: 8px 10px; background: #fafafa; }
-          .step-body .row {
-            margin-bottom: 6px;
+          .step-header .fecha {
+            margin-left: auto;
+            font-size: 9px;
+            opacity: 0.9;
           }
+          .step-body { padding: 8px 10px; background: #fafafa; }
+          .step-body .row { margin-bottom: 6px; }
           .step-body .row:last-child { margin-bottom: 0; }
           .step-body .label {
             font-size: 8px;
@@ -205,7 +178,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-style: italic;
             color: #999;
           }
-
           .resultado {
             display: inline-block;
             padding: 8px 20px;
@@ -219,7 +191,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .resultado.rechazado { background: #E4002B; color: white; }
           .resultado.condicional { background: #FE5000; color: white; }
           .resultado.pendiente { background: #666; color: white; }
-
           .texto-largo {
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -229,7 +200,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             min-height: 30px;
             white-space: pre-wrap;
           }
-
           .firma-box {
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -262,7 +232,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             right: 10px;
             border-top: 1px solid #ccc;
           }
-
           .footer {
             margin-top: auto;
             padding-top: 8px;
@@ -271,7 +240,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             color: #999;
             text-align: center;
           }
-
           .barcode { text-align: center; margin-top: 6px; }
         </style>
       </head>
@@ -289,7 +257,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     return <Clock className="w-5 h-5" />;
   };
 
-  /** Normaliza la lista de NTM/Steps con toda su info */
   const getNtmSteps = () => {
     if (Array.isArray(informe.ntm_steps) && informe.ntm_steps.length > 0) {
       return informe.ntm_steps
@@ -297,19 +264,20 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           ntm: String(s.ntm ?? '').trim(),
           step: String(s.step ?? '').trim(),
           metodo: String(s.metodo ?? '').trim(),
+          fecha: String(s.fecha ?? '').trim(),
           equipos: Array.isArray(s.equipos) ? s.equipos : [],
           probetas: Array.isArray(s.probetas) ? s.probetas : [],
           inspector_nombre: String(s.inspector_nombre ?? '').trim(),
         }))
         .filter((s: any) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
     }
-    // Compatibilidad con informes antiguos
     if (informe.ntm_referencia || informe.ntm_step) {
       return [
         {
           ntm: String(informe.ntm_referencia ?? '').trim(),
           step: String(informe.ntm_step ?? '').trim(),
           metodo: String(informe.metodo ?? '').trim(),
+          fecha: String(informe.fecha_inspeccion ?? '').trim(),
           equipos: [],
           probetas: [],
           inspector_nombre: '',
@@ -320,6 +288,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   };
 
   const ntmSteps = getNtmSteps();
+
+  const fmtFecha = (iso: string) => {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleDateString('es-ES');
+    } catch {
+      return iso;
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -395,21 +372,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <Box label="Operador" value={informe.operador || '—'} />
               </div>
 
-              <div className="section-title">Método END (NDT Method)</div>
-              <div className="metodos">
-                {Object.entries(METODO_NOMBRE).map(([cod, nombre]) => (
-                  <div
-                    key={cod}
-                    className={`metodo ${informe.metodo === cod ? 'activo' : ''}`}
-                    title={nombre}
-                  >
-                    {cod}
-                  </div>
-                ))}
-              </div>
-
               {/* NTM + STEPS */}
-              <div className="section-title">Normas NTM, Técnicas, Equipos, Probetas e Inspectores</div>
+              <div className="section-title">Inspecciones realizadas (NTM / Steps)</div>
               {ntmSteps.length === 0 ? (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
                   Sin normas NTM asignadas
@@ -420,15 +384,20 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                     <div key={i} className="step-block">
                       <div className="step-header">
                         <div className="num">{i + 1}</div>
-                        <span style={{ flex: 1 }}>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {s.ntm || 'Sin NTM'}
                           {s.step ? ` · ${s.step}` : ''}
                         </span>
                         {s.metodo && <span className="badge">{s.metodo}</span>}
+                        {s.fecha && (
+                          <span className="fecha">
+                            📅 {fmtFecha(s.fecha)}
+                          </span>
+                        )}
                       </div>
 
                       <div className="step-body">
-                        <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                           <div>
                             <div className="label">NTM Doc. Ref.</div>
                             <div className="val">{s.ntm || '—'}</div>
@@ -436,6 +405,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           <div>
                             <div className="label">Step</div>
                             <div className="val">{s.step || '—'}</div>
+                          </div>
+                          <div>
+                            <div className="label">Fecha realización</div>
+                            <div className="val">{fmtFecha(s.fecha)}</div>
                           </div>
                         </div>
 
@@ -547,7 +520,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               </div>
             </div>
 
-            {/* PÁGINA 2 — TRAZABILIDAD Y CÓDIGO DE BARRAS */}
+            {/* PÁGINA 2 */}
             <div className="page p-6">
               <div className="head">
                 <div className="brand">
@@ -594,7 +567,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                         background: '#fafafa',
                         marginBottom: 6,
                         display: 'grid',
-                        gridTemplateColumns: '30px 1fr 80px 120px',
+                        gridTemplateColumns: '30px 1fr 80px 90px 120px',
                         gap: 8,
                         alignItems: 'center',
                       }}
@@ -630,6 +603,9 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                         >
                           {s.metodo || '—'}
                         </span>
+                      </div>
+                      <div style={{ fontSize: 8, color: '#666', textAlign: 'center' }}>
+                        {fmtFecha(s.fecha)}
                       </div>
                       <div style={{ fontSize: 8, color: '#666', textAlign: 'right' }}>
                         {s.inspector_nombre || '—'}
