@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle, Layers, Image as ImageIcon, Info } from 'lucide-react';
+import {
+  Loader2, Save, AlertCircle, Layers, Image as ImageIcon, Info, Grid3x3,
+} from 'lucide-react';
 import { BandejasFotos } from './BandejasFotos';
 import type { BandejaFoto } from '../../lib/storageFotos';
 
@@ -17,6 +19,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
     descripcion: carro?.descripcion ?? '',
     ubicacion: carro?.ubicacion ?? '',
     num_bandejas: carro?.num_bandejas ?? 0,
+    posiciones_por_bandeja: carro?.posiciones_por_bandeja ?? 0,
     activo: carro?.activo ?? true,
   });
   const [bandejasFotos, setBandejasFotos] = useState<BandejaFoto[]>(
@@ -28,12 +31,15 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
   const update = (field: string, value: any) =>
     setForm((f) => ({ ...f, [field]: value }));
 
+  const capacidadTotal = form.num_bandejas * form.posiciones_por_bandeja;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!form.codigo.trim()) return setError('El código es obligatorio');
     if (!form.nombre.trim()) return setError('El nombre es obligatorio');
     if (form.num_bandejas < 0) return setError('El número de bandejas no puede ser negativo');
+    if (form.posiciones_por_bandeja < 0) return setError('El número de posiciones no puede ser negativo');
 
     setLoading(true);
     try {
@@ -47,6 +53,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
         descripcion: form.descripcion.trim() || null,
         ubicacion: form.ubicacion.trim() || null,
         num_bandejas: Number(form.num_bandejas) || 0,
+        posiciones_por_bandeja: Number(form.posiciones_por_bandeja) || 0,
         activo: form.activo,
         bandejas_fotos: fotosFiltradas,
       };
@@ -113,56 +120,124 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
       </Section>
 
       <Section title="Capacidad">
-        <div className="bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-4">
-          <div className="flex items-start gap-3 mb-3">
-            <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
-              <Layers className="w-5 h-5 text-airbus-sky" />
+        <div className="bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-4 space-y-5">
+          <div>
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
+                <Layers className="w-5 h-5 text-airbus-sky" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-airbus-blue">
+                  Número de bandejas
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Cuántas bandejas tiene el carro para organizar las probetas.
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-airbus-blue">
-                Número de bandejas
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Indica cuántas bandejas tiene el carro para organizar las probetas.
-              </p>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => update('num_bandejas', Math.max(0, form.num_bandejas - 1))}
+                className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+                disabled={form.num_bandejas <= 0}
+              >
+                −
+              </button>
+
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="input text-center text-2xl font-bold text-airbus-blue w-24"
+                value={form.num_bandejas}
+                onChange={(e) => update('num_bandejas', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+              />
+
+              <button
+                type="button"
+                onClick={() => update('num_bandejas', Math.min(100, form.num_bandejas + 1))}
+                className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+                disabled={form.num_bandejas >= 100}
+              >
+                +
+              </button>
+
+              <span className="text-sm text-gray-500">
+                bandeja{form.num_bandejas !== 1 ? 's' : ''}
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => update('num_bandejas', Math.max(0, form.num_bandejas - 1))}
-              className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
-              disabled={form.num_bandejas <= 0}
-            >
-              −
-            </button>
+          <div className="border-t border-airbus-sky/20 pt-5">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
+                <Grid3x3 className="w-5 h-5 text-airbus-sky" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-airbus-blue">
+                  Posiciones por bandeja
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Cuántos huecos tiene cada bandeja para colocar probetas.
+                </p>
+              </div>
+            </div>
 
-            <input
-              type="number"
-              min={0}
-              max={100}
-              className="input text-center text-2xl font-bold text-airbus-blue w-24"
-              value={form.num_bandejas}
-              onChange={(e) => update('num_bandejas', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => update('posiciones_por_bandeja', Math.max(0, form.posiciones_por_bandeja - 1))}
+                className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+                disabled={form.posiciones_por_bandeja <= 0}
+              >
+                −
+              </button>
 
-            <button
-              type="button"
-              onClick={() => update('num_bandejas', Math.min(100, form.num_bandejas + 1))}
-              className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
-              disabled={form.num_bandejas >= 100}
-            >
-              +
-            </button>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="input text-center text-2xl font-bold text-airbus-sky w-24"
+                value={form.posiciones_por_bandeja}
+                onChange={(e) => update('posiciones_por_bandeja', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+              />
 
-            <span className="text-sm text-gray-500">
-              bandeja{form.num_bandejas !== 1 ? 's' : ''}
-            </span>
+              <button
+                type="button"
+                onClick={() => update('posiciones_por_bandeja', Math.min(100, form.posiciones_por_bandeja + 1))}
+                className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+                disabled={form.posiciones_por_bandeja >= 100}
+              >
+                +
+              </button>
+
+              <span className="text-sm text-gray-500">
+                posicione{form.posiciones_por_bandeja !== 1 ? 's' : ''} por bandeja
+              </span>
+            </div>
           </div>
+
+          {capacidadTotal > 0 && (
+            <div className="bg-white border border-airbus-sky/30 rounded-lg p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-airbus-sky" />
+                <span className="text-xs text-gray-600">Capacidad total:</span>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-airbus-blue leading-none">
+                  {capacidadTotal}
+                </p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  probetas
+                </p>
+              </div>
+            </div>
+          )}
 
           {form.num_bandejas === 0 && (
-            <p className="mt-3 text-xs text-airbus-orange flex items-center gap-1.5">
+            <p className="text-xs text-airbus-orange flex items-center gap-1.5">
               <AlertCircle className="w-3.5 h-3.5" />
               Sin bandejas definidas — puedes añadirlas más tarde
             </p>
