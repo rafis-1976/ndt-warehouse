@@ -3,11 +3,20 @@ import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, ArrowDownRight, ArrowUpRight, ArrowRightLeft,
   Sliders, Search, X, Filter, Hash, Package, User as UserIcon,
+  Truck, CornerDownLeft, Building2, Warehouse, Users, Calendar,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { MovimientoForm } from '../components/movimientos/MovimientoForm';
 
-type TipoMov = 'entrada' | 'salida' | 'transferencia' | 'ajuste';
+type TipoMov =
+  | 'entrada'
+  | 'salida'
+  | 'transferencia'
+  | 'ajuste'
+  | 'prestamo_externo'
+  | 'devolucion_externa';
+
+type TipoObjeto = 'todos' | 'equipo' | 'probeta';
 
 const tipoConfig: Record<TipoMov, { label: string; icon: any; color: string; bg: string; border: string }> = {
   entrada: {
@@ -38,6 +47,28 @@ const tipoConfig: Record<TipoMov, { label: string; icon: any; color: string; bg:
     bg: 'bg-airbus-purple/10',
     border: 'border-airbus-purple/30',
   },
+  prestamo_externo: {
+    label: 'Préstamo externo',
+    icon: Truck,
+    color: 'text-airbus-orange',
+    bg: 'bg-airbus-orange/10',
+    border: 'border-airbus-orange/30',
+  },
+  devolucion_externa: {
+    label: 'Devolución externa',
+    icon: CornerDownLeft,
+    color: 'text-airbus-green',
+    bg: 'bg-airbus-green/10',
+    border: 'border-airbus-green/30',
+  },
+};
+
+const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
+  almacen: { label: 'Almacén', icon: Warehouse },
+  seccion: { label: 'Sección', icon: Building2 },
+  compania: { label: 'Compañía', icon: Truck },
+  cliente: { label: 'Cliente', icon: Users },
+  otro: { label: 'Otro', icon: Building2 },
 };
 
 export function Movimientos() {
@@ -47,6 +78,7 @@ export function Movimientos() {
   const [toast, setToast] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  const [filtroObjeto, setFiltroObjeto] = useState<TipoObjeto>('todos');
   const [limite, setLimite] = useState<number>(50);
 
   const load = useCallback(async () => {
@@ -56,6 +88,7 @@ export function Movimientos() {
       .select(`
         *,
         equipos(id_equipo, nombre, codigo_barras, tecnicas_ndt(codigo)),
+        probetas(id, pn, nombre, codigo_barras, carros(codigo, nombre)),
         perfiles(num_nomina, nombre_completo)
       `)
       .order('created_at', { ascending: false })
@@ -78,15 +111,25 @@ export function Movimientos() {
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return items.filter((m) => {
+      // Filtro por tipo de objeto
+      if (filtroObjeto === 'equipo' && !m.equipo_id) return false;
+      if (filtroObjeto === 'probeta' && !m.probeta_id) return false;
+
       const coincideBusqueda =
         qLower === '' ||
         [
           m.equipos?.id_equipo,
           m.equipos?.nombre,
           m.equipos?.codigo_barras,
+          m.probetas?.pn,
+          m.probetas?.nombre,
+          m.probetas?.codigo_barras,
+          m.probetas?.carros?.codigo,
           m.referencia,
           m.ubicacion_origen,
           m.ubicacion_destino,
+          m.destino_nombre,
+          m.destino_contacto,
           m.perfiles?.nombre_completo,
           m.perfiles?.num_nomina,
         ]
@@ -100,7 +143,7 @@ export function Movimientos() {
 
       return true;
     });
-  }, [items, q, filtroTipo]);
+  }, [items, q, filtroTipo, filtroObjeto]);
 
   const visibles = useMemo(() => filtered.slice(0, limite), [filtered, limite]);
 
@@ -111,6 +154,8 @@ export function Movimientos() {
       salida: 0,
       transferencia: 0,
       ajuste: 0,
+      prestamo_externo: 0,
+      devolucion_externa: 0,
     };
     items.forEach((m) => {
       if (c[m.tipo] !== undefined) c[m.tipo]++;
@@ -118,11 +163,23 @@ export function Movimientos() {
     return c;
   }, [items]);
 
-  const hayFiltrosActivos = q !== '' || filtroTipo !== 'todos';
+  const contadoresObjeto = useMemo(() => {
+    let equipos = 0;
+    let probetas = 0;
+    items.forEach((m) => {
+      if (m.equipo_id) equipos++;
+      if (m.probeta_id) probetas++;
+    });
+    return { todos: items.length, equipo: equipos, probeta: probetas };
+  }, [items]);
+
+  const hayFiltrosActivos =
+    q !== '' || filtroTipo !== 'todos' || filtroObjeto !== 'todos';
 
   const limpiarFiltros = () => {
     setQ('');
     setFiltroTipo('todos');
+    setFiltroObjeto('todos');
   };
 
   const fmtFechaHora = (iso: string) => {
@@ -159,7 +216,7 @@ export function Movimientos() {
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Movimientos</h1>
           <p className="text-sm text-gray-500">
-            Historial de entradas, salidas, transferencias y ajustes
+            Historial de entradas, salidas, transferencias, ajustes y préstamos externos
           </p>
         </div>
         <button
@@ -177,21 +234,90 @@ export function Movimientos() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <StatCard tipo="todos" count={contadores.todos} activo={filtroTipo === 'todos'} onClick={() => setFiltroTipo('todos')} />
-        <StatCard tipo="entrada" count={contadores.entrada} activo={filtroTipo === 'entrada'} onClick={() => setFiltroTipo('entrada')} />
-        <StatCard tipo="salida" count={contadores.salida} activo={filtroTipo === 'salida'} onClick={() => setFiltroTipo('salida')} />
-        <StatCard tipo="transferencia" count={contadores.transferencia} activo={filtroTipo === 'transferencia'} onClick={() => setFiltroTipo('transferencia')} />
-        <StatCard tipo="ajuste" count={contadores.ajuste} activo={filtroTipo === 'ajuste'} onClick={() => setFiltroTipo('ajuste')} />
+      {/* FILTRO POR OBJETO */}
+      <div className="card">
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+          <Filter className="w-3 h-3" />
+          Tipo de objeto
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setFiltroObjeto('todos')}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition ${
+              filtroObjeto === 'todos'
+                ? 'bg-airbus-blue text-white border-airbus-blue shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            Todos
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+              filtroObjeto === 'todos' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'
+            }`}>
+              {contadoresObjeto.todos}
+            </span>
+          </button>
+          <button
+            onClick={() => setFiltroObjeto('equipo')}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition ${
+              filtroObjeto === 'equipo'
+                ? 'bg-airbus-blue text-white border-airbus-blue shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <Package className="w-3.5 h-3.5" />
+            Equipos
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+              filtroObjeto === 'equipo' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'
+            }`}>
+              {contadoresObjeto.equipo}
+            </span>
+          </button>
+          <button
+            onClick={() => setFiltroObjeto('probeta')}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition ${
+              filtroObjeto === 'probeta'
+                ? 'bg-airbus-blue text-white border-airbus-blue shadow-sm'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <Hash className="w-3.5 h-3.5" />
+            Probetas
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+              filtroObjeto === 'probeta' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'
+            }`}>
+              {contadoresObjeto.probeta}
+            </span>
+          </button>
+        </div>
       </div>
 
+      {/* FILTRO POR TIPO DE MOVIMIENTO */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <StatCard
+          tipo="todos"
+          count={contadores.todos}
+          activo={filtroTipo === 'todos'}
+          onClick={() => setFiltroTipo('todos')}
+        />
+        {Object.keys(tipoConfig).map((t) => (
+          <StatCard
+            key={t}
+            tipo={t as TipoMov}
+            count={contadores[t] ?? 0}
+            activo={filtroTipo === t}
+            onClick={() => setFiltroTipo(t)}
+          />
+        ))}
+      </div>
+
+      {/* BUSCADOR */}
       <div className="card">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-10"
-              placeholder="Buscar por equipo, referencia, ubicación o usuario..."
+              placeholder="Buscar por equipo, probeta, referencia, ubicación, destino o usuario..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -208,6 +334,7 @@ export function Movimientos() {
         </div>
       </div>
 
+      {/* TABLA */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-400 flex items-center justify-center gap-2">
@@ -223,12 +350,18 @@ export function Movimientos() {
                 : 'Sin resultados con los filtros actuales'}
             </p>
             {hayFiltrosActivos ? (
-              <button onClick={limpiarFiltros} className="btn-ghost border border-gray-300 inline-flex items-center gap-2">
+              <button
+                onClick={limpiarFiltros}
+                className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
+              >
                 <X className="w-4 h-4" />
                 Limpiar filtros
               </button>
             ) : (
-              <button onClick={() => setModalOpen(true)} className="btn-primary inline-flex items-center gap-2">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="btn-primary inline-flex items-center gap-2"
+              >
                 <Plus className="w-4 h-4" />
                 Registrar el primero
               </button>
@@ -241,7 +374,7 @@ export function Movimientos() {
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
                     <th className="px-4 py-3">Tipo</th>
-                    <th className="px-4 py-3">Equipo</th>
+                    <th className="px-4 py-3">Objeto</th>
                     <th className="px-4 py-3">Origen → Destino</th>
                     <th className="px-4 py-3">Referencia</th>
                     <th className="px-4 py-3">Usuario</th>
@@ -252,9 +385,19 @@ export function Movimientos() {
                   {visibles.map((m) => {
                     const conf = tipoConfig[m.tipo as TipoMov] ?? tipoConfig.ajuste;
                     const Icon = conf.icon;
+                    const esExterno = m.tipo === 'prestamo_externo' || m.tipo === 'devolucion_externa';
+                    const destinoConf = m.destino_tipo
+                      ? tipoDestinoConfig[m.destino_tipo]
+                      : null;
+                    const DestinoIcon = destinoConf?.icon ?? Building2;
 
                     return (
-                      <tr key={m.id} className="hover:bg-gray-50 transition">
+                      <tr
+                        key={m.id}
+                        className={`hover:bg-gray-50 transition ${
+                          esExterno ? 'bg-airbus-orange/5' : ''
+                        }`}
+                      >
                         <td className="px-4 py-3">
                           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${conf.bg} ${conf.border}`}>
                             <Icon className={`w-3.5 h-3.5 ${conf.color}`} />
@@ -263,28 +406,84 @@ export function Movimientos() {
                             </span>
                           </div>
                         </td>
+
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono font-bold text-airbus-blue shrink-0 text-xs">
-                              {m.equipos?.id_equipo ?? '—'}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="font-medium text-gray-800 truncate text-sm">
-                                {m.equipos?.nombre ?? '—'}
-                              </p>
-                              <p className="text-[10px] font-mono text-gray-400 truncate">
-                                {m.equipos?.codigo_barras}
-                              </p>
+                          {m.equipo_id && m.equipos ? (
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-airbus-blue/10 flex items-center justify-center shrink-0">
+                                <Package className="w-4 h-4 text-airbus-blue" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono font-bold text-airbus-blue text-xs">
+                                    {m.equipos.id_equipo}
+                                  </span>
+                                  <span className="text-sm text-gray-800 truncate">
+                                    {m.equipos.nombre}
+                                  </span>
+                                  {m.equipos.tecnicas_ndt?.codigo && (
+                                    <span className="badge badge-blue">
+                                      {m.equipos.tecnicas_ndt.codigo}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] font-mono text-gray-400 truncate">
+                                  {m.equipos.codigo_barras}
+                                </p>
+                              </div>
                             </div>
-                            {m.equipos?.tecnicas_ndt?.codigo && (
-                              <span className="badge badge-blue shrink-0">
-                                {m.equipos.tecnicas_ndt.codigo}
-                              </span>
-                            )}
-                          </div>
+                          ) : m.probeta_id && m.probetas ? (
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-airbus-sky/10 flex items-center justify-center shrink-0">
+                                <Hash className="w-4 h-4 text-airbus-sky" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono font-bold text-airbus-sky text-xs">
+                                    {m.probetas.pn}
+                                  </span>
+                                  <span className="text-sm text-gray-800 truncate">
+                                    {m.probetas.nombre}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 truncate">
+                                  {m.probetas.carros?.codigo ? `${m.probetas.carros.codigo} · ` : ''}
+                                  <span className="font-mono">{m.probetas.codigo_barras}</span>
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">—</span>
+                          )}
                         </td>
+
                         <td className="px-4 py-3 text-xs text-gray-600">
-                          {m.ubicacion_origen || m.ubicacion_destino ? (
+                          {esExterno && m.destino_nombre ? (
+                            <div className="flex items-start gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-airbus-orange/15 flex items-center justify-center shrink-0">
+                                <DestinoIcon className="w-3.5 h-3.5 text-airbus-orange" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-wider text-airbus-orange font-semibold">
+                                  {destinoConf?.label}
+                                </p>
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {m.destino_nombre}
+                                </p>
+                                {m.destino_contacto && (
+                                  <p className="text-[10px] text-gray-500 truncate">
+                                    {m.destino_contacto}
+                                  </p>
+                                )}
+                                {m.fecha_devolucion_prevista && (
+                                  <p className="text-[10px] text-airbus-orange flex items-center gap-1 mt-0.5">
+                                    <Calendar className="w-2.5 h-2.5" />
+                                    Devolución: {new Date(m.fecha_devolucion_prevista).toLocaleDateString('es-ES')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ) : m.ubicacion_origen || m.ubicacion_destino ? (
                             <div className="flex items-center gap-1.5">
                               <span className="truncate max-w-[100px]">
                                 {m.ubicacion_origen ?? '—'}
@@ -298,9 +497,11 @@ export function Movimientos() {
                             <span className="text-gray-300">—</span>
                           )}
                         </td>
+
                         <td className="px-4 py-3 text-xs font-mono text-gray-600">
                           {m.referencia ?? '—'}
                         </td>
+
                         <td className="px-4 py-3">
                           {m.perfiles ? (
                             <div className="flex items-center gap-2">
@@ -320,6 +521,7 @@ export function Movimientos() {
                             <span className="text-xs text-gray-400 italic">Sistema</span>
                           )}
                         </td>
+
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                           {fmtFechaCorta(m.created_at)}
                         </td>
@@ -379,15 +581,15 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      className={`card p-3 flex items-center gap-3 text-left transition border-2 ${
+      className={`card p-3 flex items-center gap-2.5 text-left transition border-2 ${
         activo ? config.border : 'border-transparent hover:border-gray-200'
       }`}
     >
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${config.bg}`}>
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${config.bg}`}>
         <Icon className={`w-4 h-4 ${config.color}`} />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-bold text-gray-800 leading-none">{count}</p>
+        <p className="text-base font-bold text-gray-800 leading-none">{count}</p>
         <p className="text-[10px] text-gray-500 leading-tight mt-0.5 truncate">
           {config.label}
         </p>
