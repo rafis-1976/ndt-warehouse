@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Camera, Layers, Grid3x3, Info,
-  MousePointerClick, X, Package, FileCheck2, Plus,
+  MousePointerClick, X, Package, FileCheck2, Plus, Barcode, Hash,
 } from 'lucide-react';
+import BarcodeLib from 'react-barcode';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
 
@@ -31,7 +32,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const [ntmInput, setNtmInput] = useState('');
 
   const [form, setForm] = useState({
-    codigo: probeta?.codigo ?? '',
+    pn: probeta?.pn ?? '',
+    codigo_barras: probeta?.codigo_barras ?? '',
     nombre: probeta?.nombre ?? '',
     tipo: probeta?.tipo ?? '',
     tecnica_id: probeta?.tecnica_id ?? '',
@@ -46,6 +48,13 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     observaciones: probeta?.observaciones ?? '',
     activa: probeta?.activa ?? true,
   });
+
+  // Auto-generar código de barras desde el P/N si está vacío
+  useEffect(() => {
+    if (!form.codigo_barras && form.pn) {
+      setForm((f) => ({ ...f, codigo_barras: form.pn }));
+    }
+  }, [form.pn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     Promise.all([
@@ -75,7 +84,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         if (error) setError(error.message);
         else if (data) {
           setForm({
-            codigo: data.codigo ?? '',
+            pn: data.pn ?? '',
+            codigo_barras: data.codigo_barras ?? '',
             nombre: data.nombre ?? '',
             tipo: data.tipo ?? '',
             tecnica_id: data.tecnica_id ?? '',
@@ -113,7 +123,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     }
     supabase
       .from('probetas')
-      .select('id, codigo, nombre, num_posicion, pos_x, pos_y')
+      .select('id, pn, nombre, num_posicion, pos_x, pos_y')
       .eq('carro_id', form.carro_id)
       .eq('num_bandeja', Number(form.num_bandeja))
       .then(({ data }) => {
@@ -186,7 +196,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!form.codigo.trim()) return setError('El código es obligatorio');
+    if (!form.pn.trim()) return setError('El P/N es obligatorio');
+    if (!form.codigo_barras.trim()) return setError('El código de barras es obligatorio');
     if (!form.nombre.trim()) return setError('El nombre es obligatorio');
 
     if (form.num_bandeja && bandejasDisponibles > 0) {
@@ -201,7 +212,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       const normasTexto = ntms.length > 0 ? ntms.join(', ') : null;
 
       const payload: any = {
-        codigo: form.codigo.trim().toUpperCase(),
+        pn: form.pn.trim().toUpperCase(),
+        codigo_barras: form.codigo_barras.trim(),
         nombre: form.nombre.trim(),
         tipo: form.tipo.trim() || null,
         tecnica_id: form.tecnica_id || null,
@@ -230,7 +242,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       onSuccess();
     } catch (err: any) {
       const msg = err.message ?? 'Error desconocido';
-      if (msg.includes('probetas_codigo_key')) setError('Ya existe una probeta con ese código');
+      if (msg.includes('probetas_pn_key')) setError('Ya existe una probeta con ese P/N');
+      else if (msg.includes('probetas_codigo_barras_key')) setError('Ya existe una probeta con ese código de barras');
       else if (msg.includes('row-level security')) setError('No tienes permisos para esta acción');
       else setError(msg);
     } finally {
@@ -265,15 +278,55 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
 
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Código *">
-            <input
-              className="input font-mono"
-              value={form.codigo}
-              onChange={(e) => update('codigo', e.target.value.toUpperCase())}
-              placeholder="PB-0001"
-              required
-            />
+          <Field label="P/N (Part Number) *">
+            <div className="relative">
+              <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="input pl-10 font-mono"
+                value={form.pn}
+                onChange={(e) => update('pn', e.target.value.toUpperCase())}
+                placeholder="PN-0001"
+                required
+              />
+            </div>
           </Field>
+
+          <Field label="Código de barras *">
+            <div className="relative">
+              <Barcode className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="input pl-10 pr-20 font-mono"
+                value={form.codigo_barras}
+                onChange={(e) => update('codigo_barras', e.target.value)}
+                placeholder="Igual que el P/N"
+                required
+              />
+              {form.pn && form.codigo_barras !== form.pn && (
+                <button
+                  type="button"
+                  onClick={() => update('codigo_barras', form.pn)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[10px] bg-airbus-sky text-white rounded hover:bg-airbus-blue transition"
+                  title="Usar el P/N como código de barras"
+                >
+                  = P/N
+                </button>
+              )}
+            </div>
+            {form.codigo_barras && (
+              <div className="mt-2 flex justify-center bg-white border border-gray-200 rounded-lg p-2">
+                <BarcodeLib
+                  value={form.codigo_barras}
+                  format="CODE128"
+                  displayValue={false}
+                  height={38}
+                  width={1.4}
+                  margin={0}
+                  lineColor="#00205B"
+                />
+              </div>
+            )}
+          </Field>
+
           <Field label="Nombre *">
             <input
               className="input"
@@ -283,19 +336,19 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
               required
             />
           </Field>
+          <Field label="Número de serie">
+            <input
+              className="input font-mono"
+              value={form.numero_serie}
+              onChange={(e) => update('numero_serie', e.target.value)}
+            />
+          </Field>
           <Field label="Tipo">
             <input
               className="input"
               value={form.tipo}
               onChange={(e) => update('tipo', e.target.value)}
               placeholder="Bloque V1 / V2, penetrámetro, patrón ET..."
-            />
-          </Field>
-          <Field label="Número de serie">
-            <input
-              className="input font-mono"
-              value={form.numero_serie}
-              onChange={(e) => update('numero_serie', e.target.value)}
             />
           </Field>
         </div>
@@ -532,7 +585,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
                       <Package className="w-4 h-4 text-white" />
                     </div>
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-airbus-green text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
-                      {form.codigo || 'Nueva'}
+                      {form.pn || 'Nueva'}
                     </div>
                   </div>
                 </div>
@@ -555,7 +608,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
                         <Package className="w-3 h-3 text-white" />
                       </div>
                       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 bg-airbus-red text-white text-[8px] font-bold px-1 py-0.5 rounded whitespace-nowrap">
-                        {p.codigo}
+                        {p.pn}
                       </div>
                     </div>
                   </div>
@@ -604,7 +657,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
                           ? 'bg-airbus-red/10 text-airbus-red border-airbus-red/40 cursor-not-allowed'
                           : 'bg-airbus-sky/10 text-airbus-sky border-airbus-sky/40 hover:border-airbus-sky hover:bg-airbus-sky/20'
                     }`}
-                    title={ocupante ? `Ocupada por ${ocupante.codigo}` : `Posición ${n}`}
+                    title={ocupante ? `Ocupada por ${ocupante.pn}` : `Posición ${n}`}
                   >
                     {n}
                   </button>
