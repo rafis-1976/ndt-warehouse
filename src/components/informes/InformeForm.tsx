@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, FileText, Plane, Calendar, User,
@@ -45,6 +45,7 @@ interface NtmStep {
   ntm: string;
   step: string;
   metodo: string;
+  fecha: string;
   equipos: EquipoStepData[];
   probetas: ProbetaStepData[];
   inspector_nombre: string;
@@ -68,6 +69,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       ntm: '',
       step: '',
       metodo: 'UT',
+      fecha: hoy,
       equipos: [],
       probetas: [],
       inspector_nombre: '',
@@ -92,8 +94,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     uk_caa_ref: 'UK.145.01413',
     operador: 'IBERIA',
     cliente: '',
-
-    metodo: 'UT',
 
     fecha_inspeccion: hoy,
     seleccionar: '',
@@ -195,7 +195,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             uk_caa_ref: data.uk_caa_ref ?? 'UK.145.01413',
             operador: data.operador ?? 'IBERIA',
             cliente: data.cliente ?? '',
-            metodo: data.metodo ?? 'UT',
             fecha_inspeccion: data.fecha_inspeccion ?? hoy,
             seleccionar: data.seleccionar ?? '',
             resultado: data.resultado ?? 'pendiente',
@@ -213,6 +212,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
                 ntm: s.ntm ?? '',
                 step: s.step ?? '',
                 metodo: s.metodo ?? 'UT',
+                fecha: s.fecha ?? data.fecha_inspeccion ?? hoy,
                 equipos: Array.isArray(s.equipos) ? s.equipos : [],
                 probetas: Array.isArray(s.probetas) ? s.probetas : [],
                 inspector_nombre: s.inspector_nombre ?? '',
@@ -225,6 +225,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
                 ntm: data.ntm_referencia ?? '',
                 step: data.ntm_step ?? '',
                 metodo: data.metodo ?? 'UT',
+                fecha: data.fecha_inspeccion ?? hoy,
                 equipos: [],
                 probetas: [],
                 inspector_nombre: data.inspector_nombre ?? '',
@@ -246,7 +247,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       {
         ntm: '',
         step: '',
-        metodo: form.metodo,
+        metodo: 'UT',
+        fecha: hoy,
         equipos: [],
         probetas: [],
         inspector_nombre: form.inspector_nombre,
@@ -270,8 +272,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setError('');
 
     if (!form.numero_informe.trim()) return setError('El N° de informe es obligatorio');
-    if (!form.metodo) return setError('Selecciona el método NDT');
     if (!form.fecha_inspeccion) return setError('Indica la fecha de inspección');
+    if (ntmSteps.length === 0) return setError('Añade al menos un NTM/Step');
 
     setLoading(true);
     try {
@@ -280,6 +282,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           ntm: s.ntm.trim(),
           step: s.step.trim(),
           metodo: s.metodo || '',
+          fecha: s.fecha || '',
           equipos: (s.equipos || []).map((e) => ({
             id: e.id,
             id_equipo: e.id_equipo,
@@ -298,6 +301,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         }))
         .filter((s) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
 
+      // El método principal se deduce del primer step (compatibilidad con columna antigua)
+      const metodoPrincipal = ntmStepsLimpio[0]?.metodo ?? '';
+
       const payload: any = {
         numero_informe: form.numero_informe.trim(),
         numero_sap: form.numero_sap.trim() || null,
@@ -313,7 +319,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         uk_caa_ref: form.uk_caa_ref.trim() || null,
         operador: form.operador.trim() || null,
         cliente: form.cliente.trim() || null,
-        metodo: form.metodo,
+        metodo: metodoPrincipal,
         ntm_referencia: ntmStepsLimpio[0]?.ntm ?? null,
         ntm_step: ntmStepsLimpio[0]?.step ?? null,
         ntm_steps: ntmStepsLimpio,
@@ -499,38 +505,12 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Método END (NDT Method) principal">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {METODOS.map((m) => {
-            const activo = form.metodo === m.value;
-            return (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => update('metodo', m.value)}
-                title={m.nombre}
-                className={`flex flex-col items-center justify-center py-3 rounded-lg border-2 transition ${
-                  activo
-                    ? 'bg-airbus-blue text-white border-airbus-blue shadow-md'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-airbus-blue/40 hover:bg-airbus-blue/5'
-                }`}
-              >
-                <span className="text-lg font-bold">{m.label}</span>
-                <span className="text-[9px] opacity-80 text-center leading-tight mt-0.5 px-1">
-                  {m.nombre.replace(' Testing', '')}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
       <Section title="Normas NTM, Steps, Técnicas, Equipos y Probetas">
         <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Añade cada NTM/Step de la inspección. Para cada uno puedes seleccionar la técnica
-            aplicada, los equipos y probetas utilizados y el inspector que lo realizó.
+            Añade cada NTM/Step de la inspección. Cada uno tiene su propia fecha de realización,
+            técnica aplicada, equipos, probetas e inspector.
           </p>
         </div>
 
@@ -555,12 +535,12 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-airbus-sky/40 rounded-lg text-airbus-sky hover:bg-airbus-sky/5 hover:border-airbus-sky transition text-sm font-medium"
           >
             <Plus className="w-4 h-4" />
-            Añadir otra NTM / Step
+            Añadir otro NTM / Step
           </button>
         </div>
       </Section>
 
-      <Section title="Fechas">
+      <Section title="Fecha global de inspección">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Fecha de inspección *">
             <div className="relative">
@@ -804,9 +784,17 @@ function NtmStepCard({
     onUpdate({ probetas: step.probetas.filter((p) => p.id !== id) });
   };
 
+  const fmtFecha = (iso: string) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString('es-ES');
+    } catch {
+      return iso;
+    }
+  };
+
   return (
     <div className="border-2 border-airbus-sky/40 rounded-xl overflow-hidden bg-white">
-      {/* Cabecera */}
       <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-airbus-blue to-airbus-navy text-white">
         <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold shrink-0">
           {index + 1}
@@ -835,6 +823,11 @@ function NtmStepCard({
               {step.metodo}
             </span>
           )}
+          {step.fecha && (
+            <span className="text-[10px] opacity-80 shrink-0">
+              · {fmtFecha(step.fecha)}
+            </span>
+          )}
           {(step.equipos.length > 0 || step.probetas.length > 0) && (
             <span className="text-[10px] opacity-80 shrink-0">
               · {step.equipos.length} eq · {step.probetas.length} pb
@@ -854,11 +847,9 @@ function NtmStepCard({
         )}
       </div>
 
-      {/* Cuerpo */}
       {expandido && (
         <div className="p-4 space-y-5">
-          {/* NTM + STEP */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
                 NTM Doc. Ref.
@@ -881,9 +872,20 @@ function NtmStepCard({
                 placeholder="Step 5.A.3"
               />
             </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                <Calendar className="w-3 h-3" />
+                Fecha de realización
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={step.fecha}
+                onChange={(e) => onUpdate({ fecha: e.target.value })}
+              />
+            </div>
           </div>
 
-          {/* TÉCNICA */}
           <div>
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Técnica END utilizada
@@ -912,7 +914,6 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* EQUIPOS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Package className="w-3 h-3" />
@@ -981,7 +982,6 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* PROBETAS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Hash className="w-3 h-3" />
@@ -1049,7 +1049,6 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* INSPECTOR */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <User className="w-3 h-3" />
