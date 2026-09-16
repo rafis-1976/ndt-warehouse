@@ -2,8 +2,16 @@ import { supabase } from './supabase';
 
 export const BUCKET_EQUIPOS = 'equipos-fotos';
 export const BUCKET_PROBETAS = 'probetas-fotos';
+export const BUCKET_BANDEJAS = 'carros-bandejas';
 
 export interface FotoEquipo {
+  url: string;
+  path: string;
+  subida_en: string;
+}
+
+export interface BandejaFoto {
+  num_bandeja: number;
   url: string;
   path: string;
   subida_en: string;
