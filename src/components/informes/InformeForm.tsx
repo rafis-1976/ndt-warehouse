@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, FileText, Plane, Calendar, User,
-  CheckCircle2, XCircle, AlertTriangle, Plus, X, Package, Hash,
+  CheckCircle2, AlertTriangle, Plus, X, Package, Hash,
   ChevronDown, ChevronRight,
 } from 'lucide-react';
 
@@ -46,7 +46,7 @@ interface NtmStep {
   step: string;
   metodo: string;
   fecha: string;
-  resultado: string;       // 'NIL FINDINGS' | 'FINDINGS'
+  resultado: string;
   findings_text: string;
   equipos: EquipoStepData[];
   probetas: ProbetaStepData[];
@@ -101,7 +101,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
     seleccionar: '',
 
-    conclusion: '',
     observaciones: '',
 
     inspector_nombre: '',
@@ -212,7 +211,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           operador: data.operador ?? 'IBERIA',
           cliente: data.cliente ?? '',
           seleccionar: data.seleccionar ?? '',
-          conclusion: data.conclusion ?? '',
           observaciones: data.observaciones ?? '',
           inspector_nombre: data.inspector_nombre ?? '',
           inspector_email: data.inspector_email ?? '',
@@ -270,13 +268,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               }))
             : [];
 
-          // Normalizar resultado antiguo al nuevo formato
           let resultado = String(s?.resultado ?? 'NIL FINDINGS');
           if (resultado === 'aprobado') resultado = 'NIL FINDINGS';
           else if (resultado === 'rechazado' || resultado === 'condicional') resultado = 'FINDINGS';
-          else if (resultado !== 'NIL FINDINGS' && resultado !== 'FINDINGS') {
-            resultado = 'NIL FINDINGS';
-          }
+          else if (resultado !== 'NIL FINDINGS' && resultado !== 'FINDINGS') resultado = 'NIL FINDINGS';
 
           return {
             ntm: String(s?.ntm ?? ''),
@@ -364,7 +359,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     if (!form.numero_informe.trim()) return setError('El N° de informe es obligatorio');
     if (ntmSteps.length === 0) return setError('Añade al menos un NTM/Step');
 
-    // Validar cada step
     for (let i = 0; i < ntmSteps.length; i++) {
       const s = ntmSteps[i];
       const pref = `Step ${i + 1}:`;
@@ -408,7 +402,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         inspector_id: s.inspector_id ?? null,
       }));
 
-      // El resultado global se calcula: si algún step tiene FINDINGS → 'FINDINGS', si no → 'NIL FINDINGS'
       const resultadoGlobal = ntmStepsFinal.some((s) => s.resultado === 'FINDINGS')
         ? 'FINDINGS'
         : 'NIL FINDINGS';
@@ -418,10 +411,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
       const metodoPrincipal = ntmStepsFinal[0]?.metodo ?? '';
 
-      // Hallazgos global: concatena los findings de todos los steps con FINDINGS
       const hallazgosGlobal = ntmStepsFinal
         .filter((s) => s.resultado === 'FINDINGS' && s.findings_text)
-        .map((s, i) => `[${s.ntm}${s.step ? ' · ' + s.step : ''}] ${s.findings_text}`)
+        .map((s) => `[${s.ntm}${s.step ? ' · ' + s.step : ''}] ${s.findings_text}`)
         .join('\n\n');
 
       const payload: any = {
@@ -449,7 +441,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         probeta_id: ntmStepsFinal[0]?.probetas?.[0]?.id ?? null,
         resultado: resultadoGlobal,
         hallazgos: hallazgosGlobal || null,
-        conclusion: form.conclusion.trim() || null,
+        conclusion: null,
         observaciones: form.observaciones.trim() || null,
         inspector_id: inspectorActual?.id ?? null,
         inspector_nombre: form.inspector_nombre.trim() || null,
@@ -636,8 +628,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
             Todos los campos de cada step son <strong>obligatorios</strong>.
-            El resultado debe ser <strong>NIL FINDINGS</strong> o <strong>FINDINGS</strong>
-            (en cuyo caso hay que describir los hallazgos).
+            El resultado debe ser <strong>NIL FINDINGS</strong> o <strong>FINDINGS</strong>.
           </p>
         </div>
 
@@ -668,25 +659,13 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Conclusión y observaciones">
-        <div className="space-y-4">
-          <Field label="Conclusión">
-            <textarea
-              className="input min-h-[80px] resize-y"
-              value={form.conclusion}
-              onChange={(e) => update('conclusion', e.target.value)}
-              placeholder="Conclusión técnica sobre el estado del componente..."
-            />
-          </Field>
-          <Field label="Observaciones">
-            <textarea
-              className="input min-h-[60px] resize-y"
-              value={form.observaciones}
-              onChange={(e) => update('observaciones', e.target.value)}
-              placeholder="Notas adicionales, condiciones ambientales, etc."
-            />
-          </Field>
-        </div>
+      <Section title="Observaciones">
+        <textarea
+          className="input min-h-[60px] resize-y"
+          value={form.observaciones}
+          onChange={(e) => update('observaciones', e.target.value)}
+          placeholder="Notas adicionales, condiciones ambientales, etc."
+        />
       </Section>
 
       <Section title="Inspector responsable del informe">
@@ -908,7 +887,6 @@ function NtmStepCard({
 
       {expandido && (
         <div className="p-4 space-y-5">
-          {/* NTM + STEP + FECHA */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -949,7 +927,6 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* TÉCNICA */}
           <div>
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Técnica END utilizada *
@@ -978,14 +955,10 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* EQUIPOS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Package className="w-3 h-3" />
               Equipos utilizados * ({step.equipos.length})
-              <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
-                {step.metodo || '—'} · {equiposDeLaTecnica.length} disponible{equiposDeLaTecnica.length !== 1 ? 's' : ''}
-              </span>
             </label>
 
             {step.equipos.length > 0 && (
@@ -1005,6 +978,9 @@ function NtmStepCard({
                         S/N: {eq.numero_serie}
                       </span>
                     )}
+                    <span className="text-[10px] text-airbus-orange font-medium shrink-0 hidden md:inline">
+                      Próx. calib: {fmtFecha(eq.proxima_calibracion ?? '') || '—'}
+                    </span>
                     <button
                       type="button"
                       onClick={() => removeEquipo(eq.id)}
@@ -1049,14 +1025,10 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* PROBETAS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Hash className="w-3 h-3" />
               Probetas utilizadas * ({step.probetas.length})
-              <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
-                {step.metodo || '—'} · {probetasDeLaTecnica.length} disponible{probetasDeLaTecnica.length !== 1 ? 's' : ''}
-              </span>
             </label>
 
             {step.probetas.length > 0 && (
@@ -1116,7 +1088,6 @@ function NtmStepCard({
             </div>
           </div>
 
-          {/* INSPECTOR */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <User className="w-3 h-3" />
@@ -1165,7 +1136,6 @@ function NtmStepCard({
             </select>
           </div>
 
-          {/* RESULTADO: NIL FINDINGS / FINDINGS */}
           <div>
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Resultado de la inspección *
