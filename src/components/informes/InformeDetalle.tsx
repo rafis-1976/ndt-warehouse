@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Printer, X, CheckCircle2, XCircle, AlertTriangle, Clock,
+  Printer, X, CheckCircle2, AlertTriangle, Clock,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
 
@@ -151,10 +151,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-weight: 800;
             text-transform: uppercase;
           }
-          .step-header .res.aprobado    { background: #009F4D; color: white; }
-          .step-header .res.condicional { background: #FE5000; color: white; }
-          .step-header .res.rechazado   { background: #E4002B; color: white; }
-          .step-header .res.pendiente   { background: #666; color: white; }
+          .step-header .res.nil       { background: #009F4D; color: white; }
+          .step-header .res.findings  { background: #E4002B; color: white; }
           .step-body { padding: 8px 10px; background: #fafafa; }
           .step-body .row { margin-bottom: 6px; }
           .step-body .row:last-child { margin-bottom: 0; }
@@ -188,6 +186,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 9px;
             font-style: italic;
             color: #999;
+          }
+          .findings-box {
+            border: 1px solid #E4002B;
+            border-radius: 4px;
+            padding: 8px;
+            background: #fff5f5;
+            font-size: 10px;
+            white-space: pre-wrap;
+            color: #7a0015;
           }
           .texto-largo {
             border: 1px solid #ccc;
@@ -251,16 +258,24 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   const getNtmSteps = () => {
     if (Array.isArray(informe.ntm_steps) && informe.ntm_steps.length > 0) {
       return informe.ntm_steps
-        .map((s: any) => ({
-          ntm: String(s.ntm ?? '').trim(),
-          step: String(s.step ?? '').trim(),
-          metodo: String(s.metodo ?? '').trim(),
-          fecha: String(s.fecha ?? '').trim(),
-          resultado: String(s.resultado ?? 'pendiente').trim(),
-          equipos: Array.isArray(s.equipos) ? s.equipos : [],
-          probetas: Array.isArray(s.probetas) ? s.probetas : [],
-          inspector_nombre: String(s.inspector_nombre ?? '').trim(),
-        }))
+        .map((s: any) => {
+          let resultado = String(s.resultado ?? 'NIL FINDINGS');
+          if (resultado === 'aprobado') resultado = 'NIL FINDINGS';
+          else if (resultado === 'rechazado' || resultado === 'condicional') resultado = 'FINDINGS';
+          else if (resultado !== 'NIL FINDINGS' && resultado !== 'FINDINGS') resultado = 'NIL FINDINGS';
+
+          return {
+            ntm: String(s.ntm ?? '').trim(),
+            step: String(s.step ?? '').trim(),
+            metodo: String(s.metodo ?? '').trim(),
+            fecha: String(s.fecha ?? '').trim(),
+            resultado,
+            findings_text: String(s.findings_text ?? '').trim(),
+            equipos: Array.isArray(s.equipos) ? s.equipos : [],
+            probetas: Array.isArray(s.probetas) ? s.probetas : [],
+            inspector_nombre: String(s.inspector_nombre ?? '').trim(),
+          };
+        })
         .filter((s: any) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
     }
     if (informe.ntm_referencia || informe.ntm_step) {
@@ -270,7 +285,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           step: String(informe.ntm_step ?? '').trim(),
           metodo: String(informe.metodo ?? '').trim(),
           fecha: String(informe.fecha_inspeccion ?? '').trim(),
-          resultado: String(informe.resultado ?? 'pendiente').trim(),
+          resultado: 'NIL FINDINGS',
+          findings_text: '',
           equipos: [],
           probetas: [],
           inspector_nombre: '',
@@ -298,12 +314,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     : informe.estacion === 'BARCELONA' ? 'Barcelona'
     : (informe.estacion || '—');
 
+  const hayFindings = ntmSteps.some((s) => s.resultado === 'FINDINGS');
+
   const ResultadoIcone = () => {
-    if (informe.resultado === 'aprobado') return <CheckCircle2 className="w-5 h-5" />;
-    if (informe.resultado === 'rechazado') return <XCircle className="w-5 h-5" />;
-    if (informe.resultado === 'condicional') return <AlertTriangle className="w-5 h-5" />;
-    return <Clock className="w-5 h-5" />;
+    if (hayFindings) return <AlertTriangle className="w-5 h-5 text-airbus-red" />;
+    return <CheckCircle2 className="w-5 h-5 text-airbus-green" />;
   };
+
+  const claseResultado = (r: string) => r === 'FINDINGS' ? 'findings' : 'nil';
 
   return (
     <div className="space-y-4">
@@ -312,6 +330,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           <ResultadoIcone />
           <span className="text-sm font-semibold text-gray-700">
             Informe {informe.numero_informe}
+          </span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+            hayFindings ? 'bg-airbus-red text-white' : 'bg-airbus-green text-white'
+          }`}>
+            {hayFindings ? 'FINDINGS' : 'NIL FINDINGS'}
           </span>
         </div>
         <div className="flex gap-2">
@@ -391,9 +414,9 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                         {s.fecha && (
                           <span className="fecha">📅 {fmtFecha(s.fecha)}</span>
                         )}
-                        {s.resultado && (
-                          <span className={`res ${s.resultado}`}>{s.resultado}</span>
-                        )}
+                        <span className={`res ${claseResultado(s.resultado)}`}>
+                          {s.resultado}
+                        </span>
                       </div>
 
                       <div className="step-body">
@@ -464,17 +487,17 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                             {s.inspector_nombre || '—'}
                           </div>
                         </div>
+
+                        {s.resultado === 'FINDINGS' && s.findings_text && (
+                          <div className="row">
+                            <div className="label">Findings detectados</div>
+                            <div className="findings-box">{s.findings_text}</div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-
-              {informe.hallazgos && (
-                <>
-                  <div className="section-title">Hallazgos</div>
-                  <div className="texto-largo">{informe.hallazgos}</div>
-                </>
               )}
 
               {informe.conclusion && (
@@ -546,7 +569,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                         background: '#fafafa',
                         marginBottom: 6,
                         display: 'grid',
-                        gridTemplateColumns: '30px 1fr 70px 80px 90px 100px',
+                        gridTemplateColumns: '30px 1fr 70px 80px 90px 120px',
                         gap: 8,
                         alignItems: 'center',
                       }}
@@ -595,15 +618,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                             fontSize: 9, fontWeight: 800,
                             padding: '2px 8px', borderRadius: 10,
                             textTransform: 'uppercase',
-                            background:
-                              s.resultado === 'aprobado' ? '#009F4D'
-                              : s.resultado === 'condicional' ? '#FE5000'
-                              : s.resultado === 'rechazado' ? '#E4002B'
-                              : '#666',
+                            background: s.resultado === 'FINDINGS' ? '#E4002B' : '#009F4D',
                             color: 'white',
                           }}
                         >
-                          {s.resultado || '—'}
+                          {s.resultado}
                         </span>
                       </div>
                     </div>
