@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 
-const BUCKET = 'equipos-fotos';
+export const BUCKET_EQUIPOS = 'equipos-fotos';
+export const BUCKET_PROBETAS = 'probetas-fotos';
 
 export interface FotoEquipo {
   url: string;
@@ -20,19 +21,20 @@ function dataURLtoBlob(dataURL: string): Blob {
 
 export async function subirFotoArchivo(
   file: File,
-  equipoId: string
+  referenciaId: string,
+  bucket: string = BUCKET_EQUIPOS
 ): Promise<FotoEquipo> {
   const ext = file.name.split('.').pop() ?? 'jpg';
   const timestamp = Date.now();
-  const path = `${equipoId}/${timestamp}.${ext}`;
+  const path = `${referenciaId}/${timestamp}.${ext}`;
 
   const { error } = await supabase.storage
-    .from(BUCKET)
+    .from(bucket)
     .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
 
   if (error) throw error;
 
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
 
   return {
     url: urlData.publicUrl,
@@ -43,19 +45,20 @@ export async function subirFotoArchivo(
 
 export async function subirFotoBlob(
   blob: Blob,
-  equipoId: string,
-  extension: string = 'png'
+  referenciaId: string,
+  extension: string = 'png',
+  bucket: string = BUCKET_EQUIPOS
 ): Promise<FotoEquipo> {
   const timestamp = Date.now();
-  const path = `${equipoId}/${timestamp}.${extension}`;
+  const path = `${referenciaId}/${timestamp}.${extension}`;
 
   const { error } = await supabase.storage
-    .from(BUCKET)
+    .from(bucket)
     .upload(path, blob, { cacheControl: '3600', upsert: false, contentType: blob.type });
 
   if (error) throw error;
 
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
 
   return {
     url: urlData.publicUrl,
@@ -66,14 +69,18 @@ export async function subirFotoBlob(
 
 export async function subirFotoDataURL(
   dataURL: string,
-  equipoId: string
+  referenciaId: string,
+  bucket: string = BUCKET_EQUIPOS
 ): Promise<FotoEquipo> {
   const blob = dataURLtoBlob(dataURL);
   const ext = blob.type.includes('png') ? 'png' : 'jpg';
-  return subirFotoBlob(blob, equipoId, ext);
+  return subirFotoBlob(blob, referenciaId, ext, bucket);
 }
 
-export async function eliminarFoto(path: string): Promise<void> {
-  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+export async function eliminarFoto(
+  path: string,
+  bucket: string = BUCKET_EQUIPOS
+): Promise<void> {
+  const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw error;
 }
