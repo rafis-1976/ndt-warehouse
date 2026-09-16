@@ -298,6 +298,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     }
   };
 
+  // Normalizar la estación para mostrar solo Madrid o Barcelona
+  const estacionMostrar =
+    informe.estacion === 'MADET' ? 'Madrid'
+    : informe.estacion === 'BCNET' ? 'Barcelona'
+    : informe.estacion === 'MADRID' ? 'Madrid'
+    : informe.estacion === 'BARCELONA' ? 'Barcelona'
+    : (informe.estacion || '—');
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center gap-2">
@@ -342,16 +350,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               </div>
 
               <div className="section-title">Identificación</div>
-              <div className="grid grid-4">
+              <div className="grid grid-3">
                 <Box label="N° Informe" value={informe.numero_informe} mono />
                 <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
                 <Box label="Revisión" value={`Rev. ${informe.revision ?? 1}`} />
-                <Box
-                  label="Fecha Inspección"
-                  value={informe.fecha_inspeccion
-                    ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
-                    : '—'}
-                />
               </div>
 
               <div className="section-title">Aeronave / Componente</div>
@@ -366,7 +368,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
 
               <div className="section-title">Certificación y Aprobación</div>
               <div className="grid grid-4">
-                <Box label="Instalación" value={informe.estacion || '—'} />
+                <Box label="Instalación" value={estacionMostrar} />
                 <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
                 <Box label="UK CAA Ref." value={informe.uk_caa_ref || '—'} mono />
                 <Box label="Operador" value={informe.operador || '—'} />
@@ -541,13 +543,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               <div className="section-title">Resumen de la inspección</div>
               <div className="grid grid-3">
                 <Box label="N° Informe" value={informe.numero_informe} mono />
-                <Box
-                  label="Fecha Inspección"
-                  value={informe.fecha_inspeccion
-                    ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
-                    : '—'}
-                />
                 <Box label="N° NTM/Steps" value={String(ntmSteps.length)} />
+                <Box label="Instalación" value={estacionMostrar} />
               </div>
 
               <div className="section-title">Trazabilidad de NTM / Steps</div>
