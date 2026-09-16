@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
   Layers, Package, Hash, Calendar, AlertTriangle, CheckCircle2,
-  Ruler, Box, Palette, Wrench, Grid3x3, MapPin,
+  Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye,
 } from 'lucide-react';
 
 interface ProbetaDetalleProps {
   probeta: any;
   carro: any;
   onClose: () => void;
+  probetasEnBandeja?: any[];
 }
 
-export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps) {
+export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = [] }: ProbetaDetalleProps) {
   const [animando, setAnimando] = useState(false);
   const [fotoCargada, setFotoCargada] = useState(false);
+  const [verFotoBandeja, setVerFotoBandeja] = useState(false);
 
   const totalBandejas = carro?.num_bandejas ?? 0;
   const bandejaActiva = probeta?.num_bandeja ?? null;
@@ -43,6 +45,8 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
 
   const bandejas = Array.from({ length: totalBandejas }, (_, i) => i + 1).reverse();
 
+  const otrasProbetas = probetasEnBandeja.filter((p) => p.id !== probeta?.id);
+
   return (
     <div className="space-y-4">
       <div className="relative bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-2xl p-6 overflow-hidden">
@@ -72,9 +76,6 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
               </p>
               <p className="text-white font-bold text-2xl leading-none">
                 B{bandejaActiva}{posicionActiva ? ` · P${posicionActiva}` : ''}
-              </p>
-              <p className="text-[10px] text-airbus-light/80 mt-0.5">
-                Bandeja {bandejaActiva}{posicionActiva ? `, posición ${posicionActiva}` : ''}
               </p>
             </div>
           )}
@@ -141,7 +142,6 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                                     : 'bg-white/30 border-white/40'
                                   }
                                 `}
-                                title={`Posición ${p}${esEsta ? ' — esta probeta' : ''}`}
                               />
                             );
                           })}
@@ -207,6 +207,95 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
         )}
       </div>
 
+      {fotoBandeja && (probeta?.pos_x !== null && probeta?.pos_y !== null || otrasProbetas.some((p) => p.pos_x !== null)) && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-airbus-sky" />
+              <p className="text-xs font-semibold text-airbus-blue uppercase tracking-wider">
+                Vista de la bandeja {bandejaActiva}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVerFotoBandeja(!verFotoBandeja)}
+              className="text-[11px] text-airbus-sky hover:bg-airbus-sky/10 px-2 py-1 rounded transition"
+            >
+              {verFotoBandeja ? 'Ocultar' : 'Ampliar'}
+            </button>
+          </div>
+
+          <div className="relative inline-block w-full rounded-lg overflow-hidden border border-gray-200">
+            <img
+              src={fotoBandeja.url}
+              alt={`Bandeja ${bandejaActiva}`}
+              className="w-full h-auto select-none"
+              draggable={false}
+            />
+
+            {probeta?.pos_x !== null && probeta?.pos_y !== null && (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  left: `${Number(probeta.pos_x) * 100}%`,
+                  top: `${Number(probeta.pos_y) * 100}%`,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 20,
+                }}
+              >
+                <div className="relative">
+                  <div className="absolute inset-0 -m-4 rounded-full bg-airbus-green/40 animate-ping" />
+                  <div className="relative w-9 h-9 rounded-full bg-airbus-green border-[3px] border-white shadow-xl flex items-center justify-center">
+                    <Package className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-airbus-green text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap shadow-lg">
+                    {probeta.codigo}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {otrasProbetas.map((p) => {
+              if (p.pos_x === null || p.pos_y === null) return null;
+              return (
+                <div
+                  key={p.id}
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: `${Number(p.pos_x) * 100}%`,
+                    top: `${Number(p.pos_y) * 100}%`,
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: 10,
+                  }}
+                >
+                  <div className="relative">
+                    <div className="w-6 h-6 rounded-full bg-airbus-red border-2 border-white shadow-md flex items-center justify-center opacity-90">
+                      <Package className="w-3 h-3 text-white" />
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 bg-airbus-red text-white text-[8px] font-bold px-1 py-0.5 rounded whitespace-nowrap">
+                      {p.codigo}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center gap-3 text-[10px]">
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-airbus-green border border-white shadow"></span>
+              <span className="text-gray-500">Esta probeta</span>
+            </div>
+            {otrasProbetas.some((p) => p.pos_x !== null) && (
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-airbus-red border border-white shadow"></span>
+                <span className="text-gray-500">Otras probetas</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4 md:col-span-2">
           <div className="flex items-start gap-3">
@@ -269,6 +358,13 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                     Posición {posicionActiva}
                   </span>
                 </div>
+              ) : probeta?.pos_x !== null && probeta?.pos_y !== null ? (
+                <div className="flex items-center gap-2 text-airbus-green">
+                  <MapPin className="w-4 h-4" />
+                  <span className="text-sm font-semibold">
+                    Marcada en foto
+                  </span>
+                </div>
               ) : (
                 <p className="text-xs text-gray-400 italic">
                   Sin posición específica
@@ -323,7 +419,7 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
           <DatoItem icon={Ruler} label="Dimensiones" value={probeta?.dimensiones || '—'} />
           <DatoItem icon={Box} label="Carro" value={carro?.codigo || '—'} mono />
           <DatoItem icon={Layers} label="Bandeja" value={bandejaActiva ? String(bandejaActiva) : '—'} />
-          <DatoItem icon={Grid3x3} label="Posición" value={posicionActiva ? String(posicionActiva) : '—'} />
+          <DatoItem icon={Grid3x3} label="Posición" value={posicionActiva ? String(posicionActiva) : (probeta?.pos_x !== null ? 'En foto' : '—')} />
           <DatoItem icon={Calendar} label="Adquisición" value={probeta?.fecha_adquisicion || '—'} />
         </div>
       </div>
