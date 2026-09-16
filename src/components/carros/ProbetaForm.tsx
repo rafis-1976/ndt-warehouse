@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Save, AlertCircle, Camera } from 'lucide-react';
+import { CamaraEquipo } from '../equipos/CamaraEquipo';
+import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
 
 interface ProbetaFormProps {
   probeta?: any;
@@ -12,7 +14,10 @@ interface ProbetaFormProps {
 export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFormProps) {
   const [tecnicas, setTecnicas] = useState<any[]>([]);
   const [carros, setCarros] = useState<any[]>([]);
+  const [fotos, setFotos] = useState<FotoEquipo[]>([]);
+  const [uploadKey, setUploadKey] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(!!probeta);
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
@@ -40,6 +45,44 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     });
   }, []);
 
+  useEffect(() => {
+    if (!probeta) {
+      setUploadKey(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      setLoadingData(false);
+      return;
+    }
+
+    setUploadKey(probeta.id);
+
+    supabase
+      .from('probetas')
+      .select('*')
+      .eq('id', probeta.id)
+      .single()
+      .then(({ data, error }) => {
+        if (error) setError(error.message);
+        else if (data) {
+          setForm({
+            codigo: data.codigo ?? '',
+            nombre: data.nombre ?? '',
+            tipo: data.tipo ?? '',
+            tecnica_id: data.tecnica_id ?? '',
+            carro_id: data.carro_id ?? '',
+            material: data.material ?? '',
+            dimensiones: data.dimensiones ?? '',
+            numero_serie: data.numero_serie ?? '',
+            fecha_adquisicion: data.fecha_adquisicion ?? '',
+            proxima_calibracion: data.proxima_calibracion ?? '',
+            observaciones: data.observaciones ?? '',
+            activa: data.activa ?? true,
+          });
+          const fts: FotoEquipo[] = Array.isArray(data.fotos_urls) ? data.fotos_urls : [];
+          setFotos(fts);
+        }
+        setLoadingData(false);
+      });
+  }, [probeta]);
+
   const update = (field: string, value: any) =>
     setForm((f) => ({ ...f, [field]: value }));
 
@@ -64,6 +107,8 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         proxima_calibracion: form.proxima_calibracion || null,
         observaciones: form.observaciones.trim() || null,
         activa: form.activa,
+        fotos_urls: fotos,
+        foto_url: fotos[0]?.url ?? null,
       };
 
       if (probeta) {
@@ -84,8 +129,31 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     }
   };
 
+  if (loadingData) {
+    return (
+      <div className="py-12 flex justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-airbus-sky" />
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      <Section title="Fotos de la probeta">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <Camera className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Haz una foto con la cámara o sube imágenes. Se puede recortar el fondo automáticamente.
+          </p>
+        </div>
+        <CamaraEquipo
+          equipoId={uploadKey}
+          fotos={fotos}
+          onChange={setFotos}
+          bucket={BUCKET_PROBETAS}
+        />
+      </Section>
+
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Código *">
