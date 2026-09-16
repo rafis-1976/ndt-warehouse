@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import {
   Layers, Package, Hash, AlertTriangle,
   Ruler, Box, Palette, Wrench, Grid3x3, MapPin, Eye, FileCheck2, Barcode,
+  FileText, Download,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
+import { formatearTamano, iconoDocumento, type DocumentoEquipo } from '../../lib/storage';
 
 interface ProbetaDetalleProps {
   probeta: any;
@@ -32,6 +34,10 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
         .split(',')
         .map((s: string) => s.trim())
         .filter(Boolean)
+    : [];
+
+  const certificados: DocumentoEquipo[] = Array.isArray(probeta?.certificados_urls)
+    ? probeta.certificados_urls
     : [];
 
   useEffect(() => {
@@ -383,6 +389,36 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
             <p className="font-mono text-xs text-gray-500">
               {probeta.codigo_barras}
             </p>
+          </div>
+        </div>
+      )}
+
+      {certificados.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5" />
+            Certificados ({certificados.length})
+          </p>
+          <div className="space-y-2">
+            {certificados.map((doc) => (
+              <a
+                key={doc.url}
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-2 bg-gray-50 hover:bg-airbus-sky/5 rounded-lg transition border border-gray-200 group"
+              >
+                <span className="text-lg shrink-0">{iconoDocumento(doc.tipo)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 truncate">{doc.nombre}</p>
+                  <p className="text-[10px] text-gray-400">
+                    {formatearTamano(doc.tamano)}
+                    {doc.subido_en && ` · ${new Date(doc.subido_en).toLocaleDateString('es-ES')}`}
+                  </p>
+                </div>
+                <Download className="w-4 h-4 text-airbus-sky group-hover:text-airbus-blue transition shrink-0" />
+              </a>
+            ))}
           </div>
         </div>
       )}
