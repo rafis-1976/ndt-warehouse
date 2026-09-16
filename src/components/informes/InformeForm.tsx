@@ -12,7 +12,6 @@ interface InformeFormProps {
   onCancel: () => void;
 }
 
-// Orden requerido: ET, UT, TT, RT
 const METODOS = [
   { value: 'ET', label: 'ET', nombre: 'Eddy Current Testing' },
   { value: 'UT', label: 'UT', nombre: 'Ultrasonic Testing' },
@@ -120,6 +119,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     }));
   }, [informeId]);
 
+  // Cargar equipos, probetas e inspectores
   useEffect(() => {
     async function load() {
       const userRes = await supabase.auth.getUser();
@@ -167,79 +167,138 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     load();
   }, []);
 
+  // Cargar el informe si estamos editando
   useEffect(() => {
     if (!informeId) {
       setLoadingData(false);
       return;
     }
-    supabase
-      .from('informes')
-      .select('*')
-      .eq('id', informeId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        else if (data) {
-          const estacionNormalizada =
-            data.estacion === 'MADET' ? 'MADRID'
-            : data.estacion === 'BCNET' ? 'BARCELONA'
-            : (data.estacion ?? 'MADRID');
 
-          setForm({
-            numero_informe: data.numero_informe ?? '',
-            numero_sap: data.numero_sap ?? '',
-            revision: data.revision ?? 1,
-            matricula: data.matricula ?? '',
-            modelo_aeronave: data.modelo_aeronave ?? '',
-            numero_serie_aeronave: data.numero_serie_aeronave ?? '',
-            componente: data.componente ?? '',
-            numero_fr: data.numero_fr ?? '',
-            zona: data.zona ?? '',
-            estacion: estacionNormalizada,
-            easa_ref: data.easa_ref ?? 'ES.145.011',
-            uk_caa_ref: data.uk_caa_ref ?? 'UK.145.01413',
-            operador: data.operador ?? 'IBERIA',
-            cliente: data.cliente ?? '',
-            seleccionar: data.seleccionar ?? '',
-            resultado: data.resultado ?? 'pendiente',
-            hallazgos: data.hallazgos ?? '',
-            conclusion: data.conclusion ?? '',
-            observaciones: data.observaciones ?? '',
-            inspector_nombre: data.inspector_nombre ?? '',
-            inspector_email: data.inspector_email ?? '',
-            estado: data.estado ?? 'borrador',
-          });
+    let cancelado = false;
+    async function cargarInforme() {
+      const { data, error } = await supabase
+        .from('informes')
+        .select('*')
+        .eq('id', informeId)
+        .single();
 
-          if (Array.isArray(data.ntm_steps) && data.ntm_steps.length > 0) {
-            setNtmSteps(
-              data.ntm_steps.map((s: any) => ({
-                ntm: s.ntm ?? '',
-                step: s.step ?? '',
-                metodo: s.metodo ?? 'ET',
-                fecha: s.fecha ?? data.fecha_inspeccion ?? hoy,
-                equipos: Array.isArray(s.equipos) ? s.equipos : [],
-                probetas: Array.isArray(s.probetas) ? s.probetas : [],
-                inspector_nombre: s.inspector_nombre ?? '',
-                inspector_id: s.inspector_id ?? null,
-              }))
-            );
-          } else if (data.ntm_referencia || data.ntm_step) {
-            setNtmSteps([
-              {
-                ntm: data.ntm_referencia ?? '',
-                step: data.ntm_step ?? '',
-                metodo: data.metodo ?? 'ET',
-                fecha: data.fecha_inspeccion ?? hoy,
-                equipos: [],
-                probetas: [],
-                inspector_nombre: data.inspector_nombre ?? '',
-                inspector_id: null,
-              },
-            ]);
+      if (cancelado) return;
+
+      if (error) {
+        setError(error.message);
+        setLoadingData(false);
+        return;
+      }
+
+      if (data) {
+        const estacionNormalizada =
+          data.estacion === 'MADET' ? 'MADRID'
+          : data.estacion === 'BCNET' ? 'BARCELONA'
+          : (data.estacion ?? 'MADRID');
+
+        setForm({
+          numero_informe: data.numero_informe ?? '',
+          numero_sap: data.numero_sap ?? '',
+          revision: data.revision ?? 1,
+          matricula: data.matricula ?? '',
+          modelo_aeronave: data.modelo_aeronave ?? '',
+          numero_serie_aeronave: data.numero_serie_aeronave ?? '',
+          componente: data.componente ?? '',
+          numero_fr: data.numero_fr ?? '',
+          zona: data.zona ?? '',
+          estacion: estacionNormalizada,
+          easa_ref: data.easa_ref ?? 'ES.145.011',
+          uk_caa_ref: data.uk_caa_ref ?? 'UK.145.01413',
+          operador: data.operador ?? 'IBERIA',
+          cliente: data.cliente ?? '',
+          seleccionar: data.seleccionar ?? '',
+          resultado: data.resultado ?? 'pendiente',
+          hallazgos: data.hallazgos ?? '',
+          conclusion: data.conclusion ?? '',
+          observaciones: data.observaciones ?? '',
+          inspector_nombre: data.inspector_nombre ?? '',
+          inspector_email: data.inspector_email ?? '',
+          estado: data.estado ?? 'borrador',
+        });
+
+        // ==================================================
+        // CARGAR STEPS — con lectura explícita de equipos y probetas
+        // ==================================================
+        let stepsRaw: any[] = [];
+
+        if (data.ntm_steps) {
+          if (Array.isArray(data.ntm_steps)) {
+            stepsRaw = data.ntm_steps;
+          } else if (typeof data.ntm_steps === 'string') {
+            try {
+              const parsed = JSON.parse(data.ntm_steps);
+              if (Array.isArray(parsed)) stepsRaw = parsed;
+            } catch (e) {
+              console.error('[InformeForm] Error parseando ntm_steps:', e);
+            }
           }
         }
-        setLoadingData(false);
-      });
+
+        // Fallback a formato antiguo
+        if (stepsRaw.length === 0 && (data.ntm_referencia || data.ntm_step)) {
+          stepsRaw = [{
+            ntm: data.ntm_referencia ?? '',
+            step: data.ntm_step ?? '',
+            metodo: data.metodo ?? 'ET',
+            fecha: data.fecha_inspeccion ?? hoy,
+            equipos: [],
+            probetas: [],
+            inspector_nombre: data.inspector_nombre ?? '',
+            inspector_id: null,
+          }];
+        }
+
+        const stepsNormalizados: NtmStep[] = stepsRaw.map((s: any) => {
+          const equiposStep: EquipoStepData[] = Array.isArray(s?.equipos)
+            ? s.equipos.map((e: any) => ({
+                id: String(e?.id ?? ''),
+                id_equipo: e?.id_equipo ?? null,
+                nombre: String(e?.nombre ?? ''),
+                numero_serie: e?.numero_serie ?? null,
+                proxima_calibracion: e?.proxima_calibracion ?? null,
+                tecnica_codigo: e?.tecnica_codigo ?? null,
+              }))
+            : [];
+
+          const probetasStep: ProbetaStepData[] = Array.isArray(s?.probetas)
+            ? s.probetas.map((p: any) => ({
+                id: String(p?.id ?? ''),
+                pn: String(p?.pn ?? ''),
+                nombre: String(p?.nombre ?? ''),
+                numero_serie: p?.numero_serie ?? null,
+                tecnica_codigo: p?.tecnica_codigo ?? null,
+              }))
+            : [];
+
+          return {
+            ntm: String(s?.ntm ?? ''),
+            step: String(s?.step ?? ''),
+            metodo: String(s?.metodo ?? 'ET'),
+            fecha: String(s?.fecha ?? data.fecha_inspeccion ?? hoy),
+            equipos: equiposStep,
+            probetas: probetasStep,
+            inspector_nombre: String(s?.inspector_nombre ?? ''),
+            inspector_id: s?.inspector_id ?? null,
+          };
+        });
+
+        console.log('[InformeForm] Steps cargados desde DB:', stepsNormalizados);
+
+        if (stepsNormalizados.length > 0) {
+          setNtmSteps(stepsNormalizados);
+        }
+      }
+
+      setLoadingData(false);
+    }
+
+    cargarInforme();
+    return () => { cancelado = true; };
   }, [informeId]);
 
   const update = (field: string, value: any) =>
@@ -271,7 +330,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setNtmSteps((prev) => prev.filter((_, i) => i !== index));
   };
 
-  /** Cuando cambia la técnica del step, se limpian los equipos y probetas que ya no pertenezcan a esa técnica */
   const cambiarMetodoStep = (index: number, nuevoMetodo: string) => {
     setNtmSteps((prev) =>
       prev.map((item, i) => {
@@ -303,38 +361,57 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
     setLoading(true);
     try {
-      const ntmStepsLimpio = ntmSteps
-        .map((s) => ({
+      // ==================================================
+      // CONSTRUIR ntm_steps — asegurando que equipos y probetas se guardan
+      // ==================================================
+      const ntmStepsLimpio = ntmSteps.map((s) => {
+        const equiposPayload = (s.equipos || []).map((e) => ({
+          id: e.id,
+          id_equipo: e.id_equipo,
+          nombre: e.nombre,
+          numero_serie: e.numero_serie,
+          proxima_calibracion: e.proxima_calibracion,
+          tecnica_codigo: e.tecnica_codigo ?? null,
+        }));
+
+        const probetasPayload = (s.probetas || []).map((p) => ({
+          id: p.id,
+          pn: p.pn,
+          nombre: p.nombre,
+          numero_serie: p.numero_serie,
+          tecnica_codigo: p.tecnica_codigo ?? null,
+        }));
+
+        return {
           ntm: s.ntm.trim(),
           step: s.step.trim(),
           metodo: s.metodo || '',
           fecha: s.fecha || '',
-          equipos: (s.equipos || []).map((e) => ({
-            id: e.id,
-            id_equipo: e.id_equipo,
-            nombre: e.nombre,
-            numero_serie: e.numero_serie,
-            proxima_calibracion: e.proxima_calibracion,
-          })),
-          probetas: (s.probetas || []).map((p) => ({
-            id: p.id,
-            pn: p.pn,
-            nombre: p.nombre,
-            numero_serie: p.numero_serie,
-          })),
+          equipos: equiposPayload,
+          probetas: probetasPayload,
           inspector_nombre: s.inspector_nombre?.trim() || '',
           inspector_id: s.inspector_id ?? null,
-        }))
-        .filter((s) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
+        };
+      });
 
-      const fechasValidas = ntmStepsLimpio
-        .map((s) => s.fecha)
-        .filter((f) => !!f);
+      // Conservar los steps aunque no tengan ntm o step, mientras tengan contenido
+      const ntmStepsFinal = ntmStepsLimpio.filter(
+        (s) =>
+          s.ntm ||
+          s.step ||
+          s.equipos.length > 0 ||
+          s.probetas.length > 0 ||
+          s.inspector_nombre
+      );
+
+      console.log('[InformeForm] Guardando ntm_steps:', JSON.stringify(ntmStepsFinal));
+
+      const fechasValidas = ntmStepsFinal.map((s) => s.fecha).filter((f) => !!f);
       const fechaGlobal = fechasValidas.length > 0
         ? fechasValidas.sort().slice(-1)[0]
         : null;
 
-      const metodoPrincipal = ntmStepsLimpio[0]?.metodo ?? '';
+      const metodoPrincipal = ntmStepsFinal[0]?.metodo ?? '';
 
       const payload: any = {
         numero_informe: form.numero_informe.trim(),
@@ -352,13 +429,13 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         operador: form.operador.trim() || null,
         cliente: form.cliente.trim() || null,
         metodo: metodoPrincipal,
-        ntm_referencia: ntmStepsLimpio[0]?.ntm ?? null,
-        ntm_step: ntmStepsLimpio[0]?.step ?? null,
-        ntm_steps: ntmStepsLimpio,
+        ntm_referencia: ntmStepsFinal[0]?.ntm ?? null,
+        ntm_step: ntmStepsFinal[0]?.step ?? null,
+        ntm_steps: ntmStepsFinal,
         fecha_inspeccion: fechaGlobal,
         seleccionar: form.seleccionar.trim() || null,
-        equipo_id: ntmStepsLimpio[0]?.equipos?.[0]?.id ?? null,
-        probeta_id: ntmStepsLimpio[0]?.probetas?.[0]?.id ?? null,
+        equipo_id: ntmStepsFinal[0]?.equipos?.[0]?.id ?? null,
+        probeta_id: ntmStepsFinal[0]?.probetas?.[0]?.id ?? null,
         resultado: form.resultado,
         hallazgos: form.hallazgos.trim() || null,
         conclusion: form.conclusion.trim() || null,
@@ -371,11 +448,22 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       };
 
       if (informeId) {
-        const { error } = await supabase.from('informes').update(payload).eq('id', informeId);
+        const { data: updated, error } = await supabase
+          .from('informes')
+          .update(payload)
+          .eq('id', informeId)
+          .select('id, ntm_steps')
+          .single();
         if (error) throw error;
+        console.log('[InformeForm] Guardado OK. Steps en DB:', updated?.ntm_steps);
       } else {
-        const { error } = await supabase.from('informes').insert(payload);
+        const { data: inserted, error } = await supabase
+          .from('informes')
+          .insert(payload)
+          .select('id, ntm_steps')
+          .single();
         if (error) throw error;
+        console.log('[InformeForm] Insertado OK. Steps en DB:', inserted?.ntm_steps);
       }
       onSuccess();
     } catch (err: any) {
@@ -383,6 +471,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       if (msg.includes('informes_numero_informe_key')) setError('Ya existe un informe con ese número');
       else if (msg.includes('row-level security')) setError('No tienes permisos para esta acción');
       else setError(msg);
+      console.error('[InformeForm] Error guardando:', err);
     } finally {
       setLoading(false);
     }
@@ -747,7 +836,6 @@ function NtmStepCard({
   const [equipoSel, setEquipoSel] = useState('');
   const [probetaSel, setProbetaSel] = useState('');
 
-  // Filtrar por técnica del step
   const equiposDeLaTecnica = equipos.filter(
     (e) => e.tecnicas_ndt?.codigo === step.metodo
   );
