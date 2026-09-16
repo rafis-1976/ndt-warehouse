@@ -2,10 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, FileText, Plane, Calendar, User,
-  Building2, Wrench, Package, Hash, CheckCircle2, XCircle, AlertTriangle,
-  Plus, X,
+  CheckCircle2, XCircle, AlertTriangle, Plus, X, Package, Hash,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
-import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 
 interface InformeFormProps {
   informeId?: string;
@@ -27,9 +26,29 @@ const ESTACIONES = [
   { value: 'BIOET', label: 'BIOET — Bilbao' },
 ];
 
+interface EquipoStepData {
+  id: string;
+  id_equipo: string | null;
+  nombre: string;
+  numero_serie: string | null;
+  proxima_calibracion: string | null;
+}
+
+interface ProbetaStepData {
+  id: string;
+  pn: string;
+  nombre: string;
+  numero_serie: string | null;
+}
+
 interface NtmStep {
   ntm: string;
   step: string;
+  metodo: string;
+  equipos: EquipoStepData[];
+  probetas: ProbetaStepData[];
+  inspector_nombre: string;
+  inspector_id?: string | null;
 }
 
 export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps) {
@@ -37,13 +56,24 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
   const [loadingData, setLoadingData] = useState(!!informeId);
   const [error, setError] = useState('');
 
-  const [equipos, setEquipos] = useState<EquipoOption[]>([]);
-  const [probetas, setProbetas] = useState<any[]>([]);
+  const [equipos, setEquipos] = useState<EquipoStepData[]>([]);
+  const [probetas, setProbetas] = useState<ProbetaStepData[]>([]);
+  const [inspectores, setInspectores] = useState<any[]>([]);
   const [inspectorActual, setInspectorActual] = useState<any>(null);
 
   const hoy = new Date().toISOString().split('T')[0];
 
-  const [ntmSteps, setNtmSteps] = useState<NtmStep[]>([{ ntm: '', step: '' }]);
+  const [ntmSteps, setNtmSteps] = useState<NtmStep[]>([
+    {
+      ntm: '',
+      step: '',
+      metodo: 'UT',
+      equipos: [],
+      probetas: [],
+      inspector_nombre: '',
+      inspector_id: null,
+    },
+  ]);
 
   const [form, setForm] = useState({
     numero_informe: '',
@@ -68,16 +98,12 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     fecha_inspeccion: hoy,
     seleccionar: '',
 
-    equipo_id: '',
-    probeta_id: '',
-
     resultado: 'pendiente',
     hallazgos: '',
     conclusion: '',
     observaciones: '',
 
     inspector_nombre: '',
-    inspector_licencia: '',
     inspector_email: '',
     estado: 'borrador',
   });
@@ -99,19 +125,24 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       const userRes = await supabase.auth.getUser();
       const userId = userRes.data.user?.id ?? '';
 
-      const [eq, pb, perfil] = await Promise.all([
+      const [eq, pb, perfiles, perfil] = await Promise.all([
         supabase
           .from('equipos')
-          .select('id, id_equipo, nombre, codigo_barras, estado, tecnicas_ndt(codigo, nombre)')
+          .select('id, id_equipo, nombre, numero_serie, proxima_calibracion, estado, tecnicas_ndt(codigo, nombre)')
           .neq('estado', 'salida')
           .neq('estado', 'baja')
           .order('nombre'),
         supabase
           .from('probetas')
-          .select('id, pn, nombre, codigo_barras, numero_serie, estado, tecnicas_ndt(codigo)')
+          .select('id, pn, nombre, numero_serie, estado, tecnicas_ndt(codigo)')
           .neq('estado', 'salida')
           .neq('estado', 'baja')
           .order('pn'),
+        supabase
+          .from('perfiles')
+          .select('id, nombre_completo, email, num_nomina, rol')
+          .eq('activo', true)
+          .order('nombre_completo'),
         userId
           ? supabase
               .from('perfiles')
@@ -120,8 +151,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               .maybeSingle()
           : Promise.resolve({ data: null } as any),
       ]);
-      setEquipos((eq.data ?? []) as EquipoOption[]);
+
+      setEquipos(eq.data ?? []);
       setProbetas(pb.data ?? []);
+      setInspectores(perfiles.data ?? []);
       if (perfil.data) {
         setInspectorActual(perfil.data);
         setForm((f) => ({
@@ -165,26 +198,39 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             metodo: data.metodo ?? 'UT',
             fecha_inspeccion: data.fecha_inspeccion ?? hoy,
             seleccionar: data.seleccionar ?? '',
-            equipo_id: data.equipo_id ?? '',
-            probeta_id: data.probeta_id ?? '',
             resultado: data.resultado ?? 'pendiente',
             hallazgos: data.hallazgos ?? '',
             conclusion: data.conclusion ?? '',
             observaciones: data.observaciones ?? '',
             inspector_nombre: data.inspector_nombre ?? '',
-            inspector_licencia: data.inspector_licencia ?? '',
             inspector_email: data.inspector_email ?? '',
             estado: data.estado ?? 'borrador',
           });
 
-          // Cargar NTM/STEP
           if (Array.isArray(data.ntm_steps) && data.ntm_steps.length > 0) {
-            setNtmSteps(data.ntm_steps);
+            setNtmSteps(
+              data.ntm_steps.map((s: any) => ({
+                ntm: s.ntm ?? '',
+                step: s.step ?? '',
+                metodo: s.metodo ?? 'UT',
+                equipos: Array.isArray(s.equipos) ? s.equipos : [],
+                probetas: Array.isArray(s.probetas) ? s.probetas : [],
+                inspector_nombre: s.inspector_nombre ?? '',
+                inspector_id: s.inspector_id ?? null,
+              }))
+            );
           } else if (data.ntm_referencia || data.ntm_step) {
-            setNtmSteps([{
-              ntm: data.ntm_referencia ?? '',
-              step: data.ntm_step ?? '',
-            }]);
+            setNtmSteps([
+              {
+                ntm: data.ntm_referencia ?? '',
+                step: data.ntm_step ?? '',
+                metodo: data.metodo ?? 'UT',
+                equipos: [],
+                probetas: [],
+                inspector_nombre: data.inspector_nombre ?? '',
+                inspector_id: null,
+              },
+            ]);
           }
         }
         setLoadingData(false);
@@ -195,23 +241,29 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setForm((f) => ({ ...f, [field]: value }));
 
   const addNtmStep = () => {
-    setNtmSteps((prev) => [...prev, { ntm: '', step: '' }]);
+    setNtmSteps((prev) => [
+      ...prev,
+      {
+        ntm: '',
+        step: '',
+        metodo: form.metodo,
+        equipos: [],
+        probetas: [],
+        inspector_nombre: form.inspector_nombre,
+        inspector_id: inspectorActual?.id ?? null,
+      },
+    ]);
   };
 
-  const updateNtmStep = (index: number, field: keyof NtmStep, value: string) => {
+  const updateNtmStep = (index: number, patch: Partial<NtmStep>) => {
     setNtmSteps((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+      prev.map((item, i) => (i === index ? { ...item, ...patch } : item))
     );
   };
 
   const removeNtmStep = (index: number) => {
     setNtmSteps((prev) => prev.filter((_, i) => i !== index));
   };
-
-  const probetaSeleccionada = useMemo(
-    () => probetas.find((p) => p.id === form.probeta_id),
-    [probetas, form.probeta_id]
-  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,8 +276,27 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setLoading(true);
     try {
       const ntmStepsLimpio = ntmSteps
-        .map((s) => ({ ntm: s.ntm.trim(), step: s.step.trim() }))
-        .filter((s) => s.ntm || s.step);
+        .map((s) => ({
+          ntm: s.ntm.trim(),
+          step: s.step.trim(),
+          metodo: s.metodo || '',
+          equipos: (s.equipos || []).map((e) => ({
+            id: e.id,
+            id_equipo: e.id_equipo,
+            nombre: e.nombre,
+            numero_serie: e.numero_serie,
+            proxima_calibracion: e.proxima_calibracion,
+          })),
+          probetas: (s.probetas || []).map((p) => ({
+            id: p.id,
+            pn: p.pn,
+            nombre: p.nombre,
+            numero_serie: p.numero_serie,
+          })),
+          inspector_nombre: s.inspector_nombre?.trim() || '',
+          inspector_id: s.inspector_id ?? null,
+        }))
+        .filter((s) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
 
       const payload: any = {
         numero_informe: form.numero_informe.trim(),
@@ -243,22 +314,20 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         operador: form.operador.trim() || null,
         cliente: form.cliente.trim() || null,
         metodo: form.metodo,
-        // Compatibilidad con columnas antiguas
         ntm_referencia: ntmStepsLimpio[0]?.ntm ?? null,
         ntm_step: ntmStepsLimpio[0]?.step ?? null,
-        // Nueva estructura
         ntm_steps: ntmStepsLimpio,
         fecha_inspeccion: form.fecha_inspeccion,
         seleccionar: form.seleccionar.trim() || null,
-        equipo_id: form.equipo_id || null,
-        probeta_id: form.probeta_id || null,
+        equipo_id: ntmStepsLimpio[0]?.equipos?.[0]?.id ?? null,
+        probeta_id: ntmStepsLimpio[0]?.probetas?.[0]?.id ?? null,
         resultado: form.resultado,
         hallazgos: form.hallazgos.trim() || null,
         conclusion: form.conclusion.trim() || null,
         observaciones: form.observaciones.trim() || null,
         inspector_id: inspectorActual?.id ?? null,
         inspector_nombre: form.inspector_nombre.trim() || null,
-        inspector_licencia: form.inspector_licencia.trim() || null,
+        inspector_licencia: null,
         inspector_email: form.inspector_email.trim() || null,
         estado: form.estado,
       };
@@ -430,7 +499,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Método END (NDT Method)">
+      <Section title="Método END (NDT Method) principal">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {METODOS.map((m) => {
             const activo = form.metodo === m.value;
@@ -456,60 +525,28 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Normas NTM y Steps">
-        <div className="space-y-3">
-          <div className="flex items-start gap-2 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
-            <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
-            <p className="text-xs text-gray-600">
-              Añade todas las normas NTM y sus correspondientes steps utilizados en la inspección.
-              Puedes añadir tantas filas como necesites.
-            </p>
-          </div>
+      <Section title="Normas NTM, Steps, Técnicas, Equipos y Probetas">
+        <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Añade cada NTM/Step de la inspección. Para cada uno puedes seleccionar la técnica
+            aplicada, los equipos y probetas utilizados y el inspector que lo realizó.
+          </p>
+        </div>
 
+        <div className="space-y-4">
           {ntmSteps.map((item, index) => (
-            <div
+            <NtmStepCard
               key={index}
-              className="flex items-end gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-full bg-airbus-blue text-white text-xs font-bold shrink-0">
-                {index + 1}
-              </div>
-
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    NTM Doc. Ref.
-                  </label>
-                  <input
-                    className="input font-mono"
-                    value={item.ntm}
-                    onChange={(e) => updateNtmStep(index, 'ntm', e.target.value.toUpperCase())}
-                    placeholder="NTM 51-10-01"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Step
-                  </label>
-                  <input
-                    className="input font-mono"
-                    value={item.step}
-                    onChange={(e) => updateNtmStep(index, 'step', e.target.value)}
-                    placeholder="Step 5.A.3"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => removeNtmStep(index)}
-                disabled={ntmSteps.length === 1}
-                className="p-2 text-gray-400 hover:text-airbus-red hover:bg-airbus-red/10 rounded-lg transition shrink-0 disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
-                title="Eliminar fila"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+              index={index}
+              step={item}
+              equipos={equipos}
+              probetas={probetas}
+              inspectores={inspectores}
+              onUpdate={(patch) => updateNtmStep(index, patch)}
+              onRemove={() => removeNtmStep(index)}
+              canRemove={ntmSteps.length > 1}
+            />
           ))}
 
           <button
@@ -540,61 +577,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Equipo y probeta utilizados">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Equipo NDT utilizado">
-            <EquipoSelect
-              equipos={equipos.filter((e) =>
-                !form.metodo || (e as any).tecnicas_ndt?.codigo === form.metodo
-              )}
-              value={form.equipo_id}
-              onChange={(id) => update('equipo_id', id)}
-              placeholder="— Selecciona un equipo —"
-            />
-            {form.equipo_id && (
-              <p className="mt-1 text-[11px] text-airbus-green flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                Equipo asignado al informe
-              </p>
-            )}
-          </Field>
-
-          <Field label="Probeta de calibración">
-            <select
-              className="input"
-              value={form.probeta_id}
-              onChange={(e) => update('probeta_id', e.target.value)}
-            >
-              <option value="">— Selecciona una probeta —</option>
-              {probetas.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.pn} · {p.nombre}
-                  {p.tecnicas_ndt?.codigo ? ` · ${p.tecnicas_ndt.codigo}` : ''}
-                </option>
-              ))}
-            </select>
-            {probetaSeleccionada && (
-              <div className="mt-2 p-2.5 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">
-                  Probeta seleccionada
-                </p>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <span className="font-mono font-bold text-airbus-blue text-xs">
-                    P/N: {probetaSeleccionada.pn}
-                  </span>
-                  {probetaSeleccionada.numero_serie && (
-                    <span className="font-mono text-[11px] text-gray-600">
-                      S/N: {probetaSeleccionada.numero_serie}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Resultado de la inspección">
+      <Section title="Resultado global de la inspección">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           <button
             type="button"
@@ -674,8 +657,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Inspector / Firmante">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Section title="Inspector responsable del informe">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Nombre del inspector">
             <div className="relative">
               <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -686,14 +669,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
                 placeholder="Nombre y apellidos"
               />
             </div>
-          </Field>
-          <Field label="N° licencia / certificación">
-            <input
-              className="input font-mono"
-              value={form.inspector_licencia}
-              onChange={(e) => update('inspector_licencia', e.target.value)}
-              placeholder="NT-UT-12345"
-            />
           </Field>
           <Field label="Email">
             <input
@@ -755,6 +730,381 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </button>
       </div>
     </form>
+  );
+}
+
+// ============================================================
+// Tarjeta de NTM/Step
+// ============================================================
+function NtmStepCard({
+  index, step, equipos, probetas, inspectores, onUpdate, onRemove, canRemove,
+}: {
+  index: number;
+  step: NtmStep;
+  equipos: any[];
+  probetas: any[];
+  inspectores: any[];
+  onUpdate: (patch: Partial<NtmStep>) => void;
+  onRemove: () => void;
+  canRemove: boolean;
+}) {
+  const [expandido, setExpandido] = useState(true);
+  const [equipoSel, setEquipoSel] = useState('');
+  const [probetaSel, setProbetaSel] = useState('');
+
+  const equiposDisponibles = equipos.filter(
+    (e) => !step.equipos.some((s) => s.id === e.id)
+  );
+  const probetasDisponibles = probetas.filter(
+    (p) => !step.probetas.some((s) => s.id === p.id)
+  );
+
+  const addEquipo = () => {
+    if (!equipoSel) return;
+    const eq = equipos.find((e) => e.id === equipoSel);
+    if (!eq) return;
+    onUpdate({
+      equipos: [
+        ...step.equipos,
+        {
+          id: eq.id,
+          id_equipo: eq.id_equipo ?? null,
+          nombre: eq.nombre ?? '',
+          numero_serie: eq.numero_serie ?? null,
+          proxima_calibracion: eq.proxima_calibracion ?? null,
+        },
+      ],
+    });
+    setEquipoSel('');
+  };
+
+  const removeEquipo = (id: string) => {
+    onUpdate({ equipos: step.equipos.filter((e) => e.id !== id) });
+  };
+
+  const addProbeta = () => {
+    if (!probetaSel) return;
+    const pb = probetas.find((p) => p.id === probetaSel);
+    if (!pb) return;
+    onUpdate({
+      probetas: [
+        ...step.probetas,
+        {
+          id: pb.id,
+          pn: pb.pn ?? '',
+          nombre: pb.nombre ?? '',
+          numero_serie: pb.numero_serie ?? null,
+        },
+      ],
+    });
+    setProbetaSel('');
+  };
+
+  const removeProbeta = (id: string) => {
+    onUpdate({ probetas: step.probetas.filter((p) => p.id !== id) });
+  };
+
+  return (
+    <div className="border-2 border-airbus-sky/40 rounded-xl overflow-hidden bg-white">
+      {/* Cabecera */}
+      <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-airbus-blue to-airbus-navy text-white">
+        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold shrink-0">
+          {index + 1}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setExpandido(!expandido)}
+          className="flex-1 text-left flex items-center gap-2 min-w-0"
+        >
+          {expandido ? (
+            <ChevronDown className="w-4 h-4 shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 shrink-0" />
+          )}
+          <span className="font-mono text-xs truncate">
+            {step.ntm || 'Sin NTM'}
+          </span>
+          {step.step && (
+            <span className="text-[10px] opacity-80 truncate">
+              · {step.step}
+            </span>
+          )}
+          {step.metodo && (
+            <span className="px-2 py-0.5 bg-white/20 rounded-full text-[10px] font-bold shrink-0">
+              {step.metodo}
+            </span>
+          )}
+          {(step.equipos.length > 0 || step.probetas.length > 0) && (
+            <span className="text-[10px] opacity-80 shrink-0">
+              · {step.equipos.length} eq · {step.probetas.length} pb
+            </span>
+          )}
+        </button>
+
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="p-1.5 hover:bg-white/20 rounded-lg transition shrink-0"
+            title="Eliminar este NTM/Step"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Cuerpo */}
+      {expandido && (
+        <div className="p-4 space-y-5">
+          {/* NTM + STEP */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                NTM Doc. Ref.
+              </label>
+              <input
+                className="input font-mono"
+                value={step.ntm}
+                onChange={(e) => onUpdate({ ntm: e.target.value.toUpperCase() })}
+                placeholder="NTM 51-10-01"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Step
+              </label>
+              <input
+                className="input font-mono"
+                value={step.step}
+                onChange={(e) => onUpdate({ step: e.target.value })}
+                placeholder="Step 5.A.3"
+              />
+            </div>
+          </div>
+
+          {/* TÉCNICA */}
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Técnica END utilizada
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {METODOS.map((m) => {
+                const activo = step.metodo === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => onUpdate({ metodo: m.value })}
+                    className={`flex flex-col items-center justify-center py-2 rounded-lg border-2 transition ${
+                      activo
+                        ? 'bg-airbus-sky text-white border-airbus-sky shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-airbus-sky/40'
+                    }`}
+                  >
+                    <span className="text-sm font-bold">{m.label}</span>
+                    <span className="text-[8px] opacity-80 text-center leading-tight">
+                      {m.nombre.replace(' Testing', '')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* EQUIPOS */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <Package className="w-3 h-3" />
+              Equipos utilizados ({step.equipos.length})
+            </label>
+
+            {step.equipos.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {step.equipos.map((eq) => (
+                  <div
+                    key={eq.id}
+                    className="flex items-center gap-2 px-2.5 py-2 bg-airbus-blue/5 border border-airbus-blue/20 rounded-lg"
+                  >
+                    <Package className="w-3.5 h-3.5 text-airbus-blue shrink-0" />
+                    <span className="font-mono font-bold text-airbus-blue text-xs shrink-0">
+                      {eq.id_equipo ?? '—'}
+                    </span>
+                    <span className="text-xs text-gray-700 truncate flex-1">
+                      {eq.nombre}
+                    </span>
+                    {eq.numero_serie && (
+                      <span className="text-[10px] font-mono text-gray-400 truncate hidden sm:inline">
+                        S/N: {eq.numero_serie}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeEquipo(eq.id)}
+                      className="p-1 hover:bg-airbus-red/10 rounded text-gray-400 hover:text-airbus-red transition shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <select
+                className="input flex-1"
+                value={equipoSel}
+                onChange={(e) => setEquipoSel(e.target.value)}
+              >
+                <option value="">
+                  {equiposDisponibles.length === 0
+                    ? '— Sin más equipos disponibles —'
+                    : '— Selecciona un equipo —'}
+                </option>
+                {equiposDisponibles.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.id_equipo ? `[${e.id_equipo}] ` : ''}
+                    {e.nombre}
+                    {e.tecnicas_ndt?.codigo ? ` · ${e.tecnicas_ndt.codigo}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addEquipo}
+                disabled={!equipoSel}
+                className="btn-secondary whitespace-nowrap disabled:opacity-40 flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Añadir
+              </button>
+            </div>
+          </div>
+
+          {/* PROBETAS */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <Hash className="w-3 h-3" />
+              Probetas utilizadas ({step.probetas.length})
+            </label>
+
+            {step.probetas.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {step.probetas.map((pb) => (
+                  <div
+                    key={pb.id}
+                    className="flex items-center gap-2 px-2.5 py-2 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg"
+                  >
+                    <Hash className="w-3.5 h-3.5 text-airbus-sky shrink-0" />
+                    <span className="font-mono font-bold text-airbus-sky text-xs shrink-0">
+                      {pb.pn}
+                    </span>
+                    <span className="text-xs text-gray-700 truncate flex-1">
+                      {pb.nombre}
+                    </span>
+                    {pb.numero_serie && (
+                      <span className="text-[10px] font-mono text-gray-400 truncate hidden sm:inline">
+                        S/N: {pb.numero_serie}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeProbeta(pb.id)}
+                      className="p-1 hover:bg-airbus-red/10 rounded text-gray-400 hover:text-airbus-red transition shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <select
+                className="input flex-1"
+                value={probetaSel}
+                onChange={(e) => setProbetaSel(e.target.value)}
+              >
+                <option value="">
+                  {probetasDisponibles.length === 0
+                    ? '— Sin más probetas disponibles —'
+                    : '— Selecciona una probeta —'}
+                </option>
+                {probetasDisponibles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.pn} · {p.nombre}
+                    {p.tecnicas_ndt?.codigo ? ` · ${p.tecnicas_ndt.codigo}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addProbeta}
+                disabled={!probetaSel}
+                className="btn-secondary whitespace-nowrap disabled:opacity-40 flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Añadir
+              </button>
+            </div>
+          </div>
+
+          {/* INSPECTOR */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <User className="w-3 h-3" />
+              Inspector que realizó esta inspección
+            </label>
+            <select
+              className="input"
+              value={
+                step.inspector_id
+                  ? step.inspector_id
+                  : step.inspector_nombre
+                    ? `__nombre__:${step.inspector_nombre}`
+                    : ''
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) {
+                  onUpdate({ inspector_id: null, inspector_nombre: '' });
+                } else if (v.startsWith('__nombre__:')) {
+                  onUpdate({
+                    inspector_id: null,
+                    inspector_nombre: v.replace('__nombre__:', ''),
+                  });
+                } else {
+                  const insp = inspectores.find((i) => i.id === v);
+                  onUpdate({
+                    inspector_id: v,
+                    inspector_nombre: insp?.nombre_completo ?? '',
+                  });
+                }
+              }}
+            >
+              <option value="">— Sin asignar —</option>
+              {inspectores.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.nombre_completo}
+                  {i.num_nomina ? ` · #${i.num_nomina}` : ''}
+                </option>
+              ))}
+              {step.inspector_nombre && !step.inspector_id && (
+                <option value={`__nombre__:${step.inspector_nombre}`}>
+                  {step.inspector_nombre}
+                </option>
+              )}
+            </select>
+            {step.inspector_nombre && (
+              <p className="mt-1 text-[11px] text-airbus-green flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                {step.inspector_nombre}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
