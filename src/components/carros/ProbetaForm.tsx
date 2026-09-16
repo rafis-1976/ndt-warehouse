@@ -35,7 +35,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     pn: probeta?.pn ?? '',
     codigo_barras: probeta?.codigo_barras ?? '',
     nombre: probeta?.nombre ?? '',
-    tipo: probeta?.tipo ?? '',
     tecnica_id: probeta?.tecnica_id ?? '',
     carro_id: probeta?.carro_id ?? carroId ?? '',
     num_bandeja: probeta?.num_bandeja ?? '',
@@ -49,7 +48,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     activa: probeta?.activa ?? true,
   });
 
-  // Auto-generar código de barras desde el P/N si está vacío
   useEffect(() => {
     if (!form.codigo_barras && form.pn) {
       setForm((f) => ({ ...f, codigo_barras: form.pn }));
@@ -87,7 +85,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             pn: data.pn ?? '',
             codigo_barras: data.codigo_barras ?? '',
             nombre: data.nombre ?? '',
-            tipo: data.tipo ?? '',
             tecnica_id: data.tecnica_id ?? '',
             carro_id: data.carro_id ?? '',
             num_bandeja: data.num_bandeja ?? '',
@@ -215,7 +212,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         pn: form.pn.trim().toUpperCase(),
         codigo_barras: form.codigo_barras.trim(),
         nombre: form.nombre.trim(),
-        tipo: form.tipo.trim() || null,
         tecnica_id: form.tecnica_id || null,
         carro_id: form.carro_id || null,
         num_bandeja: form.num_bandeja ? Number(form.num_bandeja) : null,
@@ -341,14 +337,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
               className="input font-mono"
               value={form.numero_serie}
               onChange={(e) => update('numero_serie', e.target.value)}
-            />
-          </Field>
-          <Field label="Tipo">
-            <input
-              className="input"
-              value={form.tipo}
-              onChange={(e) => update('tipo', e.target.value)}
-              placeholder="Bloque V1 / V2, penetrámetro, patrón ET..."
             />
           </Field>
         </div>
