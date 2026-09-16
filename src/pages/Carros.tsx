@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
-  Plus, RefreshCw, Package, Search, X, Edit3, Trash2, ChevronDown,
-  ChevronRight, Boxes, Hash, AlertTriangle, CheckCircle2, Image as ImageIcon,
+  Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
+  ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
@@ -146,6 +146,12 @@ export function Carros() {
     return diff < 30 * 864e5;
   };
 
+  const porcentajeOcupacion = (carro: any, listaProbetas: any[]) => {
+    if (!carro.num_bandejas || carro.num_bandejas === 0) return null;
+    const pct = Math.round((listaProbetas.length / carro.num_bandejas) * 100);
+    return Math.min(100, pct);
+  };
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -210,6 +216,7 @@ export function Carros() {
           {carrosFiltrados.map((carro) => {
             const listaProbetas = probetasPorCarro[carro.id] ?? [];
             const expandido = expandidos.has(carro.id);
+            const pct = porcentajeOcupacion(carro, listaProbetas);
 
             return (
               <div key={carro.id} className="card p-0 overflow-hidden">
@@ -248,11 +255,42 @@ export function Carros() {
                         {carro.descripcion}
                       </p>
                     )}
-                    <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400 flex-wrap">
                       {carro.ubicacion && <span>📍 {carro.ubicacion}</span>}
-                      <span className="font-semibold text-airbus-sky">
+
+                      {carro.num_bandejas > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-sky/10 text-airbus-sky rounded-full font-semibold">
+                          <Layers className="w-3 h-3" />
+                          {carro.num_bandejas} bandeja{carro.num_bandejas !== 1 ? 's' : ''}
+                        </span>
+                      )}
+
+                      <span className="font-semibold text-airbus-blue">
                         {listaProbetas.length} probeta{listaProbetas.length !== 1 ? 's' : ''}
+                        {carro.num_bandejas > 0 && (
+                          <span className="text-gray-400 font-normal">
+                            {' '}/ {carro.num_bandejas}
+                          </span>
+                        )}
                       </span>
+
+                      {pct !== null && (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${
+                                pct >= 90 ? 'bg-airbus-red'
+                                : pct >= 70 ? 'bg-airbus-orange'
+                                : 'bg-airbus-green'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-500">
+                            {pct}%
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -310,7 +348,7 @@ export function Carros() {
                               className="flex items-center gap-3 px-4 py-3 hover:bg-white transition group"
                             >
                               {probeta.foto_url ? (
-                                <div className="relative w-14 h-14 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+                                <div className="w-14 h-14 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
                                   <img
                                     src={probeta.foto_url}
                                     alt={probeta.nombre}
