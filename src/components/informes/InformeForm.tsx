@@ -31,6 +31,7 @@ interface EquipoStepData {
   nombre: string;
   numero_serie: string | null;
   proxima_calibracion: string | null;
+  tecnica_codigo?: string | null;
 }
 
 interface ProbetaStepData {
@@ -38,6 +39,7 @@ interface ProbetaStepData {
   pn: string;
   nombre: string;
   numero_serie: string | null;
+  tecnica_codigo?: string | null;
 }
 
 interface NtmStep {
@@ -56,8 +58,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
   const [loadingData, setLoadingData] = useState(!!informeId);
   const [error, setError] = useState('');
 
-  const [equipos, setEquipos] = useState<EquipoStepData[]>([]);
-  const [probetas, setProbetas] = useState<ProbetaStepData[]>([]);
+  const [equipos, setEquipos] = useState<any[]>([]);
+  const [probetas, setProbetas] = useState<any[]>([]);
   const [inspectores, setInspectores] = useState<any[]>([]);
   const [inspectorActual, setInspectorActual] = useState<any>(null);
 
@@ -269,6 +271,29 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setNtmSteps((prev) => prev.filter((_, i) => i !== index));
   };
 
+  /** Cuando cambia la técnica del step, se limpian los equipos y probetas que ya no pertenezcan a esa técnica */
+  const cambiarMetodoStep = (index: number, nuevoMetodo: string) => {
+    setNtmSteps((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        const equiposFiltrados = item.equipos.filter((e) => {
+          const eq = equipos.find((x) => x.id === e.id);
+          return eq?.tecnicas_ndt?.codigo === nuevoMetodo;
+        });
+        const probetasFiltradas = item.probetas.filter((p) => {
+          const pb = probetas.find((x) => x.id === p.id);
+          return pb?.tecnicas_ndt?.codigo === nuevoMetodo;
+        });
+        return {
+          ...item,
+          metodo: nuevoMetodo,
+          equipos: equiposFiltrados,
+          probetas: probetasFiltradas,
+        };
+      })
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -302,7 +327,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         }))
         .filter((s) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
 
-      // Calcular fecha global como la más reciente de los steps
       const fechasValidas = ntmStepsLimpio
         .map((s) => s.fecha)
         .filter((f) => !!f);
@@ -517,8 +541,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Añade cada NTM/Step de la inspección. Cada uno tiene su propia fecha de realización,
-            técnica aplicada, equipos, probetas e inspector.
+            Añade cada NTM/Step. Solo aparecerán los equipos y probetas que correspondan
+            a la técnica seleccionada en cada step.
           </p>
         </div>
 
@@ -532,6 +556,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               probetas={probetas}
               inspectores={inspectores}
               onUpdate={(patch) => updateNtmStep(index, patch)}
+              onChangeMetodo={(metodo) => cambiarMetodoStep(index, metodo)}
               onRemove={() => removeNtmStep(index)}
               canRemove={ntmSteps.length > 1}
             />
@@ -705,7 +730,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 }
 
 function NtmStepCard({
-  index, step, equipos, probetas, inspectores, onUpdate, onRemove, canRemove,
+  index, step, equipos, probetas, inspectores,
+  onUpdate, onChangeMetodo, onRemove, canRemove,
 }: {
   index: number;
   step: NtmStep;
@@ -713,6 +739,7 @@ function NtmStepCard({
   probetas: any[];
   inspectores: any[];
   onUpdate: (patch: Partial<NtmStep>) => void;
+  onChangeMetodo: (metodo: string) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
@@ -720,10 +747,18 @@ function NtmStepCard({
   const [equipoSel, setEquipoSel] = useState('');
   const [probetaSel, setProbetaSel] = useState('');
 
-  const equiposDisponibles = equipos.filter(
+  // Filtrar por técnica del step
+  const equiposDeLaTecnica = equipos.filter(
+    (e) => e.tecnicas_ndt?.codigo === step.metodo
+  );
+  const probetasDeLaTecnica = probetas.filter(
+    (p) => p.tecnicas_ndt?.codigo === step.metodo
+  );
+
+  const equiposDisponibles = equiposDeLaTecnica.filter(
     (e) => !step.equipos.some((s) => s.id === e.id)
   );
-  const probetasDisponibles = probetas.filter(
+  const probetasDisponibles = probetasDeLaTecnica.filter(
     (p) => !step.probetas.some((s) => s.id === p.id)
   );
 
@@ -740,6 +775,7 @@ function NtmStepCard({
           nombre: eq.nombre ?? '',
           numero_serie: eq.numero_serie ?? null,
           proxima_calibracion: eq.proxima_calibracion ?? null,
+          tecnica_codigo: eq.tecnicas_ndt?.codigo ?? null,
         },
       ],
     });
@@ -762,6 +798,7 @@ function NtmStepCard({
           pn: pb.pn ?? '',
           nombre: pb.nombre ?? '',
           numero_serie: pb.numero_serie ?? null,
+          tecnica_codigo: pb.tecnicas_ndt?.codigo ?? null,
         },
       ],
     });
@@ -885,7 +922,7 @@ function NtmStepCard({
                   <button
                     key={m.value}
                     type="button"
-                    onClick={() => onUpdate({ metodo: m.value })}
+                    onClick={() => onChangeMetodo(m.value)}
                     className={`flex flex-col items-center justify-center py-2 rounded-lg border-2 transition ${
                       activo
                         ? 'bg-airbus-sky text-white border-airbus-sky shadow-sm'
@@ -906,6 +943,9 @@ function NtmStepCard({
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Package className="w-3 h-3" />
               Equipos utilizados ({step.equipos.length})
+              <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
+                {step.metodo || '—'} · {equiposDeLaTecnica.length} disponible{equiposDeLaTecnica.length !== 1 ? 's' : ''}
+              </span>
             </label>
 
             {step.equipos.length > 0 && (
@@ -944,17 +984,19 @@ function NtmStepCard({
                 className="input flex-1"
                 value={equipoSel}
                 onChange={(e) => setEquipoSel(e.target.value)}
+                disabled={equiposDisponibles.length === 0}
               >
                 <option value="">
-                  {equiposDisponibles.length === 0
-                    ? '— Sin más equipos disponibles —'
-                    : '— Selecciona un equipo —'}
+                  {equiposDeLaTecnica.length === 0
+                    ? `— No hay equipos de técnica ${step.metodo || '—'} —`
+                    : equiposDisponibles.length === 0
+                      ? '— Todos los equipos de esta técnica ya están añadidos —'
+                      : '— Selecciona un equipo —'}
                 </option>
                 {equiposDisponibles.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.id_equipo ? `[${e.id_equipo}] ` : ''}
                     {e.nombre}
-                    {e.tecnicas_ndt?.codigo ? ` · ${e.tecnicas_ndt.codigo}` : ''}
                   </option>
                 ))}
               </select>
@@ -968,12 +1010,25 @@ function NtmStepCard({
                 Añadir
               </button>
             </div>
+
+            {equiposDeLaTecnica.length === 0 && step.metodo && (
+              <div className="mt-2 flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-[11px] p-2.5 rounded-lg">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <p>
+                  No hay equipos registrados con la técnica <strong>{step.metodo}</strong>.
+                  Añádelos desde la sección "Equipos" o cambia la técnica del step.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Hash className="w-3 h-3" />
               Probetas utilizadas ({step.probetas.length})
+              <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
+                {step.metodo || '—'} · {probetasDeLaTecnica.length} disponible{probetasDeLaTecnica.length !== 1 ? 's' : ''}
+              </span>
             </label>
 
             {step.probetas.length > 0 && (
@@ -1012,16 +1067,18 @@ function NtmStepCard({
                 className="input flex-1"
                 value={probetaSel}
                 onChange={(e) => setProbetaSel(e.target.value)}
+                disabled={probetasDisponibles.length === 0}
               >
                 <option value="">
-                  {probetasDisponibles.length === 0
-                    ? '— Sin más probetas disponibles —'
-                    : '— Selecciona una probeta —'}
+                  {probetasDeLaTecnica.length === 0
+                    ? `— No hay probetas de técnica ${step.metodo || '—'} —`
+                    : probetasDisponibles.length === 0
+                      ? '— Todas las probetas de esta técnica ya están añadidas —'
+                      : '— Selecciona una probeta —'}
                 </option>
                 {probetasDisponibles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.pn} · {p.nombre}
-                    {p.tecnicas_ndt?.codigo ? ` · ${p.tecnicas_ndt.codigo}` : ''}
                   </option>
                 ))}
               </select>
@@ -1035,6 +1092,16 @@ function NtmStepCard({
                 Añadir
               </button>
             </div>
+
+            {probetasDeLaTecnica.length === 0 && step.metodo && (
+              <div className="mt-2 flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-[11px] p-2.5 rounded-lg">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <p>
+                  No hay probetas registradas con la técnica <strong>{step.metodo}</strong>.
+                  Añádelas desde la sección "Carros" o cambia la técnica del step.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
