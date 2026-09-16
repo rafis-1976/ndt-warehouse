@@ -1,7 +1,3 @@
-// ============================================================
-// Utilidades de calibración compartidas
-// ============================================================
-
 export type EstadoCalibracion = 'vencida' | 'proxima' | 'ok' | 'sin_fecha';
 
 export type EstadoEfectivo =
@@ -10,11 +6,9 @@ export type EstadoEfectivo =
   | 'calibracion'
   | 'pendiente_calibracion'
   | 'mantenimiento'
-  | 'baja';
+  | 'baja'
+  | 'salida';
 
-/**
- * Determina el estado de calibración según la fecha.
- */
 export function estadoCalibracion(fecha: string | null): EstadoCalibracion {
   if (!fecha) return 'sin_fecha';
   const diff = new Date(fecha).getTime() - Date.now();
@@ -23,26 +17,16 @@ export function estadoCalibracion(fecha: string | null): EstadoCalibracion {
   return 'ok';
 }
 
-/**
- * Estado efectivo del equipo.
- * - Si la BD ya lo marca como 'pendiente_calibracion', respeta ese estado.
- * - Si la calibración está vencida (por si el cron no ha corrido), lo
- *   calcula dinámicamente.
- * - Si está en 'calibracion' o 'baja', respeta ese estado manual.
- */
 export function estadoEfectivoEquipo(eq: {
   estado: string;
   proxima_calibracion: string | null;
 }): EstadoEfectivo {
-  // Estados manuales que se respetan siempre
   if (eq.estado === 'baja') return 'baja';
   if (eq.estado === 'calibracion') return 'calibracion';
   if (eq.estado === 'mantenimiento') return 'mantenimiento';
-
-  // Si la BD ya lo marca como pendiente, respetar
+  if (eq.estado === 'salida') return 'salida';
   if (eq.estado === 'pendiente_calibracion') return 'pendiente_calibracion';
 
-  // Salvaguarda: si la calibración está vencida, marcarlo pendiente
   if (estadoCalibracion(eq.proxima_calibracion) === 'vencida') {
     return 'pendiente_calibracion';
   }
@@ -50,9 +34,6 @@ export function estadoEfectivoEquipo(eq: {
   return eq.estado as EstadoEfectivo;
 }
 
-/**
- * Etiqueta legible para mostrar en la UI.
- */
 export function estadoEfectivoLabel(estado: EstadoEfectivo): string {
   const labels: Record<EstadoEfectivo, string> = {
     disponible:            'Disponible',
@@ -61,13 +42,11 @@ export function estadoEfectivoLabel(estado: EstadoEfectivo): string {
     pendiente_calibracion: 'Pendiente de Calibración',
     mantenimiento:         'En mantenimiento',
     baja:                  'Baja',
+    salida:                'Fuera del almacén',
   };
   return labels[estado] ?? estado;
 }
 
-/**
- * ¿Tiene la calibración próxima a vencer? (aviso naranja sin cambiar estado)
- */
 export function tieneCalibracionProxima(eq: {
   proxima_calibracion: string | null;
   estado: string;
@@ -75,17 +54,10 @@ export function tieneCalibracionProxima(eq: {
   if (eq.estado === 'baja') return false;
   if (eq.estado === 'calibracion') return false;
   if (eq.estado === 'pendiente_calibracion') return false;
+  if (eq.estado === 'salida') return false;
   return estadoCalibracion(eq.proxima_calibracion) === 'proxima';
 }
 
-/**
- * ¿Se puede prestar este equipo?
- * Reglas NDT:
- *   - No prestar si está de baja
- *   - No prestar si está en mantenimiento
- *   - No prestar si está en calibración
- *   - No prestar si la calibración está vencida
- */
 export function sePuedePrestar(eq: {
   proxima_calibracion: string | null;
   estado?: string;
@@ -97,9 +69,6 @@ export function sePuedePrestar(eq: {
   return ef === 'disponible' || ef === 'prestado';
 }
 
-/**
- * Motivo por el que NO se puede prestar (o null si sí se puede).
- */
 export function motivoNoPrestable(eq: {
   proxima_calibracion: string | null;
   estado?: string;
@@ -112,6 +81,7 @@ export function motivoNoPrestable(eq: {
   if (ef === 'baja') return 'Equipo dado de baja';
   if (ef === 'calibracion') return 'Equipo en calibración';
   if (ef === 'mantenimiento') return 'Equipo en mantenimiento';
+  if (ef === 'salida') return 'Equipo fuera del almacén';
   if (ef === 'pendiente_calibracion') {
     return `Calibración vencida (${eq.proxima_calibracion})`;
   }
