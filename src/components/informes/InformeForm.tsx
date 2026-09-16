@@ -18,8 +18,6 @@ const METODOS = [
   { value: 'RT', label: 'RT', nombre: 'Radiographic Testing' },
   { value: 'ET', label: 'ET', nombre: 'Eddy Current Testing' },
   { value: 'TT', label: 'TT', nombre: 'Thermographic Testing' },
-  { value: 'MT', label: 'MT', nombre: 'Magnetic Particle Testing' },
-  { value: 'PT', label: 'PT', nombre: 'Penetrant Testing' },
 ];
 
 const ESTACIONES = [
@@ -80,7 +78,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     estado: 'borrador',
   });
 
-  // Autogenerar número de informe
   useEffect(() => {
     if (informeId) return;
     const ahora = new Date();
@@ -93,9 +90,11 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     }));
   }, [informeId]);
 
-  // Cargar equipos, probetas y perfil del inspector
   useEffect(() => {
     async function load() {
+      const userRes = await supabase.auth.getUser();
+      const userId = userRes.data.user?.id ?? '';
+
       const [eq, pb, perfil] = await Promise.all([
         supabase
           .from('equipos')
@@ -109,11 +108,13 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           .neq('estado', 'salida')
           .neq('estado', 'baja')
           .order('pn'),
-        supabase
-          .from('perfiles')
-          .select('id, nombre_completo, email, num_nomina, rol')
-          .eq('id', (await supabase.auth.getUser()).data.user?.id ?? '')
-          .maybeSingle(),
+        userId
+          ? supabase
+              .from('perfiles')
+              .select('id, nombre_completo, email, num_nomina, rol')
+              .eq('id', userId)
+              .maybeSingle()
+          : Promise.resolve({ data: null } as any),
       ]);
       setEquipos((eq.data ?? []) as EquipoOption[]);
       setProbetas(pb.data ?? []);
@@ -129,7 +130,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     load();
   }, []);
 
-  // Cargar informe si es edición
   useEffect(() => {
     if (!informeId) {
       setLoadingData(false);
@@ -260,7 +260,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* IDENTIFICACIÓN */}
       <Section title="Identificación del informe">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="N° de informe *">
@@ -292,7 +291,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* DATOS DEL AVIÓN / COMPONENTE */}
       <Section title="Datos del avión / componente">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Matrícula (A/C Registration)">
@@ -348,7 +346,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* CERTIFICACIÓN */}
       <Section title="Certificación y aprobación">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Instalación (Station/Facility)">
@@ -402,9 +399,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* MÉTODO NDT */}
       <Section title="Método END (NDT Method)">
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {METODOS.map((m) => {
             const activo = form.metodo === m.value;
             return (
@@ -429,7 +425,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* NORMA NTM */}
       <Section title="Norma NTM">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="NTM Doc. Ref. (N°)">
@@ -451,7 +446,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* FECHAS */}
       <Section title="Fechas">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Fecha de inspección *">
@@ -469,7 +463,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* EQUIPO Y PROBETA UTILIZADOS */}
       <Section title="Equipo y probeta utilizados">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Equipo NDT utilizado">
@@ -529,7 +522,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* RESULTADO */}
       <Section title="Resultado de la inspección">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           <button
@@ -610,7 +602,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* INSPECTOR */}
       <Section title="Inspector / Firmante">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Nombre del inspector">
@@ -659,7 +650,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      {/* ESTADO */}
       <Section title="Estado del informe">
         <div className="grid grid-cols-3 gap-2">
           {[
