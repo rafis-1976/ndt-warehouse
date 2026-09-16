@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle, Camera, Layers } from 'lucide-react';
+import {
+  Loader2, Save, AlertCircle, Camera, Layers, Grid3x3, Info,
+} from 'lucide-react';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
 
@@ -19,6 +21,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!probeta);
   const [error, setError] = useState('');
+  const [probetasEnBandeja, setProbetasEnBandeja] = useState<any[]>([]);
 
   const [form, setForm] = useState({
     codigo: probeta?.codigo ?? '',
@@ -27,6 +30,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     tecnica_id: probeta?.tecnica_id ?? '',
     carro_id: probeta?.carro_id ?? carroId ?? '',
     num_bandeja: probeta?.num_bandeja ?? '',
+    num_posicion: probeta?.num_posicion ?? '',
     material: probeta?.material ?? '',
     dimensiones: probeta?.dimensiones ?? '',
     numero_serie: probeta?.numero_serie ?? '',
@@ -39,7 +43,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   useEffect(() => {
     Promise.all([
       supabase.from('tecnicas_ndt').select('id, codigo, nombre').eq('activa', true).order('codigo'),
-      supabase.from('carros').select('id, codigo, nombre, num_bandejas').eq('activo', true).order('codigo'),
+      supabase.from('carros').select('id, codigo, nombre, num_bandejas, posiciones_por_bandeja').eq('activo', true).order('codigo'),
     ]).then(([t, c]) => {
       setTecnicas(t.data ?? []);
       setCarros(c.data ?? []);
@@ -70,6 +74,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             tecnica_id: data.tecnica_id ?? '',
             carro_id: data.carro_id ?? '',
             num_bandeja: data.num_bandeja ?? '',
+            num_posicion: data.num_posicion ?? '',
             material: data.material ?? '',
             dimensiones: data.dimensiones ?? '',
             numero_serie: data.numero_serie ?? '',
@@ -85,19 +90,43 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       });
   }, [probeta]);
 
+  // Cargar probetas ya existentes en la bandeja seleccionada
+  useEffect(() => {
+    if (!form.carro_id || !form.num_bandeja) {
+      setProbetasEnBandeja([]);
+      return;
+    }
+    supabase
+      .from('probetas')
+      .select('id, codigo, nombre, num_posicion')
+      .eq('carro_id', form.carro_id)
+      .eq('num_bandeja', Number(form.num_bandeja))
+      .then(({ data }) => {
+        const filtradas = (data ?? []).filter((p) => p.id !== probeta?.id);
+        setProbetasEnBandeja(filtradas);
+      });
+  }, [form.carro_id, form.num_bandeja, probeta?.id]);
+
   const update = (field: string, value: any) =>
     setForm((f) => ({ ...f, [field]: value }));
 
   const carroSeleccionado = carros.find((c) => c.id === form.carro_id);
   const bandejasDisponibles = carroSeleccionado?.num_bandejas ?? 0;
+  const posicionesDisponibles = carroSeleccionado?.posiciones_por_bandeja ?? 0;
 
   const handleCarroChange = (id: string) => {
-    setForm((f) => ({
-      ...f,
-      carro_id: id,
-      num_bandeja: '',
-    }));
+    setForm((f) => ({ ...f, carro_id: id, num_bandeja: '', num_posicion: '' }));
   };
+
+  const handleBandejaChange = (n: string) => {
+    setForm((f) => ({ ...f, num_bandeja: n, num_posicion: '' }));
+  };
+
+  const posicionOcupada = (n: number) =>
+    probetasEnBandeja.some((p) => p.num_posicion === n);
+
+  const probetaEnPosicion = (n: number) =>
+    probetasEnBandeja.find((p) => p.num_posicion === n);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,6 +141,16 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       }
     }
 
+    if (form.num_posicion && posicionesDisponibles > 0) {
+      const n = Number(form.num_posicion);
+      if (n < 1 || n > posicionesDisponibles) {
+        return setError(`La posición debe estar entre 1 y ${posicionesDisponibles}`);
+      }
+      if (posicionOcupada(n)) {
+        return setError(`La posición ${n} ya está ocupada en esta bandeja`);
+      }
+    }
+
     setLoading(true);
     try {
       const payload: any = {
@@ -121,6 +160,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         tecnica_id: form.tecnica_id || null,
         carro_id: form.carro_id || null,
         num_bandeja: form.num_bandeja ? Number(form.num_bandeja) : null,
+        num_posicion: form.num_posicion ? Number(form.num_posicion) : null,
         material: form.material.trim() || null,
         dimensiones: form.dimensiones.trim() || null,
         numero_serie: form.numero_serie.trim() || null,
@@ -164,7 +204,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <Camera className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Haz una foto con la cámara o sube imágenes. Se puede recortar el fondo automáticamente.
+            Haz una foto o sube imágenes. Puedes recortar manualmente o quitar el fondo con IA.
           </p>
         </div>
         <CamaraEquipo
@@ -214,7 +254,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       </Section>
 
       <Section title="Clasificación">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Técnica NDT">
             <select
               className="input"
@@ -224,21 +264,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
               <option value="">— Sin asignar —</option>
               {tecnicas.map((t) => (
                 <option key={t.id} value={t.id}>{t.codigo} · {t.nombre}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Carro">
-            <select
-              className="input"
-              value={form.carro_id}
-              onChange={(e) => handleCarroChange(e.target.value)}
-            >
-              <option value="">— Sin asignar —</option>
-              {carros.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.codigo} · {c.nombre}
-                  {c.num_bandejas > 0 ? ` (${c.num_bandejas} bandejas)` : ''}
-                </option>
               ))}
             </select>
           </Field>
@@ -253,66 +278,159 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             </select>
           </Field>
         </div>
+      </Section>
 
-        {carroSeleccionado && (
-          <div className="mt-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-4">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5 text-airbus-sky" />
+      <Section title="Ubicación en el carro">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Field label="Carro">
+            <select
+              className="input"
+              value={form.carro_id}
+              onChange={(e) => handleCarroChange(e.target.value)}
+            >
+              <option value="">— Sin asignar —</option>
+              {carros.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.codigo} · {c.nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Bandeja">
+            <select
+              className="input"
+              value={form.num_bandeja}
+              onChange={(e) => handleBandejaChange(e.target.value)}
+              disabled={!carroSeleccionado || bandejasDisponibles === 0}
+            >
+              <option value="">
+                {!carroSeleccionado
+                  ? '— Primero elige carro —'
+                  : bandejasDisponibles === 0
+                    ? '— Carro sin bandejas —'
+                    : '— Sin asignar —'}
+              </option>
+              {carroSeleccionado && Array.from({ length: bandejasDisponibles }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>Bandeja {n}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Posición en bandeja">
+            <select
+              className="input"
+              value={form.num_posicion}
+              onChange={(e) => update('num_posicion', e.target.value)}
+              disabled={!form.num_bandeja || posicionesDisponibles === 0}
+            >
+              <option value="">
+                {!form.num_bandeja
+                  ? '— Primero bandeja —'
+                  : posicionesDisponibles === 0
+                    ? '— Sin posiciones —'
+                    : '— Sin asignar —'}
+              </option>
+              {form.num_bandeja && Array.from({ length: posicionesDisponibles }, (_, i) => i + 1).map((n) => {
+                const ocupada = posicionOcupada(n);
+                const probetaOcupante = probetaEnPosicion(n);
+                return (
+                  <option key={n} value={n} disabled={ocupada}>
+                    Posición {n}
+                    {ocupada && probetaOcupante
+                      ? ` — Ocupada por ${probetaOcupante.codigo}`
+                      : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </Field>
+        </div>
+
+        {carroSeleccionado && form.num_bandeja && posicionesDisponibles > 0 && (
+          <div className="mt-4 bg-white border-2 border-airbus-sky/30 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Grid3x3 className="w-4 h-4 text-airbus-sky" />
+                <span className="text-xs font-semibold text-airbus-blue">
+                  Mapa de la bandeja {form.num_bandeja}
+                </span>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-airbus-blue">
-                  Ubicación en el carro
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {bandejasDisponibles > 0
-                    ? `El carro tiene ${bandejasDisponibles} bandeja${bandejasDisponibles !== 1 ? 's' : ''}. Indica en cuál va la probeta.`
-                    : 'Este carro no tiene bandejas definidas. Edita el carro para asignarle bandejas.'}
-                </p>
+              <div className="flex items-center gap-3 text-[10px]">
+                <div className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-airbus-sky/20 border border-airbus-sky"></span>
+                  <span className="text-gray-500">Libre</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-airbus-red/20 border border-airbus-red"></span>
+                  <span className="text-gray-500">Ocupada</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-airbus-green border border-airbus-green"></span>
+                  <span className="text-gray-500">Esta probeta</span>
+                </div>
               </div>
             </div>
 
-            {bandejasDisponibles > 0 ? (
-              <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
-                <button
-                  type="button"
-                  onClick={() => update('num_bandeja', '')}
-                  className={`h-12 rounded-lg border-2 text-xs font-semibold transition ${
-                    !form.num_bandeja
-                      ? 'bg-gray-200 border-gray-400 text-gray-700'
-                      : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
-                  }`}
-                  title="Sin bandeja asignada"
-                >
-                  —
-                </button>
-                {Array.from({ length: bandejasDisponibles }, (_, i) => i + 1).map((n) => (
+            <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-1.5">
+              {Array.from({ length: posicionesDisponibles }, (_, i) => i + 1).map((n) => {
+                const ocupada = posicionOcupada(n);
+                const seleccionada = Number(form.num_posicion) === n;
+                const probetaOcupante = probetaEnPosicion(n);
+
+                return (
                   <button
                     key={n}
                     type="button"
-                    onClick={() => update('num_bandeja', n)}
-                    className={`h-12 rounded-lg border-2 font-bold transition ${
-                      Number(form.num_bandeja) === n
-                        ? 'bg-airbus-sky text-white border-airbus-sky shadow-md scale-105'
-                        : 'bg-white border-gray-200 text-gray-600 hover:border-airbus-sky hover:text-airbus-sky'
+                    onClick={() => !ocupada && update('num_posicion', String(n))}
+                    disabled={ocupada}
+                    className={`aspect-square rounded-md border-2 text-xs font-bold transition flex items-center justify-center relative group ${
+                      seleccionada
+                        ? 'bg-airbus-green text-white border-airbus-green shadow-md'
+                        : ocupada
+                          ? 'bg-airbus-red/10 text-airbus-red border-airbus-red/40 cursor-not-allowed'
+                          : 'bg-airbus-sky/10 text-airbus-sky border-airbus-sky/40 hover:border-airbus-sky hover:bg-airbus-sky/20'
                     }`}
+                    title={
+                      ocupada && probetaOcupante
+                        ? `Ocupada por ${probetaOcupante.codigo} — ${probetaOcupante.nombre}`
+                        : `Posición ${n}`
+                    }
                   >
                     {n}
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-xs p-3 rounded-lg">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">Sin bandejas en este carro</p>
-                  <p className="opacity-80 mt-0.5">
-                    Edita el carro "{carroSeleccionado.nombre}" y asígnale un número de bandejas
-                    para poder ubicar las probetas.
-                  </p>
+                );
+              })}
+            </div>
+
+            {probetasEnBandeja.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Probetas en esta bandeja
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {probetasEnBandeja.map((p) => (
+                    <span
+                      key={p.id}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-red/10 text-airbus-red border border-airbus-red/20 rounded-full text-[10px] font-medium"
+                    >
+                      <span className="font-mono font-bold">{p.num_posicion ?? '—'}</span>
+                      <span>·</span>
+                      <span>{p.codigo}</span>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {carroSeleccionado && !carroSeleccionado.posiciones_por_bandeja && (
+          <div className="mt-3 flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-xs p-3 rounded-lg">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <p>
+              Este carro no tiene posiciones definidas por bandeja. Edítalo para añadirlas.
+            </p>
           </div>
         )}
       </Section>
