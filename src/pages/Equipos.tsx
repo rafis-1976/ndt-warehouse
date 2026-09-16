@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Package, RefreshCw, Printer, X, Filter,
   AlertTriangle, Calendar, CheckCircle2, AlertCircle, Bell, Wrench,
+  Truck, Building2, Warehouse, Users, ChevronDown,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
@@ -14,10 +15,8 @@ import {
   tieneCalibracionProxima,
   type EstadoEfectivo,
 } from '../lib/calibracion';
+import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
 
-// ============================================================
-// Estilos por estado efectivo
-// ============================================================
 const estadoBadge: Record<EstadoEfectivo, string> = {
   disponible:            'badge badge-green',
   prestado:              'badge badge-blue',
@@ -27,7 +26,6 @@ const estadoBadge: Record<EstadoEfectivo, string> = {
   baja:                  'badge badge-gray',
 };
 
-// Lista de estados para el filtro
 const estadosFiltro: { value: EstadoEfectivo; label: string }[] = [
   { value: 'disponible',            label: 'Disponible' },
   { value: 'prestado',              label: 'Prestado' },
@@ -39,9 +37,14 @@ const estadosFiltro: { value: EstadoEfectivo; label: string }[] = [
 
 type FiltroCalibracion = 'todas' | 'vencida' | 'proxima' | 'ok' | 'sin_fecha';
 
-// ============================================================
-// Componente principal
-// ============================================================
+const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
+  almacen: { label: 'Almacén', icon: Warehouse },
+  seccion: { label: 'Sección', icon: Building2 },
+  compania: { label: 'Compañía', icon: Truck },
+  cliente: { label: 'Cliente', icon: Users },
+  otro: { label: 'Otro', icon: Building2 },
+};
+
 export function Equipos() {
   const [equipos, setEquipos] = useState<any[]>([]);
   const [tecnicas, setTecnicas] = useState<any[]>([]);
@@ -49,6 +52,7 @@ export function Equipos() {
   const [filtroTecnica, setFiltroTecnica] = useState<string>('todas');
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
   const [filtroCalibracion, setFiltroCalibracion] = useState<FiltroCalibracion>('todas');
+  const [soloFuera, setSoloFuera] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -57,10 +61,10 @@ export function Equipos() {
   const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
   const [avisoVencidasCerrado, setAvisoVencidasCerrado] = useState(false);
   const [avisoProximasCerrado, setAvisoProximasCerrado] = useState(false);
+  const [avisoFueraCerrado, setAvisoFueraCerrado] = useState(false);
 
-  // ============================================================
-  // Cargar datos
-  // ============================================================
+  const { fueraMap } = usePrestamosExternos();
+
   const load = useCallback(async () => {
     setLoading(true);
     const [eq, tec] = await Promise.all([
@@ -82,9 +86,11 @@ export function Equipos() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ============================================================
-  // Listas derivadas para avisos
-  // ============================================================
+  const equiposFuera = useMemo(
+    () => equipos.filter((e) => fueraMap.has(e.id)),
+    [equipos, fueraMap]
+  );
+
   const equiposVencidos = useMemo(
     () => equipos.filter((e) => estadoEfectivoEquipo(e) === 'pendiente_calibracion'),
     [equipos]
@@ -100,12 +106,12 @@ export function Equipos() {
     [equipos]
   );
 
-  // ============================================================
-  // Filtrado combinado
-  // ============================================================
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return equipos.filter((e) => {
+      // Filtro rápido "fuera del almacén"
+      if (soloFuera && !fueraMap.has(e.id)) return false;
+
       const coincideBusqueda =
         qLower === '' ||
         [e.nombre, e.codigo_barras, e.numero_serie, e.marca, e.modelo, e.id_equipo]
@@ -126,11 +132,8 @@ export function Equipos() {
 
       return true;
     });
-  }, [equipos, q, filtroTecnica, filtroEstado, filtroCalibracion]);
+  }, [equipos, q, filtroTecnica, filtroEstado, filtroCalibracion, soloFuera, fueraMap]);
 
-  // ============================================================
-  // Contadores
-  // ============================================================
   const contadores = useMemo(() => {
     const porTecnica: Record<string, number> = {};
     const porEstado: Record<string, number> = {};
@@ -155,18 +158,17 @@ export function Equipos() {
     filtroTecnica !== 'todas' ||
     filtroEstado !== 'todos' ||
     filtroCalibracion !== 'todas' ||
-    q !== '';
+    q !== '' ||
+    soloFuera;
 
   const limpiarFiltros = () => {
     setFiltroTecnica('todas');
     setFiltroEstado('todos');
     setFiltroCalibracion('todas');
     setQ('');
+    setSoloFuera(false);
   };
 
-  // ============================================================
-  // Acciones
-  // ============================================================
   const openNew = () => { setEditingId(null); setModalOpen(true); };
   const openEdit = (id: string) => { setEditingId(id); setModalOpen(true); };
 
@@ -207,15 +209,78 @@ export function Equipos() {
     win.document.close();
   };
 
-  // ============================================================
-  // Render
-  // ============================================================
   return (
     <div className="p-6 space-y-4">
+      {/* BANNER: FUERA DEL ALMACÉN */}
+      {!avisoFueraCerrado && equiposFuera.length > 0 && (
+        <div className="bg-gradient-to-r from-airbus-orange to-airbus-red rounded-xl shadow-lg overflow-hidden animate-in">
+          <div className="flex items-start gap-4 p-4">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+              <Truck className="w-6 h-6 text-white animate-pulse" />
+            </div>
 
-      {/* ==================================================== */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-white font-bold text-base">
+                  {equiposFuera.length} equipo{equiposFuera.length !== 1 ? 's' : ''} fuera del almacén
+                </h3>
+                <span className="px-2 py-0.5 bg-white/20 text-white text-[10px] font-bold rounded-full">
+                  PRÉSTAMO EXTERNO
+                </span>
+              </div>
+
+              <p className="text-white/90 text-sm mt-1">
+                Estos equipos están prestados a terceros y no están disponibles para uso interno.
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {equiposFuera.slice(0, 3).map((e) => {
+                  const info = fueraMap.get(e.id);
+                  const destinoConf = info?.prestamo.destino_tipo
+                    ? tipoDestinoConfig[info.prestamo.destino_tipo]
+                    : null;
+                  const DestIcon = destinoConf?.icon ?? Building2;
+                  return (
+                    <button
+                      key={e.id}
+                      onClick={() => openEdit(e.id)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-full text-xs text-white transition"
+                      title={`${destinoConf?.label}: ${info?.prestamo.destino_nombre}`}
+                    >
+                      <DestIcon className="w-3 h-3" />
+                      <span className="font-mono font-bold">{e.id_equipo}</span>
+                      <span className="opacity-80 truncate max-w-[140px]">
+                        {info?.prestamo.destino_nombre}
+                      </span>
+                    </button>
+                  );
+                })}
+                {equiposFuera.length > 3 && (
+                  <button
+                    onClick={() => {
+                      setSoloFuera(true);
+                      setAvisoFueraCerrado(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/25 hover:bg-white/35 rounded-full text-xs text-white font-semibold transition"
+                  >
+                    +{equiposFuera.length - 3} más →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setAvisoFueraCerrado(true)}
+              className="p-1.5 hover:bg-white/10 rounded-full transition shrink-0"
+              title="Cerrar aviso"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* BANNER ROJO: calibración vencida */}
-      {/* ==================================================== */}
       {!avisoVencidasCerrado && equiposVencidos.length > 0 && (
         <div className="bg-gradient-to-r from-airbus-red to-airbus-orange rounded-xl shadow-lg overflow-hidden animate-in">
           <div className="flex items-start gap-4 p-4">
@@ -274,9 +339,7 @@ export function Equipos() {
         </div>
       )}
 
-      {/* ==================================================== */}
       {/* BANNER NARANJA: calibración próxima */}
-      {/* ==================================================== */}
       {!avisoProximasCerrado && equiposProximos.length > 0 && (
         <div className="bg-airbus-orange/10 border border-airbus-orange/30 rounded-xl p-4 flex items-start gap-3 animate-in">
           <div className="w-10 h-10 bg-airbus-orange/20 rounded-full flex items-center justify-center shrink-0">
@@ -324,14 +387,17 @@ export function Equipos() {
         </div>
       )}
 
-      {/* ==================================================== */}
       {/* CABECERA */}
-      {/* ==================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Equipos NDT</h1>
           <p className="text-sm text-gray-500">
             {filtered.length} de {equipos.length} equipos
+            {equiposFuera.length > 0 && (
+              <span className="ml-2 text-airbus-orange font-semibold">
+                · {equiposFuera.length} fuera del almacén
+              </span>
+            )}
             {equiposEnCalibracion.length > 0 && (
               <span className="ml-2 text-airbus-sky">
                 · {equiposEnCalibracion.length} en calibración
@@ -348,16 +414,13 @@ export function Equipos() {
         </button>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div className="fixed top-20 right-6 z-40 bg-airbus-green text-white px-4 py-3 rounded-lg shadow-lg text-sm animate-in">
           {toast}
         </div>
       )}
 
-      {/* ==================================================== */}
       {/* FILTROS */}
-      {/* ==================================================== */}
       <div className="card space-y-4">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -381,7 +444,33 @@ export function Equipos() {
           )}
         </div>
 
-        {/* Técnica */}
+        {/* Filtro rápido "fuera del almacén" */}
+        {equiposFuera.length > 0 && (
+          <div>
+            <button
+              onClick={() => setSoloFuera(!soloFuera)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition ${
+                soloFuera
+                  ? 'bg-airbus-orange text-white border-airbus-orange shadow-sm'
+                  : 'bg-white text-airbus-orange border-airbus-orange/40 hover:bg-airbus-orange/5'
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5" />
+              Solo equipos fuera del almacén
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  soloFuera
+                    ? 'bg-white/20 text-white'
+                    : 'bg-airbus-orange/15 text-airbus-orange'
+                }`}
+              >
+                {equiposFuera.length}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* TÉCNICA */}
         <div>
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
             <Filter className="w-3 h-3" />
@@ -409,7 +498,7 @@ export function Equipos() {
           </div>
         </div>
 
-        {/* Estado */}
+        {/* ESTADO */}
         <div>
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
             <Filter className="w-3 h-3" />
@@ -458,7 +547,7 @@ export function Equipos() {
           </div>
         </div>
 
-        {/* Calibración */}
+        {/* CALIBRACIÓN */}
         <div>
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
             <Filter className="w-3 h-3" />
@@ -511,9 +600,7 @@ export function Equipos() {
         </div>
       </div>
 
-      {/* ==================================================== */}
       {/* TABLA */}
-      {/* ==================================================== */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-400 flex items-center justify-center gap-2">
@@ -565,11 +652,18 @@ export function Equipos() {
                   const esPendiente = efectivo === 'pendiente_calibracion';
                   const enCalib = efectivo === 'calibracion';
                   const esProxima = cal === 'proxima';
+                  const fueraInfo = fueraMap.get(e.id);
+                  const estaFuera = !!fueraInfo;
+                  const destinoConf = fueraInfo?.prestamo.destino_tipo
+                    ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
+                    : null;
+                  const DestIcon = destinoConf?.icon ?? Truck;
 
                   return (
                     <tr
                       key={e.id}
                       className={`hover:bg-gray-50 transition cursor-pointer ${
+                        estaFuera ? 'bg-airbus-orange/5' :
                         esPendiente ? 'bg-airbus-red/5' :
                         enCalib ? 'bg-airbus-yellow/5' :
                         esProxima ? 'bg-airbus-orange/5' : ''
@@ -603,25 +697,9 @@ export function Equipos() {
                       </td>
 
                       <td className="px-4 py-3">
-  <div className="flex items-center gap-3">
-    {e.foto_url ? (
-      <img
-        src={e.foto_url}
-        alt={e.nombre}
-        className="w-10 h-10 rounded-lg object-cover border border-gray-200 shrink-0"
-        onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }}
-      />
-    ) : (
-      <div className="w-10 h-10 rounded-lg bg-airbus-blue/10 flex items-center justify-center shrink-0">
-        <Package className="w-4 h-4 text-airbus-blue/50" />
-      </div>
-    )}
-    <div className="min-w-0">
-      <p className="font-medium text-gray-800 truncate">{e.nombre}</p>
-      <p className="text-xs text-gray-500 truncate">{e.marca} {e.modelo}</p>
-    </div>
-  </div>
-</td>
+                        <p className="font-medium text-gray-800">{e.nombre}</p>
+                        <p className="text-xs text-gray-500">{e.marca} {e.modelo}</p>
+                      </td>
 
                       <td className="px-4 py-3">
                         <span className="badge badge-blue">
@@ -631,7 +709,6 @@ export function Equipos() {
 
                       <td className="px-4 py-3 text-gray-600">{e.ubicacion ?? '—'}</td>
 
-                      {/* ESTADO con doble badge si hay alerta */}
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1 items-start">
                           <span className={estadoBadge[efectivo] ?? 'badge badge-gray'}>
@@ -642,7 +719,21 @@ export function Equipos() {
                             </span>
                           </span>
 
-                          {/* Badge secundario: calibración próxima */}
+                          {estaFuera && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 max-w-full"
+                              title={`${destinoConf?.label}: ${fueraInfo?.prestamo.destino_nombre}${fueraInfo?.prestamo.destino_contacto ? ` (${fueraInfo.prestamo.destino_contacto})` : ''}${fueraInfo?.retrasado ? ' · RETRASADO' : ''}`}
+                            >
+                              <DestIcon className="w-3 h-3 shrink-0" />
+                              <span className="truncate">
+                                {fueraInfo?.prestamo.destino_nombre ?? 'Fuera'}
+                              </span>
+                              {fueraInfo?.retrasado && (
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                              )}
+                            </span>
+                          )}
+
                           {esProxima && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/30">
                               <AlertTriangle className="w-2.5 h-2.5" />
@@ -652,7 +743,6 @@ export function Equipos() {
                         </div>
                       </td>
 
-                      {/* Fecha de próxima calibración */}
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         {cal === 'vencida' && (
                           <span className="text-airbus-red font-semibold flex items-center gap-1">
@@ -751,9 +841,6 @@ export function Equipos() {
   );
 }
 
-// ============================================================
-// FilterChip
-// ============================================================
 function FilterChip({
   active, onClick, children, count, color = 'default', icon,
 }: {
