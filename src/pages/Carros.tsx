@@ -168,6 +168,13 @@ export function Carros() {
     return diff < 30 * 864e5;
   };
 
+  const getProbetasDeLaBandeja = (probeta: any) => {
+    if (!probeta?.carro_id || !probeta?.num_bandeja) return [];
+    return (probetasPorCarro[probeta.carro_id] ?? []).filter(
+      (p) => p.num_bandeja === probeta.num_bandeja
+    );
+  };
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -558,6 +565,7 @@ export function Carros() {
             probeta={detalleProbeta}
             carro={detalleCarro}
             onClose={() => { setDetalleOpen(false); setDetalleProbeta(null); setDetalleCarro(null); }}
+            probetasEnBandeja={getProbetasDeLaBandeja(detalleProbeta)}
           />
         )}
       </Modal>
