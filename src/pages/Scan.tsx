@@ -5,6 +5,7 @@ import {
   CheckCircle2, XCircle, Package, Search, Hash, Layers,
   AlertTriangle, Truck, Building2, Warehouse, Users, FileText,
   Calendar, Wrench, Palette, Ruler, Box, Grid3x3, Download,
+  Sparkles,
 } from 'lucide-react';
 import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
 import { formatearTamano, iconoDocumento, type DocumentoEquipo } from '../lib/storage';
@@ -22,11 +23,13 @@ type TipoEncontrado = 'equipo' | 'probeta';
 interface Resultado {
   tipo: TipoEncontrado;
   data: any;
+  coincidencia?: string;
 }
 
 export function Scan() {
   const [code, setCode] = useState('');
-  const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [resultados, setResultados] = useState<Resultado[]>([]);
+  const [terminoBusqueda, setTerminoBusqueda] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { fueraMap } = usePrestamosExternos();
@@ -37,60 +40,151 @@ export function Scan() {
   };
 
   const lookup = async (value: string) => {
-    const codigo = value.trim();
-    if (!codigo) return;
+    const termino = value.trim();
+    if (!termino) return;
 
     setLoading(true);
     setError('');
-    setResultado(null);
+    setResultados([]);
+    setTerminoBusqueda(termino);
 
     try {
-      // 1. Buscar primero en equipos
-      const { data: equipo } = await supabase
-        .from('equipos')
-        .select('*, tecnicas_ndt(codigo, nombre)')
-        .eq('codigo_barras', codigo)
-        .maybeSingle();
+      // Buscar en paralelo en equipos y probetas por TODOS los campos
+      const [equiposRes, probetasRes] = await Promise.all([
+        supabase
+          .from('equipos')
+          .select('*, tecnicas_ndt(codigo, nombre)')
+          .or(
+            [
+              `codigo_barras.ilike.%${termino}%`,
+              `id_equipo.ilike.%${termino}%`,
+              `nombre.ilike.%${termino}%`,
+              `numero_serie.ilike.%${termino}%`,
+              `marca.ilike.%${termino}%`,
+              `modelo.ilike.%${termino}%`,
+              `ubicacion.ilike.%${termino}%`,
+              `observaciones.ilike.%${termino}%`,
+            ].join(',')
+          )
+          .limit(20),
+        supabase
+          .from('probetas')
+          .select('*, tecnicas_ndt(codigo, nombre), carros(codigo, nombre, ubicacion)')
+          .or(
+            [
+              `codigo_barras.ilike.%${termino}%`,
+              `pn.ilike.%${termino}%`,
+              `nombre.ilike.%${termino}%`,
+              `numero_serie.ilike.%${termino}%`,
+              `material.ilike.%${termino}%`,
+              `dimensiones.ilike.%${termino}%`,
+              `observaciones.ilike.%${termino}%`,
+              `normas_ntm.ilike.%${termino}%`,
+            ].join(',')
+          )
+          .limit(20),
+      ]);
 
-      if (equipo) {
-        setResultado({ tipo: 'equipo', data: equipo });
-        setLoading(false);
-        return;
+      if (equiposRes.error) console.error('[Scan] Error equipos:', equiposRes.error);
+      if (probetasRes.error) console.error('[Scan] Error probetas:', probetasRes.error);
+
+      const listaEquipos: Resultado[] = (equiposRes.data ?? []).map((e) => ({
+        tipo: 'equipo',
+        data: e,
+        coincidencia: detectarCoincidencia(e, termino, 'equipo'),
+      }));
+
+      const listaProbetas: Resultado[] = (probetasRes.data ?? []).map((p) => ({
+        tipo: 'probeta',
+        data: p,
+        coincidencia: detectarCoincidencia(p, termino, 'probeta'),
+      }));
+
+      // Ordenar: primero coincidencia EXACTA en código de barras, luego exacta en otros identificadores, luego el resto
+      const todos = [...listaEquipos, ...listaProbetas];
+      todos.sort((a, b) => {
+        const scoreA = scoreResultado(a, termino);
+        const scoreB = scoreResultado(b, termino);
+        return scoreB - scoreA;
+      });
+
+      if (todos.length === 0) {
+        setError(`No se ha encontrado ningún equipo ni probeta que coincida con "${termino}".`);
+      } else {
+        setResultados(todos);
       }
-
-      // 2. Buscar en probetas
-      const { data: probeta } = await supabase
-        .from('probetas')
-        .select('*, tecnicas_ndt(codigo, nombre), carros(codigo, nombre, ubicacion)')
-        .eq('codigo_barras', codigo)
-        .maybeSingle();
-
-      if (probeta) {
-        setResultado({ tipo: 'probeta', data: probeta });
-        setLoading(false);
-        return;
-      }
-
-      setError('No se ha encontrado ningún equipo ni probeta con ese código de barras.');
     } catch (err: any) {
-      setError(err.message ?? 'Error al buscar el código');
+      setError(err.message ?? 'Error al buscar');
     } finally {
       setLoading(false);
     }
   };
 
+  /** Devuelve en qué campo coincidió para mostrarlo en el resultado */
+  const detectarCoincidencia = (item: any, termino: string, tipo: TipoEncontrado): string | undefined => {
+    const t = termino.toLowerCase();
+    if (item.codigo_barras?.toLowerCase().includes(t)) return 'Código de barras';
+    if (tipo === 'equipo') {
+      if (item.id_equipo?.toLowerCase().includes(t)) return 'ID de equipo';
+    } else {
+      if (item.pn?.toLowerCase().includes(t)) return 'P/N';
+    }
+    if (item.nombre?.toLowerCase().includes(t)) return 'Nombre';
+    if (item.numero_serie?.toLowerCase().includes(t)) return 'Nº de serie';
+    if (item.marca?.toLowerCase().includes(t)) return 'Marca';
+    if (item.modelo?.toLowerCase().includes(t)) return 'Modelo';
+    if (item.material?.toLowerCase().includes(t)) return 'Material';
+    if (item.dimensiones?.toLowerCase().includes(t)) return 'Dimensiones';
+    if (item.ubicacion?.toLowerCase().includes(t)) return 'Ubicación';
+    if (item.normas_ntm?.toLowerCase().includes(t)) return 'Norma NTM';
+    if (item.observaciones?.toLowerCase().includes(t)) return 'Observaciones';
+    return undefined;
+  };
+
+  /** Puntuación para ordenar: coincidencia exacta > prefijo > contiene */
+  const scoreResultado = (r: Resultado, termino: string): number => {
+    const t = termino.toLowerCase();
+    const item = r.data;
+    let score = 0;
+
+    const campos: string[] = [
+      item.codigo_barras,
+      r.tipo === 'equipo' ? item.id_equipo : item.pn,
+      item.nombre,
+      item.numero_serie,
+      item.marca,
+      item.modelo,
+      item.material,
+      item.dimensiones,
+      item.ubicacion,
+      item.normas_ntm,
+    ].filter(Boolean);
+
+    campos.forEach((campo) => {
+      const c = campo.toLowerCase();
+      if (c === t) score += 100;
+      else if (c.startsWith(t)) score += 50;
+      else if (c.includes(t)) score += 10;
+    });
+
+    // Bonus por código de barras
+    if (item.codigo_barras?.toLowerCase() === t) score += 200;
+    return score;
+  };
+
   const limpiar = () => {
     setCode('');
-    setResultado(null);
+    setResultados([]);
     setError('');
+    setTerminoBusqueda('');
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-airbus-blue">Escanear código</h1>
+        <h1 className="text-2xl font-bold text-airbus-blue">Escanear / Buscar</h1>
         <p className="text-sm text-gray-500">
-          Busca equipos y probetas por su código de barras
+          Busca equipos y probetas por cualquier campo: código de barras, P/N, nombre, serie, marca, NTM...
         </p>
       </div>
 
@@ -101,7 +195,7 @@ export function Scan() {
           <BarcodeScanner onScan={handleScan} />
         </div>
 
-        {/* BÚSQUEDA MANUAL + RESULTADO */}
+        {/* BÚSQUEDA MANUAL */}
         <div className="card">
           <h3 className="font-semibold text-airbus-blue mb-4">Búsqueda manual</h3>
 
@@ -110,7 +204,7 @@ export function Scan() {
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 className="input pl-10"
-                placeholder="Introduce el código de barras"
+                placeholder="Código, P/N, nombre, serie, marca, NTM..."
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && lookup(code)}
@@ -119,11 +213,34 @@ export function Scan() {
             <button onClick={() => lookup(code)} className="btn-primary">
               <Search className="w-4 h-4" />
             </button>
-            {(code || resultado || error) && (
+            {(code || resultados.length > 0 || error) && (
               <button onClick={limpiar} className="btn-ghost border border-gray-300">
                 Limpiar
               </button>
             )}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            <span className="text-[10px] text-gray-400 uppercase tracking-wider mr-1 self-center">
+              Busca en:
+            </span>
+            {[
+              'Código de barras',
+              'ID / P/N',
+              'Nombre',
+              'Nº serie',
+              'Marca / Modelo',
+              'Material',
+              'Ubicación',
+              'NTM',
+            ].map((c) => (
+              <span
+                key={c}
+                className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[9px] font-medium"
+              >
+                {c}
+              </span>
+            ))}
           </div>
 
           {loading && (
@@ -137,33 +254,66 @@ export function Scan() {
             </div>
           )}
 
-          {resultado?.tipo === 'equipo' && !loading && (
-            <EquipoResultado
-              equipo={resultado.data}
-              fueraInfo={fueraMap.get(resultado.data.id)}
-            />
+          {!loading && resultados.length > 0 && (
+            <div className="mb-3 flex items-center justify-between text-xs">
+              <span className="text-gray-500">
+                <strong className="text-airbus-blue">{resultados.length}</strong>{' '}
+                resultado{resultados.length !== 1 ? 's' : ''} para "{terminoBusqueda}"
+              </span>
+            </div>
           )}
 
-          {resultado?.tipo === 'probeta' && !loading && (
-            <ProbetaResultado
-              probeta={resultado.data}
-              fueraInfo={fueraMap.get(resultado.data.id)}
-            />
-          )}
-
-          {!resultado && !error && !loading && (
+          {!loading && resultados.length === 0 && !error && (
             <div className="text-center py-8">
-              <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+              <Sparkles className="w-10 h-10 text-gray-300 mx-auto mb-2" />
               <p className="text-sm text-gray-400">
-                Escanea o introduce un código para buscar
+                Escanea o introduce cualquier dato para buscar
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                Se buscará automáticamente en equipos y probetas
+                Se buscará automáticamente en todos los campos de equipos y probetas
               </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* RESULTADOS */}
+      {!loading && resultados.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-airbus-blue flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-airbus-green" />
+            Resultados ({resultados.length})
+          </h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {resultados.map((r) => (
+              <div key={`${r.tipo}-${r.data.id}`} className="relative">
+                {r.coincidencia && (
+                  <div className="absolute top-3 right-3 z-10">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-yellow text-gray-900 text-[9px] font-bold uppercase rounded-full shadow-sm">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      {r.coincidencia}
+                    </span>
+                  </div>
+                )}
+                {r.tipo === 'equipo' ? (
+                  <EquipoResultado
+                    equipo={r.data}
+                    fueraInfo={fueraMap.get(r.data.id)}
+                    termino={terminoBusqueda}
+                  />
+                ) : (
+                  <ProbetaResultado
+                    probeta={r.data}
+                    fueraInfo={fueraMap.get(r.data.id)}
+                    termino={terminoBusqueda}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -171,7 +321,7 @@ export function Scan() {
 // ============================================================
 // Resultado: EQUIPO
 // ============================================================
-function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }) {
+function EquipoResultado({ equipo, fueraInfo, termino }: { equipo: any; fueraInfo?: any; termino?: string }) {
   const destinoConf = fueraInfo?.prestamo.destino_tipo
     ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
     : null;
@@ -188,8 +338,7 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Cabecera */}
+    <div className="card space-y-4">
       <div className="bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl p-4 text-white">
         <div className="flex items-center gap-2 mb-2">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
@@ -209,14 +358,16 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
           )}
           <div className="min-w-0 flex-1">
             <p className="font-mono text-xs text-airbus-light opacity-90">
-              {equipo.id_equipo}
+              {resaltar(equipo.id_equipo, termino)}
             </p>
-            <p className="font-bold text-base truncate">{equipo.nombre}</p>
+            <p className="font-bold text-base truncate">
+              {resaltar(equipo.nombre, termino)}
+            </p>
             <p className="text-xs opacity-80 truncate">
-              {equipo.marca} {equipo.modelo}
+              {resaltar(equipo.marca, termino)} {resaltar(equipo.modelo, termino)}
             </p>
             <p className="text-[10px] font-mono text-airbus-light/80 truncate">
-              {equipo.codigo_barras}
+              {resaltar(equipo.codigo_barras, termino)}
             </p>
           </div>
           {equipo.tecnicas_ndt?.codigo && (
@@ -227,7 +378,6 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
         </div>
       </div>
 
-      {/* Fuera del almacén */}
       {fueraInfo && (
         <div className="bg-airbus-orange/10 border border-airbus-orange/40 rounded-lg p-3 flex items-start gap-3">
           <DestIcon className="w-5 h-5 text-airbus-orange shrink-0 mt-0.5" />
@@ -253,7 +403,6 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
         </div>
       )}
 
-      {/* Estado */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3 border border-gray-200 rounded-lg">
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Estado</p>
@@ -268,21 +417,31 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
         <div className="p-3 border border-gray-200 rounded-lg">
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ubicación</p>
           <p className="text-sm font-medium text-gray-800 truncate">
-            {equipo.ubicacion ?? '—'}
+            {resaltar(equipo.ubicacion, termino) ?? '—'}
           </p>
         </div>
       </div>
 
-      {/* Info técnica */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
         <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
           Información
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <DatoRow icon={Hash} label="Nº serie" value={equipo.numero_serie} />
-          <DatoRow icon={Calendar} label="Próx. calibración" value={equipo.proxima_calibracion} />
+          <DatoRow icon={Hash} label="Nº serie" value={equipo.numero_serie} termino={termino} />
+          <DatoRow icon={Calendar} label="Próx. calibración" value={equipo.proxima_calibracion} termino={termino} />
         </div>
       </div>
+
+      {equipo.observaciones && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+            Observaciones
+          </p>
+          <p className="text-xs text-gray-700 whitespace-pre-wrap">
+            {resaltar(equipo.observaciones, termino)}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -290,7 +449,7 @@ function EquipoResultado({ equipo, fueraInfo }: { equipo: any; fueraInfo?: any }
 // ============================================================
 // Resultado: PROBETA
 // ============================================================
-function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: any }) {
+function ProbetaResultado({ probeta, fueraInfo, termino }: { probeta: any; fueraInfo?: any; termino?: string }) {
   const destinoConf = fueraInfo?.prestamo.destino_tipo
     ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
     : null;
@@ -313,8 +472,7 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
   };
 
   return (
-    <div className="space-y-4">
-      {/* Cabecera */}
+    <div className="card space-y-4">
       <div className="bg-gradient-to-br from-airbus-sky to-airbus-blue rounded-xl p-4 text-white">
         <div className="flex items-center gap-2 mb-2">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
@@ -334,14 +492,18 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
           )}
           <div className="min-w-0 flex-1">
             <p className="font-mono text-xs text-airbus-light opacity-90">
-              {probeta.pn}
+              {resaltar(probeta.pn, termino)}
             </p>
-            <p className="font-bold text-base truncate">{probeta.nombre}</p>
+            <p className="font-bold text-base truncate">
+              {resaltar(probeta.nombre, termino)}
+            </p>
             {probeta.material && (
-              <p className="text-xs opacity-80 truncate">{probeta.material}</p>
+              <p className="text-xs opacity-80 truncate">
+                {resaltar(probeta.material, termino)}
+              </p>
             )}
             <p className="text-[10px] font-mono text-airbus-light/80 truncate">
-              {probeta.codigo_barras}
+              {resaltar(probeta.codigo_barras, termino)}
             </p>
           </div>
           {probeta.tecnicas_ndt?.codigo && (
@@ -352,7 +514,6 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
         </div>
       </div>
 
-      {/* Fuera del almacén */}
       {fueraInfo && (
         <div className="bg-airbus-orange/10 border border-airbus-orange/40 rounded-lg p-3 flex items-start gap-3">
           <DestIcon className="w-5 h-5 text-airbus-orange shrink-0 mt-0.5" />
@@ -372,17 +533,18 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
         </div>
       )}
 
-      {/* Ubicación + Estado */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3 border border-gray-200 rounded-lg">
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ubicación</p>
           {probeta.carros?.codigo ? (
             <>
               <p className="text-sm font-semibold text-airbus-blue">
-                {probeta.carros.codigo}
+                {resaltar(probeta.carros.codigo, termino)}
               </p>
               {probeta.carros.nombre && (
-                <p className="text-[10px] text-gray-500 truncate">{probeta.carros.nombre}</p>
+                <p className="text-[10px] text-gray-500 truncate">
+                  {resaltar(probeta.carros.nombre, termino)}
+                </p>
               )}
               {probeta.num_bandeja && (
                 <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
@@ -408,24 +570,23 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
         </div>
       </div>
 
-      {/* Info técnica */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
         <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
           Información
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <DatoRow icon={Wrench} label="Nº serie" value={probeta.numero_serie} />
-          <DatoRow icon={Ruler} label="Dimensiones" value={probeta.dimensiones} />
-          <DatoRow icon={Palette} label="Material" value={probeta.material} />
+          <DatoRow icon={Wrench} label="Nº serie" value={probeta.numero_serie} termino={termino} />
+          <DatoRow icon={Ruler} label="Dimensiones" value={probeta.dimensiones} termino={termino} />
+          <DatoRow icon={Palette} label="Material" value={probeta.material} termino={termino} />
           <DatoRow
             icon={Grid3x3}
             label="Posición"
             value={probeta.num_posicion ? String(probeta.num_posicion) : (probeta.pos_x !== null ? 'En foto' : null)}
+            termino={termino}
           />
         </div>
       </div>
 
-      {/* NTM */}
       {ntms.length > 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -437,14 +598,13 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
                 key={ntm}
                 className="inline-flex items-center px-2 py-0.5 bg-airbus-sky/10 text-airbus-sky border border-airbus-sky/30 rounded-full text-[10px] font-mono font-bold"
               >
-                {ntm}
+                {resaltar(ntm, termino)}
               </span>
             ))}
           </div>
         </div>
       )}
 
-      {/* Certificados */}
       {certificados.length > 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -474,14 +634,13 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
         </div>
       )}
 
-      {/* Observaciones */}
       {probeta.observaciones && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
             Observaciones
           </p>
           <p className="text-xs text-gray-700 whitespace-pre-wrap">
-            {probeta.observaciones}
+            {resaltar(probeta.observaciones, termino)}
           </p>
         </div>
       )}
@@ -490,18 +649,47 @@ function ProbetaResultado({ probeta, fueraInfo }: { probeta: any; fueraInfo?: an
 }
 
 // ============================================================
-// Fila de dato simple
+// Fila de dato simple con resaltado
 // ============================================================
-function DatoRow({ icon: Icon, label, value }: { icon: any; label: string; value: string | null | undefined }) {
+function DatoRow({
+  icon: Icon, label, value, termino,
+}: {
+  icon: any;
+  label: string;
+  value: string | null | undefined;
+  termino?: string;
+}) {
   return (
     <div className="flex items-center gap-2">
       <Icon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-[9px] text-gray-400 uppercase tracking-wider">{label}</p>
         <p className="text-xs font-medium text-gray-800 truncate">
-          {value || '—'}
+          {value ? resaltar(value, termino) : '—'}
         </p>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Resaltado del término buscado
+// ============================================================
+function resaltar(texto: string | null | undefined, termino?: string) {
+  if (!texto) return texto;
+  if (!termino || !termino.trim()) return texto;
+  const t = termino.trim();
+  const lower = texto.toLowerCase();
+  const tLower = t.toLowerCase();
+  const idx = lower.indexOf(tLower);
+  if (idx === -1) return texto;
+  return (
+    <>
+      {texto.slice(0, idx)}
+      <mark className="bg-airbus-yellow/70 text-gray-900 rounded px-0.5">
+        {texto.slice(idx, idx + t.length)}
+      </mark>
+      {texto.slice(idx + t.length)}
+    </>
   );
 }
