@@ -3,10 +3,13 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Camera, Layers, Grid3x3, Info,
   MousePointerClick, X, Package, FileCheck2, Plus, Barcode, Hash,
+  FileText,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
+import { DocumentosUpload } from '../equipos/DocumentosUpload';
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
+import { BUCKET_PROBETAS_CERT, type DocumentoEquipo } from '../../lib/storage';
 
 interface ProbetaFormProps {
   probeta?: any;
@@ -19,7 +22,9 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const [tecnicas, setTecnicas] = useState<any[]>([]);
   const [carros, setCarros] = useState<any[]>([]);
   const [fotos, setFotos] = useState<FotoEquipo[]>([]);
+  const [certificados, setCertificados] = useState<DocumentoEquipo[]>([]);
   const [uploadKey, setUploadKey] = useState<string>('');
+  const [certKey, setCertKey] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!probeta);
   const [error, setError] = useState('');
@@ -66,12 +71,15 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
 
   useEffect(() => {
     if (!probeta) {
-      setUploadKey(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      const tmpId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setUploadKey(tmpId);
+      setCertKey(tmpId);
       setLoadingData(false);
       return;
     }
 
     setUploadKey(probeta.id);
+    setCertKey(probeta.id);
 
     supabase
       .from('probetas')
@@ -99,6 +107,11 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
           });
           const fts: FotoEquipo[] = Array.isArray(data.fotos_urls) ? data.fotos_urls : [];
           setFotos(fts);
+
+          const certs: DocumentoEquipo[] = Array.isArray(data.certificados_urls)
+            ? data.certificados_urls
+            : [];
+          setCertificados(certs);
 
           if (data.normas_ntm) {
             setNtms(
@@ -226,6 +239,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         fotos_urls: fotos,
         foto_url: fotos[0]?.url ?? null,
         normas_ntm: normasTexto,
+        certificados_urls: certificados,
       };
 
       if (probeta) {
@@ -367,6 +381,24 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             </select>
           </Field>
         </div>
+      </Section>
+
+      <Section title="Certificados">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Sube los certificados de calibración, trazabilidad o conformidad de la probeta.
+          </p>
+        </div>
+        <DocumentosUpload
+          equipoId={certKey}
+          documentos={certificados}
+          onChange={setCertificados}
+          bucket={BUCKET_PROBETAS_CERT}
+          categoria="certificado"
+          hint="PDF, imágenes, Word · máx. 20 MB por archivo"
+          emptyText="Sin certificados adjuntos"
+        />
       </Section>
 
       <Section title="Normas NTM donde es necesaria">
