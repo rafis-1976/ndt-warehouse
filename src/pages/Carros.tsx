@@ -3,8 +3,9 @@ import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
   ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers, Grid3x3,
-  FileCheck2, X, Highlighter,
+  FileCheck2, X, Highlighter, Barcode,
 } from 'lucide-react';
+import BarcodeLib from 'react-barcode';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
@@ -27,6 +28,7 @@ export function Carros() {
   const [detalleOpen, setDetalleOpen] = useState(false);
   const [detalleProbeta, setDetalleProbeta] = useState<any | null>(null);
   const [detalleCarro, setDetalleCarro] = useState<any | null>(null);
+  const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function Carros() {
     setLoading(true);
     const [c, p] = await Promise.all([
       supabase.from('carros').select('*').order('codigo'),
-      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('codigo'),
+      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('pn'),
     ]);
     if (c.error) console.error(c.error);
     if (p.error) console.error(p.error);
@@ -70,22 +72,19 @@ export function Carros() {
         const pa = a.num_posicion ?? 999;
         const pb = b.num_posicion ?? 999;
         if (pa !== pb) return pa - pb;
-        return (a.codigo ?? '').localeCompare(b.codigo ?? '');
+        return (a.pn ?? '').localeCompare(b.pn ?? '');
       });
     });
     return map;
   }, [probetas]);
 
-  // ============================================================
-  // BÚSQUEDA AVANZADA — Carros + Probetas (incluye NTM)
-  // ============================================================
   const qLower = q.trim().toLowerCase();
 
-  /** ¿Coincide la probeta con el texto buscado? */
   const probetaCoincide = useCallback((p: any): boolean => {
     if (!qLower) return false;
     const campos = [
-      p.codigo,
+      p.pn,
+      p.codigo_barras,
       p.nombre,
       p.tipo,
       p.material,
@@ -107,14 +106,12 @@ export function Carros() {
       .includes(qLower);
   }, [qLower]);
 
-  /** ¿Coincide el carro con el texto buscado? */
   const carroCoincide = useCallback((c: any): boolean => {
     if (!qLower) return true;
     return [c.codigo, c.nombre, c.descripcion, c.ubicacion]
       .filter(Boolean).join(' ').toLowerCase().includes(qLower);
   }, [qLower]);
 
-  /** Resultado combinado: qué carros mostrar y qué probetas destacar */
   const resultadoBusqueda = useMemo(() => {
     if (!qLower) {
       return {
@@ -130,7 +127,6 @@ export function Carros() {
     const carrosAutoExpandir = new Set<string>();
     const carrosConMatchDirecto = new Set<string>();
 
-    // 1. Detectar probetas que coinciden
     probetas.forEach((p) => {
       if (probetaCoincide(p)) {
         probetasMatch.add(p.id);
@@ -138,19 +134,14 @@ export function Carros() {
       }
     });
 
-    // 2. Detectar carros que coinciden directamente
     carros.forEach((c) => {
-      if (carroCoincide(c)) {
-        carrosConMatchDirecto.add(c.id);
-      }
+      if (carroCoincide(c)) carrosConMatchDirecto.add(c.id);
     });
 
-    // 3. Carros visibles = match directo + carros con probetas que coinciden
     const carrosVisibles = carros.filter((c) =>
       carrosConMatchDirecto.has(c.id) || carrosAutoExpandir.has(c.id)
     );
 
-    // 4. Probetas sin carro que coinciden
     const probetasSinCarroVisibles = (probetasPorCarro['__sin_carro__'] ?? []).filter(
       (p) => probetasMatch.has(p.id)
     );
@@ -175,9 +166,6 @@ export function Carros() {
   const hayBusquedaActiva = qLower.length > 0;
   const hayResultados = carrosVisibles.length > 0 || probetasSinCarroVisibles.length > 0;
 
-  // ============================================================
-  // Handlers
-  // ============================================================
   const handleSuccessCarro = () => {
     setModalCarroOpen(false);
     setCarroEditando(null);
@@ -254,12 +242,6 @@ export function Carros() {
     setDetalleOpen(true);
   };
 
-  const isCalibracionProblema = (fecha: string | null) => {
-    if (!fecha) return false;
-    const diff = new Date(fecha).getTime() - Date.now();
-    return diff < 30 * 864e5;
-  };
-
   const getProbetasDeLaBandeja = (probeta: any) => {
     if (!probeta?.carro_id || !probeta?.num_bandeja) return [];
     return (probetasPorCarro[probeta.carro_id] ?? []).filter(
@@ -267,7 +249,6 @@ export function Carros() {
     );
   };
 
-  /** Extrae las NTM de una probeta como array */
   const parseNtms = (probeta: any): string[] => {
     if (!probeta?.normas_ntm) return [];
     return String(probeta.normas_ntm)
@@ -276,7 +257,6 @@ export function Carros() {
       .filter(Boolean);
   };
 
-  /** Resalta el texto coincidente con la búsqueda */
   const resaltar = (texto: string) => {
     if (!qLower || !texto) return texto;
     const idx = texto.toLowerCase().indexOf(qLower);
@@ -321,15 +301,12 @@ export function Carros() {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* BUSCADOR */}
-      {/* ============================================ */}
       <div className="card space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             className="input pl-10 pr-10"
-            placeholder="Buscar por carro, probeta, NTM, bandeja, posición..."
+            placeholder="Buscar por carro, P/N, código de barras, NTM, bandeja, posición..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -383,11 +360,9 @@ export function Carros() {
       ) : !hayResultados && hayBusquedaActiva ? (
         <div className="card p-12 text-center">
           <Search className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-gray-500 mb-1">
-            Sin resultados para "{q}"
-          </p>
+          <p className="text-gray-500 mb-1">Sin resultados para "{q}"</p>
           <p className="text-sm text-gray-400 mb-4">
-            Prueba con el código de carro, el nombre de una probeta, o un código NTM
+            Prueba con el código de carro, el P/N de una probeta, un código de barras o un código NTM
           </p>
           <button
             onClick={() => setQ('')}
@@ -555,9 +530,6 @@ export function Carros() {
                     ) : (
                       <div className="divide-y divide-gray-100">
                         {listaProbetas.map((probeta) => {
-                          const alerta = isCalibracionProblema(probeta.proxima_calibracion);
-                          const vencida = probeta.proxima_calibracion &&
-                            new Date(probeta.proxima_calibracion) < new Date();
                           const esMatch = probetasMatch.has(probeta.id);
                           const ntms = parseNtms(probeta);
 
@@ -597,7 +569,7 @@ export function Carros() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-mono font-bold text-airbus-blue text-xs">
-                                    {resaltar(probeta.codigo)}
+                                    {resaltar(probeta.pn)}
                                   </span>
                                   <span className="text-sm text-gray-800 truncate">
                                     {resaltar(probeta.nombre)}
@@ -627,6 +599,26 @@ export function Carros() {
                                   {probeta.dimensiones && <span>{probeta.dimensiones}</span>}
                                 </div>
 
+                                {probeta.codigo_barras && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(probeta.codigo_barras); }}
+                                    className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-airbus-sky/10 transition"
+                                    title="Ver código de barras ampliado"
+                                  >
+                                    <Barcode className="w-3 h-3 text-airbus-sky" />
+                                    <BarcodeLib
+                                      value={probeta.codigo_barras}
+                                      format="CODE128"
+                                      displayValue={false}
+                                      height={20}
+                                      width={1}
+                                      margin={0}
+                                      lineColor="#00205B"
+                                    />
+                                  </button>
+                                )}
+
                                 {ntms.length > 0 && (
                                   <div className="flex items-center gap-1 mt-1 flex-wrap">
                                     <FileCheck2 className="w-3 h-3 text-airbus-sky shrink-0" />
@@ -649,19 +641,6 @@ export function Carros() {
                                   </div>
                                 )}
                               </div>
-
-                              {probeta.proxima_calibracion && (
-                                <div className={`text-[10px] font-semibold whitespace-nowrap flex items-center gap-1 ${
-                                  vencida ? 'text-airbus-red' : alerta ? 'text-airbus-orange' : 'text-airbus-green'
-                                }`}>
-                                  {vencida || alerta ? (
-                                    <AlertTriangle className="w-3 h-3" />
-                                  ) : (
-                                    <CheckCircle2 className="w-3 h-3" />
-                                  )}
-                                  {probeta.proxima_calibracion}
-                                </div>
-                              )}
 
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
                                 <button
@@ -690,7 +669,6 @@ export function Carros() {
             );
           })}
 
-          {/* Probetas sin carro */}
           {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length > 0 && (
             <div className="card p-0 overflow-hidden border-2 border-dashed border-airbus-orange/40">
               <div className="flex items-center gap-3 p-4 bg-airbus-orange/5">
@@ -743,7 +721,7 @@ export function Carros() {
                       <div className="flex-1 min-w-0">
                         <div>
                           <span className="font-mono font-bold text-airbus-blue text-xs mr-2">
-                            {resaltar(probeta.codigo)}
+                            {resaltar(probeta.pn)}
                           </span>
                           <span className="text-sm text-gray-800">
                             {resaltar(probeta.nombre)}
@@ -816,7 +794,7 @@ export function Carros() {
       <Modal
         open={detalleOpen}
         onClose={() => { setDetalleOpen(false); setDetalleProbeta(null); setDetalleCarro(null); }}
-        title={detalleProbeta ? `Probeta ${detalleProbeta.codigo}` : 'Detalle'}
+        title={detalleProbeta ? `Probeta ${detalleProbeta.pn}` : 'Detalle'}
         size="lg"
       >
         {detalleProbeta && (
@@ -826,6 +804,30 @@ export function Carros() {
             onClose={() => { setDetalleOpen(false); setDetalleProbeta(null); setDetalleCarro(null); }}
             probetasEnBandeja={getProbetasDeLaBandeja(detalleProbeta)}
           />
+        )}
+      </Modal>
+
+      <Modal
+        open={!!barcodeAbierto}
+        onClose={() => setBarcodeAbierto(null)}
+        title="Código de barras"
+        size="sm"
+      >
+        {barcodeAbierto && (
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="bg-white p-6 rounded-lg border border-gray-200">
+              <BarcodeLib
+                value={barcodeAbierto}
+                format="CODE128"
+                displayValue={false}
+                height={80}
+                width={2.5}
+                margin={0}
+                lineColor="#00205B"
+              />
+            </div>
+            <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
+          </div>
         )}
       </Modal>
     </div>
