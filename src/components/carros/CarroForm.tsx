@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle, Layers } from 'lucide-react';
+import { Loader2, Save, AlertCircle, Layers, Image as ImageIcon, Info } from 'lucide-react';
+import { BandejasFotos } from './BandejasFotos';
+import type { BandejaFoto } from '../../lib/storageFotos';
 
 interface CarroFormProps {
   carro?: any;
@@ -17,6 +19,9 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
     num_bandejas: carro?.num_bandejas ?? 0,
     activo: carro?.activo ?? true,
   });
+  const [bandejasFotos, setBandejasFotos] = useState<BandejaFoto[]>(
+    Array.isArray(carro?.bandejas_fotos) ? carro.bandejas_fotos : []
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -32,6 +37,10 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
 
     setLoading(true);
     try {
+      const fotosFiltradas = bandejasFotos.filter(
+        (f) => f.num_bandeja >= 1 && f.num_bandeja <= form.num_bandejas
+      );
+
       const payload = {
         codigo: form.codigo.trim().toUpperCase(),
         nombre: form.nombre.trim(),
@@ -39,6 +48,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
         ubicacion: form.ubicacion.trim() || null,
         num_bandejas: Number(form.num_bandejas) || 0,
         activo: form.activo,
+        bandejas_fotos: fotosFiltradas,
       };
 
       if (carro) {
@@ -158,6 +168,42 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
             </p>
           )}
         </div>
+      </Section>
+
+      <Section title="Fotos de las bandejas">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <ImageIcon className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Sube una foto por cada bandeja para verlas en la vista de la probeta.
+          </p>
+        </div>
+
+        {!carro && form.num_bandejas > 0 && (
+          <div className="flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-xs p-3 rounded-lg mb-3">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <p>
+              Guarda primero el carro para poder subir fotos de las bandejas.
+            </p>
+          </div>
+        )}
+
+        {carro ? (
+          <BandejasFotos
+            carroId={carro.id}
+            numBandejas={form.num_bandejas}
+            fotos={bandejasFotos}
+            onChange={setBandejasFotos}
+          />
+        ) : (
+          <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
+            <Layers className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-xs text-gray-400">
+              {form.num_bandejas === 0
+                ? 'Define primero el número de bandejas'
+                : 'Las fotos de bandejas estarán disponibles tras guardar el carro'}
+            </p>
+          </div>
+        )}
       </Section>
 
       <Section title="Descripción">
