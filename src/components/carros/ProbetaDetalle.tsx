@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Layers, Package, Hash, Calendar, AlertTriangle, CheckCircle2,
-  Ruler, Box, Palette, Wrench,
+  Ruler, Box, Palette, Wrench, Grid3x3, MapPin,
 } from 'lucide-react';
 
 interface ProbetaDetalleProps {
@@ -16,6 +16,8 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
 
   const totalBandejas = carro?.num_bandejas ?? 0;
   const bandejaActiva = probeta?.num_bandeja ?? null;
+  const posicionActiva = probeta?.num_posicion ?? null;
+  const posiciones = carro?.posiciones_por_bandeja ?? 0;
 
   const fotoBandeja = carro?.bandejas_fotos?.find?.(
     (f: any) => f.num_bandeja === bandejaActiva
@@ -66,16 +68,19 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
           {bandejaActiva && (
             <div className="text-right">
               <p className="text-xs text-airbus-light uppercase tracking-wider font-semibold">
-                Bandeja
+                Ubicación
               </p>
-              <p className="text-white font-bold text-3xl leading-none">
-                {bandejaActiva}
+              <p className="text-white font-bold text-2xl leading-none">
+                B{bandejaActiva}{posicionActiva ? ` · P${posicionActiva}` : ''}
+              </p>
+              <p className="text-[10px] text-airbus-light/80 mt-0.5">
+                Bandeja {bandejaActiva}{posicionActiva ? `, posición ${posicionActiva}` : ''}
               </p>
             </div>
           )}
         </div>
 
-        <div className="relative flex justify-center items-end gap-2 min-h-[280px]">
+        <div className="relative flex justify-center items-end gap-2 min-h-[300px]">
           <div className="relative flex flex-col-reverse items-center">
             {bandejas.map((n) => {
               const esActiva = n === bandejaActiva;
@@ -90,14 +95,14 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                     className={`
                       relative flex items-center justify-center
                       transition-all duration-700 ease-out
-                      ${esActiva && animando ? '-translate-x-32 md:-translate-x-44' : 'translate-x-0'}
+                      ${esActiva && animando ? '-translate-x-32 md:-translate-x-52' : 'translate-x-0'}
                     `}
                     style={{ transitionDelay: esActiva ? '400ms' : '0ms' }}
                   >
                     <div
                       className={`
-                        relative w-64 md:w-80 h-12 rounded-md border-2
-                        flex items-center justify-between px-3
+                        relative w-64 md:w-80 h-14 rounded-md border-2
+                        flex flex-col justify-center px-3
                         transition-all duration-500
                         ${esActiva
                           ? 'bg-airbus-sky border-airbus-light shadow-[0_0_30px_rgba(116,210,231,0.6)]'
@@ -105,26 +110,50 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                         }
                       `}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          esActiva ? 'bg-white animate-pulse' : 'bg-gray-400'
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${
+                            esActiva ? 'bg-white animate-pulse' : 'bg-gray-400'
+                          }`} />
+                          <span className={`text-xs font-bold ${
+                            esActiva ? 'text-white' : 'text-gray-600'
+                          }`}>
+                            Bandeja {n}
+                          </span>
+                        </div>
+                        <Layers className={`w-4 h-4 ${
+                          esActiva ? 'text-white' : 'text-gray-400'
                         }`} />
-                        <span className={`text-xs font-bold ${
-                          esActiva ? 'text-white' : 'text-gray-600'
-                        }`}>
-                          Bandeja {n}
-                        </span>
                       </div>
-                      <Layers className={`w-4 h-4 ${
-                        esActiva ? 'text-white' : 'text-gray-400'
-                      }`} />
+
+                      {esActiva && posiciones > 0 && (
+                        <div className="mt-1 flex gap-1 justify-center flex-wrap">
+                          {Array.from({ length: posiciones }, (_, i) => i + 1).map((p) => {
+                            const esEsta = p === posicionActiva;
+                            return (
+                              <div
+                                key={p}
+                                className={`
+                                  w-5 h-3 rounded-sm border
+                                  transition-all duration-500
+                                  ${esEsta
+                                    ? 'bg-airbus-green border-white scale-110 shadow-md'
+                                    : 'bg-white/30 border-white/40'
+                                  }
+                                `}
+                                title={`Posición ${p}${esEsta ? ' — esta probeta' : ''}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {esActiva && (
                       <div
                         className={`
                           absolute top-1/2 -translate-y-1/2 left-full ml-3
-                          w-32 h-24 md:w-40 md:h-28 rounded-lg
+                          w-36 h-28 md:w-44 md:h-32 rounded-lg
                           bg-white border-2 border-airbus-sky shadow-2xl
                           flex items-center justify-center overflow-hidden
                           transition-all duration-700 ease-out
@@ -146,6 +175,12 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                             <span className="text-[9px] font-bold uppercase">
                               Sin foto
                             </span>
+                          </div>
+                        )}
+
+                        {posicionActiva && (
+                          <div className="absolute bottom-1 right-1 bg-airbus-green text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                            P{posicionActiva}
                           </div>
                         )}
                       </div>
@@ -172,8 +207,8 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 md:col-span-2">
           <div className="flex items-start gap-3">
             {probeta?.foto_url ? (
               <div className="w-20 h-20 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
@@ -217,31 +252,63 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
 
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Estado de calibración
+            Ubicación exacta
           </p>
-          {probeta?.proxima_calibracion ? (
-            <>
-              <div className={`flex items-center gap-2 ${
-                vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-airbus-green'
-              }`}>
-                {vencida || proxima ? (
-                  <AlertTriangle className="w-5 h-5" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5" />
-                )}
-                <span className="font-bold text-sm">
-                  {vencida ? 'Vencida' : proxima ? 'Próxima a vencer' : 'Al día'}
+          {bandejaActiva ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-airbus-blue">
+                <Layers className="w-4 h-4" />
+                <span className="text-sm font-semibold">
+                  Bandeja {bandejaActiva}
                 </span>
               </div>
-              <p className={`text-xs mt-1 ${vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-gray-500'}`}>
-                {vencida ? 'Venció el ' : proxima ? 'Vence el ' : 'Próxima: '}
-                <strong>{probeta.proxima_calibracion}</strong>
-              </p>
-            </>
+              {posicionActiva ? (
+                <div className="flex items-center gap-2 text-airbus-green">
+                  <MapPin className="w-4 h-4" />
+                  <span className="text-sm font-semibold">
+                    Posición {posicionActiva}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 italic">
+                  Sin posición específica
+                </p>
+              )}
+            </div>
           ) : (
-            <p className="text-sm text-gray-400 italic">Sin fecha de calibración</p>
+            <p className="text-sm text-gray-400 italic">
+              Sin ubicación asignada
+            </p>
           )}
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+          Estado de calibración
+        </p>
+        {probeta?.proxima_calibracion ? (
+          <>
+            <div className={`flex items-center gap-2 ${
+              vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-airbus-green'
+            }`}>
+              {vencida || proxima ? (
+                <AlertTriangle className="w-5 h-5" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5" />
+              )}
+              <span className="font-bold text-sm">
+                {vencida ? 'Vencida' : proxima ? 'Próxima a vencer' : 'Al día'}
+              </span>
+            </div>
+            <p className={`text-xs mt-1 ${vencida ? 'text-airbus-red' : proxima ? 'text-airbus-orange' : 'text-gray-500'}`}>
+              {vencida ? 'Venció el ' : proxima ? 'Vence el ' : 'Próxima: '}
+              <strong>{probeta.proxima_calibracion}</strong>
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400 italic">Sin fecha de calibración</p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -256,13 +323,8 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
           <DatoItem icon={Ruler} label="Dimensiones" value={probeta?.dimensiones || '—'} />
           <DatoItem icon={Box} label="Carro" value={carro?.codigo || '—'} mono />
           <DatoItem icon={Layers} label="Bandeja" value={bandejaActiva ? String(bandejaActiva) : '—'} />
+          <DatoItem icon={Grid3x3} label="Posición" value={posicionActiva ? String(posicionActiva) : '—'} />
           <DatoItem icon={Calendar} label="Adquisición" value={probeta?.fecha_adquisicion || '—'} />
-          <DatoItem
-            icon={CheckCircle2}
-            label="Próx. calibración"
-            value={probeta?.proxima_calibracion || '—'}
-            color={vencida ? 'red' : proxima ? 'orange' : 'green'}
-          />
         </div>
       </div>
 
