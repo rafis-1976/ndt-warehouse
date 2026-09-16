@@ -4,6 +4,7 @@ import {
   Plus, RefreshCw, ArrowDownRight, ArrowUpRight, ArrowRightLeft,
   Sliders, Search, X, Filter, Hash, Package, User as UserIcon,
   Truck, CornerDownLeft, Building2, Warehouse, Users, Calendar,
+  Loader2, CheckCircle2,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { MovimientoForm } from '../components/movimientos/MovimientoForm';
@@ -76,10 +77,12 @@ export function Movimientos() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastError, setToastError] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [filtroObjeto, setFiltroObjeto] = useState<TipoObjeto>('todos');
   const [limite, setLimite] = useState<number>(50);
+  const [devolviendo, setDevolviendo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,10 +111,76 @@ export function Movimientos() {
     load();
   };
 
+  // ============================================================
+  // Calcular qué objetos están FUERA (último movimiento = prestamo_externo)
+  // ============================================================
+  const ultimoPorObjeto = useMemo(() => {
+    const map = new Map<string, any>();
+    // items está ordenado desc por created_at, así que el primero que veamos por objeto es el último
+    items.forEach((m) => {
+      const key = m.equipo_id ? `eq:${m.equipo_id}` : m.probeta_id ? `pb:${m.probeta_id}` : null;
+      if (!key) return;
+      if (!map.has(key)) map.set(key, m);
+    });
+    return map;
+  }, [items]);
+
+  const estaFuera = (m: any): boolean => {
+    const key = m.equipo_id ? `eq:${m.equipo_id}` : m.probeta_id ? `pb:${m.probeta_id}` : null;
+    if (!key) return false;
+    const ultimo = ultimoPorObjeto.get(key);
+    if (!ultimo) return false;
+    return ultimo.id === m.id && m.tipo === 'prestamo_externo';
+  };
+
+  // ============================================================
+  // Devolver (crear movimiento de devolución + actualizar estado)
+  // ============================================================
+  const devolverObjeto = async (m: any) => {
+    const nombre = m.equipo_id ? m.equipos?.nombre : m.probetas?.nombre;
+    if (!confirm(`¿Registrar la devolución de "${nombre}"?\n\nSe creará un movimiento de devolución y el objeto volverá a estar disponible.`)) return;
+
+    setDevolviendo(m.id);
+    try {
+      const payload: any = {
+        equipo_id: m.equipo_id,
+        probeta_id: m.probeta_id,
+        tipo: 'devolucion_externa',
+        ubicacion_origen: m.destino_nombre,
+        ubicacion_destino: null,
+        referencia: m.referencia,
+        observaciones: `Devolución del préstamo a ${tipoDestinoConfig[m.destino_tipo]?.label ?? ''} ${m.destino_nombre ?? ''}`.trim(),
+        destino_tipo: m.destino_tipo,
+        destino_nombre: m.destino_nombre,
+        destino_contacto: m.destino_contacto,
+        fecha_devolucion_prevista: m.fecha_devolucion_prevista,
+      };
+
+      const { error: insErr } = await supabase.from('movimientos').insert(payload);
+      if (insErr) throw insErr;
+
+      // Actualizar estado del equipo/probeta
+      if (m.equipo_id) {
+        await supabase.from('equipos').update({ estado: 'disponible' }).eq('id', m.equipo_id);
+      } else if (m.probeta_id) {
+        await supabase.from('probetas').update({ estado: 'disponible' }).eq('id', m.probeta_id);
+      }
+
+      setToast('Devolución registrada correctamente');
+      setTimeout(() => setToast(null), 3000);
+      load();
+    } catch (err: any) {
+      console.error(err);
+      setToastError(err.message ?? 'Error al registrar la devolución');
+      setTimeout(() => setToastError(null), 4000);
+    } finally {
+      setDevolviendo(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return items.filter((m) => {
-      // Filtro por tipo de objeto
       if (filtroObjeto === 'equipo' && !m.equipo_id) return false;
       if (filtroObjeto === 'probeta' && !m.probeta_id) return false;
 
@@ -229,8 +298,14 @@ export function Movimientos() {
       </div>
 
       {toast && (
-        <div className="fixed top-20 right-6 z-40 bg-airbus-green text-white px-4 py-3 rounded-lg shadow-lg text-sm animate-in">
+        <div className="fixed top-20 right-6 z-40 bg-airbus-green text-white px-4 py-3 rounded-lg shadow-lg text-sm animate-in flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4" />
           {toast}
+        </div>
+      )}
+      {toastError && (
+        <div className="fixed top-20 right-6 z-40 bg-airbus-red text-white px-4 py-3 rounded-lg shadow-lg text-sm animate-in">
+          {toastError}
         </div>
       )}
 
@@ -379,6 +454,7 @@ export function Movimientos() {
                     <th className="px-4 py-3">Referencia</th>
                     <th className="px-4 py-3">Usuario</th>
                     <th className="px-4 py-3">Fecha</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -390,12 +466,14 @@ export function Movimientos() {
                       ? tipoDestinoConfig[m.destino_tipo]
                       : null;
                     const DestinoIcon = destinoConf?.icon ?? Building2;
+                    const puedeDevolver = estaFuera(m);
+                    const devolviendoEste = devolviendo === m.id;
 
                     return (
                       <tr
                         key={m.id}
                         className={`hover:bg-gray-50 transition ${
-                          esExterno ? 'bg-airbus-orange/5' : ''
+                          puedeDevolver ? 'bg-airbus-orange/5' : esExterno ? 'bg-airbus-orange/3' : ''
                         }`}
                       >
                         <td className="px-4 py-3">
@@ -524,6 +602,25 @@ export function Movimientos() {
 
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                           {fmtFechaCorta(m.created_at)}
+                        </td>
+
+                        {/* ACCIONES */}
+                        <td className="px-4 py-3 text-right">
+                          {puedeDevolver && (
+                            <button
+                              onClick={() => devolverObjeto(m)}
+                              disabled={devolviendoEste}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-airbus-green text-white rounded-lg text-xs font-semibold hover:bg-airbus-navy transition shadow-sm disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+                              title="Registrar la devolución de este préstamo"
+                            >
+                              {devolviendoEste ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <CornerDownLeft className="w-3.5 h-3.5" />
+                              )}
+                              Devolver
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
