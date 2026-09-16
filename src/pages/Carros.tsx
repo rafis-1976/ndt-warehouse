@@ -4,12 +4,22 @@ import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
   ChevronRight, Boxes, AlertTriangle, Layers, Grid3x3,
   FileCheck2, X, Highlighter, Barcode,
+  Truck, Building2, Warehouse, Users,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
 import { ProbetaDetalle } from '../components/carros/ProbetaDetalle';
+import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
+
+const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
+  almacen: { label: 'Almacén', icon: Warehouse },
+  seccion: { label: 'Sección', icon: Building2 },
+  compania: { label: 'Compañía', icon: Truck },
+  cliente: { label: 'Cliente', icon: Users },
+  otro: { label: 'Otro', icon: Building2 },
+};
 
 export function Carros() {
   const [carros, setCarros] = useState<any[]>([]);
@@ -17,6 +27,7 @@ export function Carros() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const [soloFuera, setSoloFuera] = useState(false);
 
   const [modalCarroOpen, setModalCarroOpen] = useState(false);
   const [carroEditando, setCarroEditando] = useState<any | null>(null);
@@ -32,6 +43,9 @@ export function Carros() {
 
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
+  const [avisoFueraCerrado, setAvisoFueraCerrado] = useState(false);
+
+  const { fueraMap } = usePrestamosExternos();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +61,11 @@ export function Carros() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const probetasFuera = useMemo(
+    () => probetas.filter((p) => fueraMap.has(p.id)),
+    [probetas, fueraMap]
+  );
 
   const toggleExpandir = (id: string) => {
     setExpandidos((prev) => {
@@ -112,7 +131,7 @@ export function Carros() {
   }, [qLower]);
 
   const resultadoBusqueda = useMemo(() => {
-    if (!qLower) {
+    if (!qLower && !soloFuera) {
       return {
         carrosVisibles: carros,
         probetasMatch: new Set<string>(),
@@ -127,15 +146,25 @@ export function Carros() {
     const carrosConMatchDirecto = new Set<string>();
 
     probetas.forEach((p) => {
-      if (probetaCoincide(p)) {
+      const pasaFuera = soloFuera ? fueraMap.has(p.id) : true;
+      const pasaBusqueda = qLower ? probetaCoincide(p) : false;
+
+      if (soloFuera) {
+        if (pasaFuera) {
+          probetasMatch.add(p.id);
+          if (p.carro_id) carrosAutoExpandir.add(p.carro_id);
+        }
+      } else if (pasaBusqueda) {
         probetasMatch.add(p.id);
         if (p.carro_id) carrosAutoExpandir.add(p.carro_id);
       }
     });
 
-    carros.forEach((c) => {
-      if (carroCoincide(c)) carrosConMatchDirecto.add(c.id);
-    });
+    if (!soloFuera) {
+      carros.forEach((c) => {
+        if (carroCoincide(c)) carrosConMatchDirecto.add(c.id);
+      });
+    }
 
     const carrosVisibles = carros.filter((c) =>
       carrosConMatchDirecto.has(c.id) || carrosAutoExpandir.has(c.id)
@@ -152,7 +181,7 @@ export function Carros() {
       probetasSinCarroVisibles,
       totalCoincidencias: probetasMatch.size + carrosConMatchDirecto.size,
     };
-  }, [qLower, carros, probetas, probetasPorCarro, probetaCoincide, carroCoincide]);
+  }, [qLower, soloFuera, carros, probetas, probetasPorCarro, probetaCoincide, carroCoincide, fueraMap]);
 
   const {
     carrosVisibles,
@@ -278,6 +307,11 @@ export function Carros() {
           <h1 className="text-2xl font-bold text-airbus-blue">Carros de calibración</h1>
           <p className="text-sm text-gray-500">
             {carros.length} carros · {probetas.length} probetas
+            {probetasFuera.length > 0 && (
+              <span className="ml-2 text-airbus-orange font-semibold">
+                · {probetasFuera.length} fuera del almacén
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -300,6 +334,76 @@ export function Carros() {
         </div>
       )}
 
+      {/* BANNER: PROBETAS FUERA */}
+      {!avisoFueraCerrado && probetasFuera.length > 0 && (
+        <div className="bg-gradient-to-r from-airbus-orange to-airbus-red rounded-xl shadow-lg overflow-hidden animate-in">
+          <div className="flex items-start gap-4 p-4">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+              <Truck className="w-6 h-6 text-white animate-pulse" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-white font-bold text-base">
+                  {probetasFuera.length} probeta{probetasFuera.length !== 1 ? 's' : ''} fuera del almacén
+                </h3>
+                <span className="px-2 py-0.5 bg-white/20 text-white text-[10px] font-bold rounded-full">
+                  PRÉSTAMO EXTERNO
+                </span>
+              </div>
+
+              <p className="text-white/90 text-sm mt-1">
+                Estas probetas están prestadas a terceros y no están disponibles para uso interno.
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {probetasFuera.slice(0, 3).map((p) => {
+                  const info = fueraMap.get(p.id);
+                  const destinoConf = info?.prestamo.destino_tipo
+                    ? tipoDestinoConfig[info.prestamo.destino_tipo]
+                    : null;
+                  const DestIcon = destinoConf?.icon ?? Building2;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => abrirDetalleProbeta(p, null)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-full text-xs text-white transition"
+                      title={`${destinoConf?.label}: ${info?.prestamo.destino_nombre}`}
+                    >
+                      <DestIcon className="w-3 h-3" />
+                      <span className="font-mono font-bold">{p.pn}</span>
+                      <span className="opacity-80 truncate max-w-[140px]">
+                        {info?.prestamo.destino_nombre}
+                      </span>
+                    </button>
+                  );
+                })}
+                {probetasFuera.length > 3 && (
+                  <button
+                    onClick={() => {
+                      setSoloFuera(true);
+                      setAvisoFueraCerrado(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/25 hover:bg-white/35 rounded-full text-xs text-white font-semibold transition"
+                  >
+                    +{probetasFuera.length - 3} más →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setAvisoFueraCerrado(true)}
+              className="p-1.5 hover:bg-white/10 rounded-full transition shrink-0"
+              title="Cerrar aviso"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* BUSCADOR */}
       <div className="card space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -321,7 +425,32 @@ export function Carros() {
           )}
         </div>
 
-        {hayBusquedaActiva && (
+        {probetasFuera.length > 0 && (
+          <div>
+            <button
+              onClick={() => setSoloFuera(!soloFuera)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition ${
+                soloFuera
+                  ? 'bg-airbus-orange text-white border-airbus-orange shadow-sm'
+                  : 'bg-white text-airbus-orange border-airbus-orange/40 hover:bg-airbus-orange/5'
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5" />
+              Solo probetas fuera del almacén
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  soloFuera
+                    ? 'bg-white/20 text-white'
+                    : 'bg-airbus-orange/15 text-airbus-orange'
+                }`}
+              >
+                {probetasFuera.length}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {(hayBusquedaActiva || soloFuera) && (
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-1.5 text-gray-500">
               <Highlighter className="w-3.5 h-3.5" />
@@ -338,9 +467,9 @@ export function Carros() {
                 )}
               </span>
             </div>
-            {hayResultados && (
+            {(hayBusquedaActiva || soloFuera) && (
               <button
-                onClick={() => setQ('')}
+                onClick={() => { setQ(''); setSoloFuera(false); }}
                 className="text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
               >
                 <X className="w-3 h-3" />
@@ -356,19 +485,25 @@ export function Carros() {
           <RefreshCw className="w-4 h-4 animate-spin" />
           Cargando...
         </div>
-      ) : !hayResultados && hayBusquedaActiva ? (
+      ) : !hayResultados && (hayBusquedaActiva || soloFuera) ? (
         <div className="card p-12 text-center">
           <Search className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-gray-500 mb-1">Sin resultados para "{q}"</p>
+          <p className="text-gray-500 mb-1">
+            {soloFuera && !hayBusquedaActiva
+              ? 'No hay probetas fuera del almacén'
+              : `Sin resultados para "${q}"`}
+          </p>
           <p className="text-sm text-gray-400 mb-4">
-            Prueba con el código de carro, el P/N de una probeta, un código de barras o un código NTM
+            {soloFuera
+              ? 'Todas las probetas están dentro del almacén'
+              : 'Prueba con el código de carro, el P/N de una probeta, un código de barras o un código NTM'}
           </p>
           <button
-            onClick={() => setQ('')}
+            onClick={() => { setQ(''); setSoloFuera(false); }}
             className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
           >
             <X className="w-4 h-4" />
-            Limpiar búsqueda
+            Limpiar
           </button>
         </div>
       ) : carros.length === 0 ? (
@@ -384,7 +519,7 @@ export function Carros() {
         <div className="space-y-3">
           {carrosVisibles.map((carro) => {
             const listaProbetas = probetasPorCarro[carro.id] ?? [];
-            const autoExpandido = hayBusquedaActiva && carrosAutoExpandir.has(carro.id);
+            const autoExpandido = (hayBusquedaActiva || soloFuera) && carrosAutoExpandir.has(carro.id);
             const expandido = expandidos.has(carro.id) || autoExpandido;
             const capacidadTotal = (carro.num_bandejas ?? 0) * (carro.posiciones_por_bandeja ?? 0);
             const pct = capacidadTotal > 0
@@ -393,6 +528,9 @@ export function Carros() {
 
             const probetasDeEsteCarroQueMatchean = listaProbetas.filter((p) =>
               probetasMatch.has(p.id)
+            ).length;
+            const probetasFueraDeEsteCarro = listaProbetas.filter((p) =>
+              fueraMap.has(p.id)
             ).length;
 
             return (
@@ -426,7 +564,13 @@ export function Carros() {
                           Inactivo
                         </span>
                       )}
-                      {hayBusquedaActiva && probetasDeEsteCarroQueMatchean > 0 && (
+                      {probetasFueraDeEsteCarro > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 rounded-full text-[10px] font-bold">
+                          <Truck className="w-3 h-3" />
+                          {probetasFueraDeEsteCarro} fuera
+                        </span>
+                      )}
+                      {(hayBusquedaActiva || soloFuera) && probetasDeEsteCarroQueMatchean > 0 && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-yellow/30 text-yellow-800 border border-airbus-yellow/60 rounded-full text-[10px] font-bold">
                           <FileCheck2 className="w-3 h-3" />
                           {probetasDeEsteCarroQueMatchean} probeta
@@ -531,21 +675,32 @@ export function Carros() {
                         {listaProbetas.map((probeta) => {
                           const esMatch = probetasMatch.has(probeta.id);
                           const ntms = parseNtms(probeta);
+                          const fueraInfo = fueraMap.get(probeta.id);
+                          const estaFuera = !!fueraInfo;
+                          const destinoConf = fueraInfo?.prestamo.destino_tipo
+                            ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
+                            : null;
+                          const DestIcon = destinoConf?.icon ?? Truck;
 
                           return (
                             <div
                               key={probeta.id}
                               className={`flex items-center gap-3 px-4 py-3 hover:bg-white transition group cursor-pointer relative ${
+                                estaFuera ? 'bg-airbus-orange/5' :
                                 esMatch ? 'bg-airbus-yellow/10' : ''
                               }`}
                               onClick={() => abrirDetalleProbeta(probeta, carro)}
                             >
-                              {esMatch && (
+                              {estaFuera && (
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-orange" />
+                              )}
+                              {!estaFuera && esMatch && (
                                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
                               )}
 
                               {probeta.foto_url ? (
                                 <div className={`w-14 h-14 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ${
+                                  estaFuera ? 'border-airbus-orange' :
                                   esMatch ? 'border-airbus-yellow' : 'border-gray-200'
                                 }`}>
                                   <img
@@ -559,9 +714,10 @@ export function Carros() {
                                 </div>
                               ) : (
                                 <div className={`w-14 h-14 bg-white border rounded-lg flex items-center justify-center shrink-0 ${
+                                  estaFuera ? 'border-airbus-orange' :
                                   esMatch ? 'border-airbus-yellow' : 'border-gray-200'
                                 }`}>
-                                  <Package className="w-5 h-5 text-airbus-sky" />
+                                  <Package className={`w-5 h-5 ${estaFuera ? 'text-airbus-orange' : 'text-airbus-sky'}`} />
                                 </div>
                               )}
 
@@ -588,6 +744,21 @@ export function Carros() {
                                   {!probeta.activa && (
                                     <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-semibold rounded-full uppercase">
                                       Inactiva
+                                    </span>
+                                  )}
+
+                                  {estaFuera && (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 max-w-full"
+                                      title={`${destinoConf?.label}: ${fueraInfo?.prestamo.destino_nombre}${fueraInfo?.prestamo.destino_contacto ? ` (${fueraInfo.prestamo.destino_contacto})` : ''}${fueraInfo?.retrasado ? ' · RETRASADO' : ''}`}
+                                    >
+                                      <DestIcon className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">
+                                        {fueraInfo?.prestamo.destino_nombre ?? 'Fuera'}
+                                      </span>
+                                      {fueraInfo?.retrasado && (
+                                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                                      )}
                                     </span>
                                   )}
                                 </div>
@@ -667,7 +838,7 @@ export function Carros() {
             );
           })}
 
-          {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length > 0 && (
+          {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length > 0 && (
             <div className="card p-0 overflow-hidden border-2 border-dashed border-airbus-orange/40">
               <div className="flex items-center gap-3 p-4 bg-airbus-orange/5">
                 <div className="w-12 h-12 bg-airbus-orange/20 rounded-xl flex items-center justify-center shrink-0">
@@ -678,30 +849,42 @@ export function Carros() {
                     Probetas sin carro asignado
                   </p>
                   <p className="text-xs text-gray-600">
-                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length} probeta
-                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} pendiente
-                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} de asignar a un carro
+                    {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length} probeta
+                    {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} pendiente
+                    {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} de asignar a un carro
                   </p>
                 </div>
               </div>
               <div className="divide-y divide-gray-100">
-                {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).map((probeta) => {
+                {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).map((probeta) => {
                   const esMatch = probetasMatch.has(probeta.id);
                   const ntms = parseNtms(probeta);
+                  const fueraInfo = fueraMap.get(probeta.id);
+                  const estaFuera = !!fueraInfo;
+                  const destinoConf = fueraInfo?.prestamo.destino_tipo
+                    ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
+                    : null;
+                  const DestIcon = destinoConf?.icon ?? Truck;
+
                   return (
                     <div
                       key={probeta.id}
                       className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group cursor-pointer relative ${
+                        estaFuera ? 'bg-airbus-orange/5' :
                         esMatch ? 'bg-airbus-yellow/10' : ''
                       }`}
                       onClick={() => abrirDetalleProbeta(probeta, null)}
                     >
-                      {esMatch && (
+                      {estaFuera && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-orange" />
+                      )}
+                      {!estaFuera && esMatch && (
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
                       )}
 
                       {probeta.foto_url ? (
                         <div className={`w-12 h-12 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ml-4 ${
+                          estaFuera ? 'border-airbus-orange' :
                           esMatch ? 'border-airbus-yellow' : 'border-gray-200'
                         }`}>
                           <img
@@ -714,16 +897,27 @@ export function Carros() {
                           />
                         </div>
                       ) : (
-                        <Package className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                        <Package className={`w-4 h-4 shrink-0 ml-4 ${estaFuera ? 'text-airbus-orange' : 'text-gray-400'}`} />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div>
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-bold text-airbus-blue text-xs mr-2">
                             {resaltar(probeta.pn)}
                           </span>
                           <span className="text-sm text-gray-800">
                             {resaltar(probeta.nombre)}
                           </span>
+                          {estaFuera && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 max-w-full"
+                              title={`${destinoConf?.label}: ${fueraInfo?.prestamo.destino_nombre}`}
+                            >
+                              <DestIcon className="w-3 h-3 shrink-0" />
+                              <span className="truncate">
+                                {fueraInfo?.prestamo.destino_nombre ?? 'Fuera'}
+                              </span>
+                            </span>
+                          )}
                         </div>
                         {ntms.length > 0 && (
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
