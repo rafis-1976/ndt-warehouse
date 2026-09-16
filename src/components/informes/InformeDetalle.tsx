@@ -28,229 +28,342 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          @page { size: A4; margin: 10mm; }
+          @page { size: A4; margin: 12mm; }
           * { box-sizing: border-box; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
-            font-size: 9px;
-            line-height: 1.25;
+            font-size: 11px;
+            line-height: 1.4;
             margin: 0;
             padding: 0;
             background: white;
           }
-          .page {
-            padding: 0;
-            min-height: 100%;
-          }
+
+          /* ============ CABECERA ============ */
           .head {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 2px solid #00205B;
-            padding-bottom: 5px;
-            margin-bottom: 8px;
+            border-bottom: 3px solid #00205B;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
           }
-          .brand { display: flex; align-items: center; gap: 8px; }
+          .brand { display: flex; align-items: center; gap: 12px; }
           .brand-logo {
-            width: 36px; height: 36px;
+            width: 52px; height: 52px;
             background: #00205B; color: #74D2E7;
             display: flex; align-items: center; justify-content: center;
-            border-radius: 6px; font-size: 17px; font-weight: 900;
+            border-radius: 8px; font-size: 24px; font-weight: 900;
           }
-          .brand-text h1 { margin: 0; font-size: 12px; color: #00205B; letter-spacing: 0.3px; }
-          .brand-text p { margin: 0; font-size: 8px; color: #666; }
+          .brand-text h1 { margin: 0; font-size: 16px; color: #00205B; letter-spacing: 0.5px; }
+          .brand-text p { margin: 2px 0 0; font-size: 10px; color: #666; }
           .doc-title { text-align: right; }
-          .doc-title h2 { margin: 0; font-size: 13px; color: #00205B; font-weight: 800; }
-          .doc-title .sub { font-size: 8px; color: #666; }
-          .doc-title .num { font-family: monospace; font-size: 10px; color: #111; margin-top: 1px; font-weight: 700; }
+          .doc-title h2 { margin: 0; font-size: 17px; color: #00205B; font-weight: 800; }
+          .doc-title .sub { font-size: 10px; color: #666; margin-top: 1px; }
+          .doc-title .num {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #00205B;
+            margin-top: 4px;
+            font-weight: 700;
+            background: #f0f7ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            display: inline-block;
+          }
 
-          .grid { display: grid; gap: 4px; margin-bottom: 6px; }
+          /* ============ SECCIONES ============ */
+          .section-title {
+            background: #00205B;
+            color: white;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin-top: 14px;
+            margin-bottom: 8px;
+          }
+
+          /* ============ CUADRÍCULA DE DATOS ============ */
+          .grid { display: grid; gap: 8px; margin-bottom: 10px; }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
           .grid-4 { grid-template-columns: repeat(4, 1fr); }
 
           .box {
             border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 3px 6px;
+            border-radius: 4px;
+            padding: 8px 10px;
             background: #fafafa;
           }
           .box .label {
-            font-size: 7px;
+            font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.6px;
             color: #777;
             font-weight: 700;
-            margin-bottom: 1px;
+            margin-bottom: 3px;
           }
           .box .value {
-            font-size: 9px;
+            font-size: 12px;
             color: #111;
             font-weight: 600;
             word-break: break-word;
+            line-height: 1.3;
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
 
-          .section-title {
-            background: #00205B;
-            color: white;
-            font-size: 8px;
-            font-weight: 800;
-            letter-spacing: 0.8px;
-            text-transform: uppercase;
-            padding: 3px 6px;
-            border-radius: 2px;
-            margin-top: 6px;
-            margin-bottom: 4px;
-          }
-
+          /* ============ BLOQUE DE STEP ============ */
           .step-block {
-            border: 1px solid #00205B;
-            border-radius: 4px;
-            margin-bottom: 5px;
+            border: 2px solid #00205B;
+            border-radius: 8px;
+            margin-bottom: 14px;
             overflow: hidden;
+            page-break-inside: avoid;
           }
           .step-header {
-            background: #00205B;
+            background: linear-gradient(to right, #00205B, #005670);
             color: white;
-            padding: 3px 8px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 9px;
+            gap: 10px;
+            font-size: 13px;
             font-weight: 700;
           }
           .step-header .num {
-            width: 16px; height: 16px;
+            width: 28px; height: 28px;
             border-radius: 50%;
             background: white;
             color: #00205B;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 9px;
+            font-size: 14px;
             font-weight: 900;
             flex-shrink: 0;
           }
+          .step-header .title {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+          }
           .step-header .badge {
-            background: rgba(255,255,255,0.2);
-            padding: 1px 6px;
-            border-radius: 8px;
-            font-size: 8px;
+            background: rgba(255,255,255,0.25);
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
           }
           .step-header .res {
-            padding: 1px 6px;
-            border-radius: 8px;
-            font-size: 8px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
             font-weight: 800;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
           }
           .step-header .res.nil      { background: #009F4D; color: white; }
           .step-header .res.findings { background: #E4002B; color: white; }
 
           .step-body {
-            padding: 4px 8px;
-            background: #fafafa;
-            display: grid;
-            gap: 4px;
+            padding: 12px 14px;
+            background: #fdfdfd;
           }
-          .step-body .row {
+
+          /* Fila de datos dentro del step */
+          .step-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            padding: 8px 0;
+            border-bottom: 1px dashed #e0e0e0;
+          }
+          .step-row:last-child { border-bottom: none; }
+          .step-row.full { grid-template-columns: 1fr; }
+
+          .field {
+            min-width: 0;
+          }
+          .field .f-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #666;
+            font-weight: 800;
+            margin-bottom: 4px;
+          }
+          .field .f-value {
+            font-size: 12px;
+            color: #111;
+            font-weight: 600;
+            line-height: 1.35;
+          }
+          .field .f-value.mono { font-family: 'Courier New', monospace; }
+          .field .f-value.big {
+            font-size: 14px;
+            font-weight: 800;
+            color: #00205B;
+          }
+
+          /* Chips de equipos y probetas */
+          .chips {
+            display: flex;
+            flex-wrap: wrap;
             gap: 6px;
           }
-          .step-body .label {
-            font-size: 7px;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            color: #777;
-            font-weight: 700;
-            margin-bottom: 1px;
-          }
-          .step-body .val {
-            font-size: 9px;
-            font-weight: 600;
-          }
-          .step-body .chips { display: flex; flex-wrap: wrap; gap: 3px; }
-          .step-body .chip {
+          .chip {
             display: inline-flex;
             align-items: center;
-            gap: 3px;
-            padding: 1px 6px;
+            gap: 6px;
+            padding: 5px 10px;
             background: white;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 8px;
+            border: 1.5px solid #00205B;
+            border-radius: 6px;
+            font-size: 11px;
             font-weight: 600;
+            color: #111;
+            line-height: 1.2;
           }
-          .step-body .chip .mono { font-family: 'Courier New', monospace; }
-          .step-body .chip .cal { color: #FE5000; }
-          .step-body .chip .sn { color: #666; }
-
-          .findings-box {
-            border: 1px solid #E4002B;
+          .chip .c-id {
+            font-family: 'Courier New', monospace;
+            font-weight: 800;
+            color: #00205B;
+            background: #e6efff;
+            padding: 1px 6px;
             border-radius: 3px;
-            padding: 4px 6px;
+            font-size: 11px;
+          }
+          .chip .c-name { color: #333; }
+          .chip .c-sn {
+            font-family: 'Courier New', monospace;
+            color: #666;
+            font-size: 10px;
+          }
+          .chip .c-cal {
+            color: #FE5000;
+            font-weight: 700;
+            font-size: 10px;
+          }
+          .empty-chips {
+            font-size: 11px;
+            font-style: italic;
+            color: #999;
+          }
+
+          /* Findings */
+          .findings-block {
+            border: 2px solid #E4002B;
+            border-radius: 6px;
             background: #fff5f5;
-            font-size: 9px;
-            white-space: pre-wrap;
-            color: #7a0015;
-          }
-
-          .texto-largo {
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 4px 6px;
-            background: #fafafa;
-            font-size: 9px;
-            min-height: 20px;
-            white-space: pre-wrap;
-          }
-
-          .firma-box {
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            padding: 6px 8px;
-            min-height: 60px;
-            position: relative;
+            padding: 10px 12px;
             margin-top: 8px;
           }
-          .firma-box .firma-label {
-            font-size: 7px;
+          .findings-block .f-label {
+            font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.8px;
-            color: #777;
-            font-weight: 700;
+            color: #E4002B;
+            font-weight: 800;
+            margin-bottom: 6px;
+          }
+          .findings-block .f-text {
+            font-size: 12px;
+            color: #7a0015;
+            font-weight: 500;
+            line-height: 1.5;
+            white-space: pre-wrap;
+          }
+
+          /* Observaciones */
+          .texto-largo {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px 12px;
+            background: #fafafa;
+            font-size: 12px;
+            line-height: 1.5;
+            min-height: 30px;
+            white-space: pre-wrap;
+            color: #222;
+          }
+
+          /* ============ FIRMA Y CÓDIGO DE BARRAS ============ */
+          .footer-grid {
+            display: grid;
+            grid-template-columns: 1fr 180px;
+            gap: 14px;
+            margin-top: 18px;
+            align-items: stretch;
+          }
+          .firma-box {
+            border: 2px solid #00205B;
+            border-radius: 6px;
+            padding: 12px 16px;
+            min-height: 90px;
+            position: relative;
+            background: #fafafa;
+          }
+          .firma-box .firma-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+            font-weight: 800;
+            margin-bottom: 6px;
           }
           .firma-box .firma-nombre {
-            font-size: 10px;
-            font-weight: 700;
-            margin-top: 3px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #00205B;
+            margin-bottom: 2px;
           }
           .firma-box .firma-info {
-            font-size: 8px;
-            color: #666;
-            margin-top: 1px;
+            font-size: 11px;
+            color: #555;
+            margin-top: 2px;
           }
           .firma-box .linea {
             position: absolute;
-            bottom: 8px;
-            left: 8px;
-            right: 8px;
-            border-top: 1px solid #ccc;
+            bottom: 12px;
+            left: 16px;
+            right: 16px;
+            border-top: 1.5px solid #999;
+          }
+
+          .barcode-box {
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 10px;
+            background: #fafafa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+          }
+          .barcode-box .b-num {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #333;
+            margin-top: 4px;
+            font-weight: 700;
           }
 
           .footer {
-            margin-top: 8px;
-            padding-top: 4px;
+            margin-top: 12px;
+            padding-top: 8px;
             border-top: 1px solid #ccc;
-            font-size: 7px;
-            color: #999;
+            font-size: 9px;
+            color: #888;
             text-align: center;
           }
-
-          .barcode { text-align: center; margin-top: 4px; }
         </style>
       </head>
       <body>${content}</body>
@@ -356,7 +469,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div ref={printRef}>
-            <div className="page p-6">
+            <div className="p-6">
               {/* HEADER */}
               <div className="head">
                 <div className="brand">
@@ -373,10 +486,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               </div>
 
-              {/* IDENTIFICACIÓN Y CERTIFICACIÓN en 2 columnas compactas */}
-              <div className="grid grid-2">
+              {/* IDENTIFICACIÓN Y CERTIFICACIÓN */}
+              <div className="grid grid-2" style={{ marginTop: 0 }}>
                 <div>
-                  <div className="section-title">Identificación</div>
+                  <div className="section-title" style={{ marginTop: 0 }}>Identificación</div>
                   <div className="grid grid-3">
                     <Box label="N° Informe" value={informe.numero_informe} mono />
                     <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
@@ -384,7 +497,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   </div>
                 </div>
                 <div>
-                  <div className="section-title">Certificación</div>
+                  <div className="section-title" style={{ marginTop: 0 }}>Certificación</div>
                   <div className="grid grid-3">
                     <Box label="Instalación" value={estacionMostrar} />
                     <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
@@ -416,86 +529,103 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <div>
                   {ntmSteps.map((s, i) => (
                     <div key={i} className="step-block">
+                      {/* CABECERA DEL STEP */}
                       <div className="step-header">
                         <div className="num">{i + 1}</div>
-                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {s.ntm || 'Sin NTM'}{s.step ? ` · ${s.step}` : ''}
+                        <span className="title">
+                          {s.ntm || 'Sin NTM'}
+                          {s.step ? ` · ${s.step}` : ''}
                         </span>
                         {s.metodo && <span className="badge">{s.metodo}</span>}
-                        <span style={{ fontSize: 8, opacity: 0.9 }}>📅 {fmtFecha(s.fecha)}</span>
                         <span className={`res ${s.resultado === 'FINDINGS' ? 'findings' : 'nil'}`}>
                           {s.resultado}
                         </span>
                       </div>
 
+                      {/* CUERPO DEL STEP */}
                       <div className="step-body">
-                        <div className="row">
-                          <div>
-                            <div className="label">Inspector</div>
-                            <div className="val">{s.inspector_nombre || '—'}</div>
+                        {/* Fila: Fecha + Inspector */}
+                        <div className="step-row">
+                          <div className="field">
+                            <div className="f-label">Fecha de realización</div>
+                            <div className="f-value big">{fmtFecha(s.fecha)}</div>
                           </div>
-                          <div>
-                            <div className="label">Fecha realización</div>
-                            <div className="val">{fmtFecha(s.fecha)}</div>
+                          <div className="field">
+                            <div className="f-label">Inspector</div>
+                            <div className="f-value big">{s.inspector_nombre || '—'}</div>
                           </div>
                         </div>
 
-                        <div>
-                          <div className="label">Equipos utilizados</div>
-                          {s.equipos.length === 0 ? (
-                            <div style={{ fontSize: 8, fontStyle: 'italic', color: '#999' }}>Sin equipos</div>
-                          ) : (
-                            <div className="chips">
-                              {s.equipos.map((eq: any, idx: number) => (
-                                <span key={idx} className="chip">
-                                  <span className="mono">{eq.id_equipo ?? '—'}</span>
-                                  <span>·</span>
-                                  <span>{eq.nombre}</span>
-                                  {eq.numero_serie && (
-                                    <>
-                                      <span>·</span>
-                                      <span className="mono sn">S/N {eq.numero_serie}</span>
-                                    </>
-                                  )}
-                                  {eq.proxima_calibracion && (
-                                    <>
-                                      <span>·</span>
-                                      <span className="cal">📅 {fmtFecha(eq.proxima_calibracion)}</span>
-                                    </>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        {/* Fila: NTM + Step + Técnica */}
+                        <div className="step-row">
+                          <div className="field">
+                            <div className="f-label">NTM Doc. Ref.</div>
+                            <div className="f-value mono">{s.ntm || '—'}</div>
+                          </div>
+                          <div className="field">
+                            <div className="f-label">Step</div>
+                            <div className="f-value mono">{s.step || '—'}</div>
+                          </div>
                         </div>
 
-                        <div>
-                          <div className="label">Probetas utilizadas</div>
-                          {s.probetas.length === 0 ? (
-                            <div style={{ fontSize: 8, fontStyle: 'italic', color: '#999' }}>Sin probetas</div>
-                          ) : (
-                            <div className="chips">
-                              {s.probetas.map((pb: any, idx: number) => (
-                                <span key={idx} className="chip">
-                                  <span className="mono">P/N {pb.pn ?? '—'}</span>
-                                  <span>·</span>
-                                  <span>{pb.nombre}</span>
-                                  {pb.numero_serie && (
-                                    <>
-                                      <span>·</span>
-                                      <span className="mono sn">S/N {pb.numero_serie}</span>
-                                    </>
-                                  )}
-                                </span>
-                              ))}
+                        {/* Fila: Equipos */}
+                        <div className="step-row full">
+                          <div className="field">
+                            <div className="f-label">
+                              Equipos utilizados ({s.equipos.length})
                             </div>
-                          )}
+                            {s.equipos.length === 0 ? (
+                              <div className="empty-chips">Sin equipos asignados</div>
+                            ) : (
+                              <div className="chips">
+                                {s.equipos.map((eq: any, idx: number) => (
+                                  <span key={idx} className="chip">
+                                    <span className="c-id">{eq.id_equipo ?? '—'}</span>
+                                    <span className="c-name">{eq.nombre}</span>
+                                    {eq.numero_serie && (
+                                      <span className="c-sn">S/N {eq.numero_serie}</span>
+                                    )}
+                                    {eq.proxima_calibracion && (
+                                      <span className="c-cal">
+                                        📅 Calib: {fmtFecha(eq.proxima_calibracion)}
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
+                        {/* Fila: Probetas */}
+                        <div className="step-row full">
+                          <div className="field">
+                            <div className="f-label">
+                              Probetas utilizadas ({s.probetas.length})
+                            </div>
+                            {s.probetas.length === 0 ? (
+                              <div className="empty-chips">Sin probetas asignadas</div>
+                            ) : (
+                              <div className="chips">
+                                {s.probetas.map((pb: any, idx: number) => (
+                                  <span key={idx} className="chip">
+                                    <span className="c-id">{pb.pn ?? '—'}</span>
+                                    <span className="c-name">{pb.nombre}</span>
+                                    {pb.numero_serie && (
+                                      <span className="c-sn">S/N {pb.numero_serie}</span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Findings */}
                         {s.resultado === 'FINDINGS' && s.findings_text && (
-                          <div>
-                            <div className="label">Findings detectados</div>
-                            <div className="findings-box">{s.findings_text}</div>
+                          <div className="findings-block">
+                            <div className="f-label">⚠ Findings detectados</div>
+                            <div className="f-text">{s.findings_text}</div>
                           </div>
                         )}
                       </div>
@@ -512,30 +642,26 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              {/* FIRMA + BARCODE EN LA MISMA FILA */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8, marginTop: 8 }}>
-                <div className="firma-box" style={{ marginTop: 0 }}>
+              {/* FIRMA + BARCODE */}
+              <div className="footer-grid">
+                <div className="firma-box">
                   <div className="firma-label">Inspector responsable del informe</div>
                   <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
                   <div className="firma-info">{informe.inspector_email || ''}</div>
                   <div className="linea" />
                 </div>
                 {informe.numero_informe && (
-                  <div className="barcode" style={{ marginTop: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div>
-                      <BarcodeLib
-                        value={informe.numero_informe}
-                        format="CODE128"
-                        displayValue={false}
-                        height={30}
-                        width={1.1}
-                        margin={0}
-                        lineColor="#00205B"
-                      />
-                      <div style={{ fontSize: 7, fontFamily: 'monospace', color: '#666', marginTop: 1, textAlign: 'center' }}>
-                        {informe.numero_informe}
-                      </div>
-                    </div>
+                  <div className="barcode-box">
+                    <BarcodeLib
+                      value={informe.numero_informe}
+                      format="CODE128"
+                      displayValue={false}
+                      height={40}
+                      width={1.4}
+                      margin={0}
+                      lineColor="#00205B"
+                    />
+                    <div className="b-num">{informe.numero_informe}</div>
                   </div>
                 )}
               </div>
