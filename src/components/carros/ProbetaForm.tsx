@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Camera, Layers, Grid3x3, Info,
-  MousePointerClick, X,
+  MousePointerClick, X, Package,
 } from 'lucide-react';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
@@ -422,7 +422,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
                 >
                   <div className="relative">
                     <div className="absolute inset-0 -m-4 rounded-full bg-airbus-green/30 animate-ping" />
-                    <div className="relative w-8 h-8 rounded-full bg-airbus-green border-3 border-white shadow-lg flex items-center justify-center">
+                    <div className="relative w-8 h-8 rounded-full bg-airbus-green border-[3px] border-white shadow-lg flex items-center justify-center">
                       <Package className="w-4 h-4 text-white" />
                     </div>
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-airbus-green text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
