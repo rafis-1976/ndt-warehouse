@@ -6,7 +6,7 @@ import {
 import { Modal } from '../ui/Modal';
 import {
   subirFotoArchivo, subirFotoDataURL, subirFotoBlob,
-  eliminarFoto, type FotoEquipo,
+  eliminarFoto, BUCKET_EQUIPOS, type FotoEquipo,
 } from '../../lib/storageFotos';
 import { recortarFondo, dataURLtoBlob } from '../../lib/recorteFondo';
 
@@ -15,10 +15,11 @@ interface CamaraEquipoProps {
   fotos: FotoEquipo[];
   onChange: (fotos: FotoEquipo[]) => void;
   disabled?: boolean;
+  bucket?: string;
 }
 
 export function CamaraEquipo({
-  equipoId, fotos, onChange, disabled,
+  equipoId, fotos, onChange, disabled, bucket = BUCKET_EQUIPOS,
 }: CamaraEquipoProps) {
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [captura, setCaptura] = useState<string | null>(null);
@@ -117,8 +118,6 @@ export function CamaraEquipo({
         }
 
         const originalBlob = dataURLtoBlob(captura);
-        setDebugInfo(`Imagen original: ${(originalBlob.size / 1024).toFixed(1)} KB`);
-
         const recortado = await recortarFondo(originalBlob, (p) => {
           setProgreso(p);
           setDebugInfo(`Procesando: ${p}%`);
@@ -129,19 +128,13 @@ export function CamaraEquipo({
         }
 
         if (recortado.size === originalBlob.size) {
-          throw new Error(
-            'El recorte no produjo cambios. Es posible que el modelo no se haya cargado correctamente.'
-          );
+          throw new Error('El recorte no produjo cambios.');
         }
 
-        setDebugInfo(
-          `Recorte OK: ${(recortado.size / 1024).toFixed(1)} KB (${recortado.type})`
-        );
-
-        const foto = await subirFotoBlob(recortado, equipoId, 'png');
+        const foto = await subirFotoBlob(recortado, equipoId, 'png', bucket);
         onChange([...fotos, foto]);
       } else {
-        const foto = await subirFotoDataURL(captura, equipoId);
+        const foto = await subirFotoDataURL(captura, equipoId, bucket);
         onChange([...fotos, foto]);
       }
 
@@ -170,7 +163,7 @@ export function CamaraEquipo({
           setError(`"${file.name}" supera los 15 MB`);
           continue;
         }
-        const foto = await subirFotoArchivo(file, equipoId);
+        const foto = await subirFotoArchivo(file, equipoId, bucket);
         subidas.push(foto);
       }
       onChange([...fotos, ...subidas]);
@@ -185,7 +178,7 @@ export function CamaraEquipo({
   const eliminarFotoSeleccionada = async (foto: FotoEquipo) => {
     if (!confirm('¿Eliminar esta foto?')) return;
     try {
-      await eliminarFoto(foto.path);
+      await eliminarFoto(foto.path, bucket);
       onChange(fotos.filter((f) => f.path !== foto.path));
     } catch (err: any) {
       setError(err.message ?? 'Error al eliminar');
@@ -211,7 +204,7 @@ export function CamaraEquipo({
           >
             <img
               src={foto.url}
-              alt="Foto equipo"
+              alt="Foto"
               className="w-full h-full object-contain"
             />
             {!disabled && (
@@ -260,7 +253,7 @@ export function CamaraEquipo({
 
       {fotos.length === 0 && disabled && (
         <p className="text-xs text-gray-400 italic text-center py-3">
-          Sin fotos del equipo
+          Sin fotos
         </p>
       )}
 
@@ -279,7 +272,7 @@ export function CamaraEquipo({
       <Modal
         open={camaraAbierta}
         onClose={() => { if (!subiendo) setCamaraAbierta(false); }}
-        title={captura ? 'Revisar foto' : 'Hacer foto al equipo'}
+        title={captura ? 'Revisar foto' : 'Hacer foto'}
         size="md"
       >
         <div className="space-y-4">
@@ -300,7 +293,7 @@ export function CamaraEquipo({
                     </div>
                     <div className="absolute inset-8 border-2 border-white/40 border-dashed rounded-xl" />
                     <div className="absolute bottom-3 left-0 right-0 text-center text-white/80 text-xs">
-                      Centra el equipo en el recuadro
+                      Centra el objeto en el recuadro
                     </div>
                   </div>
                 )}
@@ -351,8 +344,8 @@ export function CamaraEquipo({
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {recortarAuto
-                      ? 'Se eliminará el fondo y solo se verá el equipo (PNG transparente)'
-                      : 'Se guardará la foto tal cual, con el fondo original'}
+                      ? 'Se eliminará el fondo y solo se verá el objeto (PNG transparente)'
+                      : 'Se guardará la foto tal cual'}
                   </p>
                 </div>
                 <div
@@ -381,9 +374,6 @@ export function CamaraEquipo({
                       style={{ width: `${progreso}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-2">
-                    La primera vez puede tardar más — se descarga el modelo de IA (~40 MB)
-                  </p>
                 </div>
               )}
 
