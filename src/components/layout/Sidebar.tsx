@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode,
-  Settings, ArrowRightLeft, UserCog,
+  Settings, ArrowRightLeft, UserCog, Boxes,
 } from 'lucide-react';
 import { usePerfil } from '../../hooks/usePerfil';
 
@@ -15,6 +15,7 @@ interface Item {
 const items: Item[] = [
   { to: '/dashboard',     label: 'Dashboard',      icon: LayoutDashboard },
   { to: '/equipos',       label: 'Equipos',        icon: Package },
+  { to: '/carros',        label: 'Carros',         icon: Boxes },
   { to: '/prestamos',     label: 'Préstamos',      icon: Users },
   { to: '/calibraciones', label: 'Calibraciones',  icon: Calendar },
   { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
@@ -33,20 +34,15 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <>
       {open && (
-        <div
-          onClick={onClose}
-          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
-        />
+        <div onClick={onClose} className="fixed inset-0 bg-black/40 z-30 lg:hidden" />
       )}
 
-      <aside
-        className={`
-          fixed lg:sticky lg:top-[64px] top-[64px] left-0 z-40
-          w-64 h-[calc(100vh-64px)] bg-white border-r border-gray-200
-          transform transition-transform duration-200
-          ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        `}
-      >
+      <aside className={`
+        fixed lg:sticky lg:top-[64px] top-[64px] left-0 z-40
+        w-64 h-[calc(100vh-64px)] bg-white border-r border-gray-200
+        transform transition-transform duration-200
+        ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
         <nav className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-160px)]">
           {itemsVisibles.map((item) => (
             <NavLink
@@ -70,9 +66,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="absolute bottom-4 left-3 right-3">
           <div className="bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl p-3 text-white">
             <p className="text-xs font-semibold">Sistema NDT</p>
-            <p className="text-[10px] opacity-70 mt-0.5">
-              UT · RT · ET · TT · MT · PT
-            </p>
+            <p className="text-[10px] opacity-70 mt-0.5">UT · RT · ET · TT · MT · PT</p>
           </div>
         </div>
       </aside>
