@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Printer, X, CheckCircle2, AlertTriangle, Clock,
+  Printer, X, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
 
@@ -28,224 +28,229 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          @page { size: A4; margin: 12mm; }
+          @page { size: A4; margin: 10mm; }
           * { box-sizing: border-box; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
-            font-size: 10px;
-            line-height: 1.35;
+            font-size: 9px;
+            line-height: 1.25;
             margin: 0;
             padding: 0;
             background: white;
           }
           .page {
-            page-break-after: always;
             padding: 0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+            min-height: 100%;
           }
-          .page:last-child { page-break-after: auto; }
           .head {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 3px solid #00205B;
-            padding-bottom: 8px;
-            margin-bottom: 12px;
+            border-bottom: 2px solid #00205B;
+            padding-bottom: 5px;
+            margin-bottom: 8px;
           }
-          .brand { display: flex; align-items: center; gap: 12px; }
+          .brand { display: flex; align-items: center; gap: 8px; }
           .brand-logo {
-            width: 48px; height: 48px;
+            width: 36px; height: 36px;
             background: #00205B; color: #74D2E7;
             display: flex; align-items: center; justify-content: center;
-            border-radius: 8px; font-size: 22px; font-weight: 900;
+            border-radius: 6px; font-size: 17px; font-weight: 900;
           }
-          .brand-text h1 { margin: 0; font-size: 14px; color: #00205B; letter-spacing: 0.5px; }
-          .brand-text p { margin: 1px 0 0; font-size: 9px; color: #666; }
+          .brand-text h1 { margin: 0; font-size: 12px; color: #00205B; letter-spacing: 0.3px; }
+          .brand-text p { margin: 0; font-size: 8px; color: #666; }
           .doc-title { text-align: right; }
-          .doc-title h2 { margin: 0; font-size: 15px; color: #00205B; font-weight: 800; }
-          .doc-title .sub { font-size: 9px; color: #666; }
-          .doc-title .num { font-family: monospace; font-size: 11px; color: #111; margin-top: 2px; font-weight: 700; }
-          .doc-title .pagina { font-size: 9px; color: #666; margin-top: 2px; font-weight: 600; }
-          .grid { display: grid; gap: 6px; margin-bottom: 10px; }
-          .grid-3 { grid-template-columns: repeat(3, 1fr); }
+          .doc-title h2 { margin: 0; font-size: 13px; color: #00205B; font-weight: 800; }
+          .doc-title .sub { font-size: 8px; color: #666; }
+          .doc-title .num { font-family: monospace; font-size: 10px; color: #111; margin-top: 1px; font-weight: 700; }
+
+          .grid { display: grid; gap: 4px; margin-bottom: 6px; }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
+          .grid-3 { grid-template-columns: repeat(3, 1fr); }
           .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
           .box {
             border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 6px 8px;
+            border-radius: 3px;
+            padding: 3px 6px;
             background: #fafafa;
           }
           .box .label {
-            font-size: 8px;
+            font-size: 7px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4px;
             color: #777;
             font-weight: 700;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
           }
           .box .value {
-            font-size: 10px;
+            font-size: 9px;
             color: #111;
             font-weight: 600;
             word-break: break-word;
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
+
           .section-title {
             background: #00205B;
             color: white;
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 800;
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
             text-transform: uppercase;
-            padding: 4px 8px;
-            border-radius: 3px;
-            margin-top: 10px;
-            margin-bottom: 6px;
+            padding: 3px 6px;
+            border-radius: 2px;
+            margin-top: 6px;
+            margin-bottom: 4px;
           }
+
           .step-block {
             border: 1px solid #00205B;
-            border-radius: 6px;
-            margin-bottom: 10px;
+            border-radius: 4px;
+            margin-bottom: 5px;
             overflow: hidden;
           }
           .step-header {
             background: #00205B;
             color: white;
-            padding: 6px 10px;
+            padding: 3px 8px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 10px;
+            gap: 6px;
+            font-size: 9px;
             font-weight: 700;
           }
           .step-header .num {
-            width: 20px; height: 20px;
+            width: 16px; height: 16px;
             border-radius: 50%;
             background: white;
             color: #00205B;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 900;
+            flex-shrink: 0;
           }
           .step-header .badge {
             background: rgba(255,255,255,0.2);
-            padding: 1px 8px;
-            border-radius: 10px;
-            font-size: 9px;
-          }
-          .step-header .fecha {
-            margin-left: auto;
-            font-size: 9px;
-            opacity: 0.9;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 8px;
           }
           .step-header .res {
-            padding: 1px 8px;
-            border-radius: 10px;
-            font-size: 9px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 8px;
             font-weight: 800;
             text-transform: uppercase;
           }
-          .step-header .res.nil       { background: #009F4D; color: white; }
-          .step-header .res.findings  { background: #E4002B; color: white; }
-          .step-body { padding: 8px 10px; background: #fafafa; }
-          .step-body .row { margin-bottom: 6px; }
-          .step-body .row:last-child { margin-bottom: 0; }
+          .step-header .res.nil      { background: #009F4D; color: white; }
+          .step-header .res.findings { background: #E4002B; color: white; }
+
+          .step-body {
+            padding: 4px 8px;
+            background: #fafafa;
+            display: grid;
+            gap: 4px;
+          }
+          .step-body .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+          }
           .step-body .label {
-            font-size: 8px;
+            font-size: 7px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4px;
             color: #777;
             font-weight: 700;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
           }
           .step-body .val {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 600;
-            font-family: 'Courier New', monospace;
           }
-          .step-body .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+          .step-body .chips { display: flex; flex-wrap: wrap; gap: 3px; }
           .step-body .chip {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
+            gap: 3px;
+            padding: 1px 6px;
             background: white;
             border: 1px solid #ccc;
-            border-radius: 10px;
-            font-size: 9px;
+            border-radius: 8px;
+            font-size: 8px;
             font-weight: 600;
           }
           .step-body .chip .mono { font-family: 'Courier New', monospace; }
-          .empty-chips {
-            font-size: 9px;
-            font-style: italic;
-            color: #999;
-          }
+          .step-body .chip .cal { color: #FE5000; }
+          .step-body .chip .sn { color: #666; }
+
           .findings-box {
             border: 1px solid #E4002B;
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 3px;
+            padding: 4px 6px;
             background: #fff5f5;
-            font-size: 10px;
+            font-size: 9px;
             white-space: pre-wrap;
             color: #7a0015;
           }
+
           .texto-largo {
             border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 8px;
+            border-radius: 3px;
+            padding: 4px 6px;
             background: #fafafa;
-            font-size: 10px;
-            min-height: 30px;
+            font-size: 9px;
+            min-height: 20px;
             white-space: pre-wrap;
           }
+
           .firma-box {
             border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 10px;
-            min-height: 100px;
+            border-radius: 3px;
+            padding: 6px 8px;
+            min-height: 60px;
             position: relative;
-            margin-top: 20px;
+            margin-top: 8px;
           }
           .firma-box .firma-label {
-            font-size: 8px;
+            font-size: 7px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
             color: #777;
             font-weight: 700;
           }
           .firma-box .firma-nombre {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
-            margin-top: 4px;
+            margin-top: 3px;
           }
           .firma-box .firma-info {
-            font-size: 9px;
+            font-size: 8px;
             color: #666;
-            margin-top: 2px;
+            margin-top: 1px;
           }
           .firma-box .linea {
             position: absolute;
-            bottom: 10px;
-            left: 10px;
-            right: 10px;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
             border-top: 1px solid #ccc;
           }
+
           .footer {
-            margin-top: auto;
-            padding-top: 8px;
+            margin-top: 8px;
+            padding-top: 4px;
             border-top: 1px solid #ccc;
-            font-size: 8px;
+            font-size: 7px;
             color: #999;
             text-align: center;
           }
-          .barcode { text-align: center; margin-top: 6px; }
+
+          .barcode { text-align: center; margin-top: 4px; }
         </style>
       </head>
       <body>${content}</body>
@@ -321,8 +326,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     return <CheckCircle2 className="w-5 h-5 text-airbus-green" />;
   };
 
-  const claseResultado = (r: string) => r === 'FINDINGS' ? 'findings' : 'nil';
-
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center gap-2">
@@ -353,8 +356,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div ref={printRef}>
-            {/* PÁGINA 1 */}
             <div className="page p-6">
+              {/* HEADER */}
               <div className="head">
                 <div className="brand">
                   <div className="brand-logo">I</div>
@@ -367,35 +370,43 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   <h2>END · INFORME DE INSPECCIÓN</h2>
                   <div className="sub">NDT Inspection Report</div>
                   <div className="num">{informe.numero_informe}</div>
-                  <div className="pagina">Página 1 de 2</div>
                 </div>
               </div>
 
-              <div className="section-title">Identificación</div>
-              <div className="grid grid-3">
-                <Box label="N° Informe" value={informe.numero_informe} mono />
-                <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
-                <Box label="Revisión" value={`Rev. ${informe.revision ?? 1}`} />
+              {/* IDENTIFICACIÓN Y CERTIFICACIÓN en 2 columnas compactas */}
+              <div className="grid grid-2">
+                <div>
+                  <div className="section-title">Identificación</div>
+                  <div className="grid grid-3">
+                    <Box label="N° Informe" value={informe.numero_informe} mono />
+                    <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
+                    <Box label="Revisión" value={`Rev. ${informe.revision ?? 1}`} />
+                  </div>
+                </div>
+                <div>
+                  <div className="section-title">Certificación</div>
+                  <div className="grid grid-3">
+                    <Box label="Instalación" value={estacionMostrar} />
+                    <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
+                    <Box label="UK CAA Ref." value={informe.uk_caa_ref || '—'} mono />
+                  </div>
+                </div>
               </div>
 
+              {/* AERONAVE / COMPONENTE */}
               <div className="section-title">Aeronave / Componente</div>
-              <div className="grid grid-3">
+              <div className="grid grid-4">
                 <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
                 <Box label="Modelo" value={informe.modelo_aeronave || '—'} />
                 <Box label="N° Serie A/C" value={informe.numero_serie_aeronave || '—'} mono />
                 <Box label="Componente" value={informe.componente || '—'} />
                 <Box label="FR" value={informe.numero_fr || '—'} mono />
                 <Box label="Zona" value={informe.zona || '—'} />
-              </div>
-
-              <div className="section-title">Certificación y Aprobación</div>
-              <div className="grid grid-4">
-                <Box label="Instalación" value={estacionMostrar} />
-                <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
-                <Box label="UK CAA Ref." value={informe.uk_caa_ref || '—'} mono />
                 <Box label="Operador" value={informe.operador || '—'} />
+                <Box label="Cliente" value={informe.cliente || '—'} />
               </div>
 
+              {/* NTM / STEPS */}
               <div className="section-title">Inspecciones realizadas (NTM / Steps)</div>
               {ntmSteps.length === 0 ? (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
@@ -411,23 +422,17 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           {s.ntm || 'Sin NTM'}{s.step ? ` · ${s.step}` : ''}
                         </span>
                         {s.metodo && <span className="badge">{s.metodo}</span>}
-                        {s.fecha && (
-                          <span className="fecha">📅 {fmtFecha(s.fecha)}</span>
-                        )}
-                        <span className={`res ${claseResultado(s.resultado)}`}>
+                        <span style={{ fontSize: 8, opacity: 0.9 }}>📅 {fmtFecha(s.fecha)}</span>
+                        <span className={`res ${s.resultado === 'FINDINGS' ? 'findings' : 'nil'}`}>
                           {s.resultado}
                         </span>
                       </div>
 
                       <div className="step-body">
-                        <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                        <div className="row">
                           <div>
-                            <div className="label">NTM Doc. Ref.</div>
-                            <div className="val">{s.ntm || '—'}</div>
-                          </div>
-                          <div>
-                            <div className="label">Step</div>
-                            <div className="val">{s.step || '—'}</div>
+                            <div className="label">Inspector</div>
+                            <div className="val">{s.inspector_nombre || '—'}</div>
                           </div>
                           <div>
                             <div className="label">Fecha realización</div>
@@ -435,10 +440,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        <div className="row">
+                        <div>
                           <div className="label">Equipos utilizados</div>
                           {s.equipos.length === 0 ? (
-                            <div className="empty-chips">Sin equipos asignados</div>
+                            <div style={{ fontSize: 8, fontStyle: 'italic', color: '#999' }}>Sin equipos</div>
                           ) : (
                             <div className="chips">
                               {s.equipos.map((eq: any, idx: number) => (
@@ -449,7 +454,13 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                                   {eq.numero_serie && (
                                     <>
                                       <span>·</span>
-                                      <span className="mono">S/N {eq.numero_serie}</span>
+                                      <span className="mono sn">S/N {eq.numero_serie}</span>
+                                    </>
+                                  )}
+                                  {eq.proxima_calibracion && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="cal">📅 {fmtFecha(eq.proxima_calibracion)}</span>
                                     </>
                                   )}
                                 </span>
@@ -458,10 +469,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           )}
                         </div>
 
-                        <div className="row">
+                        <div>
                           <div className="label">Probetas utilizadas</div>
                           {s.probetas.length === 0 ? (
-                            <div className="empty-chips">Sin probetas asignadas</div>
+                            <div style={{ fontSize: 8, fontStyle: 'italic', color: '#999' }}>Sin probetas</div>
                           ) : (
                             <div className="chips">
                               {s.probetas.map((pb: any, idx: number) => (
@@ -472,7 +483,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                                   {pb.numero_serie && (
                                     <>
                                       <span>·</span>
-                                      <span className="mono">S/N {pb.numero_serie}</span>
+                                      <span className="mono sn">S/N {pb.numero_serie}</span>
                                     </>
                                   )}
                                 </span>
@@ -481,15 +492,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           )}
                         </div>
 
-                        <div className="row">
-                          <div className="label">Inspector</div>
-                          <div className="val" style={{ fontFamily: 'inherit' }}>
-                            {s.inspector_nombre || '—'}
-                          </div>
-                        </div>
-
                         {s.resultado === 'FINDINGS' && s.findings_text && (
-                          <div className="row">
+                          <div>
                             <div className="label">Findings detectados</div>
                             <div className="findings-box">{s.findings_text}</div>
                           </div>
@@ -500,13 +504,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               )}
 
-              {informe.conclusion && (
-                <>
-                  <div className="section-title">Conclusión</div>
-                  <div className="texto-largo">{informe.conclusion}</div>
-                </>
-              )}
-
+              {/* OBSERVACIONES */}
               {informe.observaciones && (
                 <>
                   <div className="section-title">Observaciones</div>
@@ -514,146 +512,33 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              <div className="firma-box">
-                <div className="firma-label">Inspector responsable del informe</div>
-                <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
-                <div className="firma-info">{informe.inspector_email || ''}</div>
-                <div className="linea" />
-              </div>
-
-              <div className="footer">
-                Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
-                {informe.estado && ` · Estado: ${informe.estado.toUpperCase()}`}
-              </div>
-            </div>
-
-            {/* PÁGINA 2 */}
-            <div className="page p-6">
-              <div className="head">
-                <div className="brand">
-                  <div className="brand-logo">I</div>
-                  <div className="brand-text">
-                    <h1>IBERIA MANTENIMIENTO</h1>
-                    <p>DT/MNG AVIONES · TALLERES · NDT</p>
-                  </div>
+              {/* FIRMA + BARCODE EN LA MISMA FILA */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8, marginTop: 8 }}>
+                <div className="firma-box" style={{ marginTop: 0 }}>
+                  <div className="firma-label">Inspector responsable del informe</div>
+                  <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
+                  <div className="firma-info">{informe.inspector_email || ''}</div>
+                  <div className="linea" />
                 </div>
-                <div className="doc-title">
-                  <h2>END · INFORME DE INSPECCIÓN</h2>
-                  <div className="sub">NDT Inspection Report</div>
-                  <div className="num">{informe.numero_informe}</div>
-                  <div className="pagina">Página 2 de 2</div>
-                </div>
-              </div>
-
-              <div className="section-title">Resumen de la inspección</div>
-              <div className="grid grid-3">
-                <Box label="N° Informe" value={informe.numero_informe} mono />
-                <Box label="N° NTM/Steps" value={String(ntmSteps.length)} />
-                <Box label="Instalación" value={estacionMostrar} />
-              </div>
-
-              <div className="section-title">Trazabilidad de NTM / Steps</div>
-              {ntmSteps.length === 0 ? (
-                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
-                  Sin normas NTM asignadas
-                </div>
-              ) : (
-                <div>
-                  {ntmSteps.map((s, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        border: '1px solid #ccc',
-                        borderRadius: 4,
-                        padding: '6px 10px',
-                        background: '#fafafa',
-                        marginBottom: 6,
-                        display: 'grid',
-                        gridTemplateColumns: '30px 1fr 70px 80px 90px 120px',
-                        gap: 8,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 22, height: 22,
-                          borderRadius: '50%',
-                          background: '#00205B', color: 'white',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 10, fontWeight: 800,
-                        }}
-                      >
-                        {i + 1}
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700 }}>
-                          {s.ntm || '—'}{s.step ? ` · ${s.step}` : ''}
-                        </div>
-                        <div style={{ fontSize: 8, color: '#666', marginTop: 1 }}>
-                          {s.equipos.length} eq · {s.probetas.length} pb
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            background: '#00205B', color: 'white',
-                            fontSize: 9, fontWeight: 700,
-                            padding: '2px 8px', borderRadius: 10,
-                          }}
-                        >
-                          {s.metodo || '—'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 8, color: '#666', textAlign: 'center' }}>
-                        {fmtFecha(s.fecha)}
-                      </div>
-                      <div style={{ fontSize: 8, color: '#666', textAlign: 'center' }}>
-                        {s.inspector_nombre || '—'}
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            fontSize: 9, fontWeight: 800,
-                            padding: '2px 8px', borderRadius: 10,
-                            textTransform: 'uppercase',
-                            background: s.resultado === 'FINDINGS' ? '#E4002B' : '#009F4D',
-                            color: 'white',
-                          }}
-                        >
-                          {s.resultado}
-                        </span>
+                {informe.numero_informe && (
+                  <div className="barcode" style={{ marginTop: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div>
+                      <BarcodeLib
+                        value={informe.numero_informe}
+                        format="CODE128"
+                        displayValue={false}
+                        height={30}
+                        width={1.1}
+                        margin={0}
+                        lineColor="#00205B"
+                      />
+                      <div style={{ fontSize: 7, fontFamily: 'monospace', color: '#666', marginTop: 1, textAlign: 'center' }}>
+                        {informe.numero_informe}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="section-title">Firmas</div>
-              <div className="firma-box">
-                <div className="firma-label">Inspector responsable del informe</div>
-                <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
-                <div className="firma-info">{informe.inspector_email || ''}</div>
-                <div className="linea" />
-              </div>
-
-              {informe.numero_informe && (
-                <div className="barcode" style={{ marginTop: 12 }}>
-                  <BarcodeLib
-                    value={informe.numero_informe}
-                    format="CODE128"
-                    displayValue={false}
-                    height={40}
-                    width={1.5}
-                    margin={0}
-                    lineColor="#00205B"
-                  />
-                  <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
-                    {informe.numero_informe}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               <div className="footer">
                 Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
