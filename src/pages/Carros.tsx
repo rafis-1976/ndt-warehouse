@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
-  ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers,
+  ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers, Grid3x3,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
@@ -66,6 +66,9 @@ export function Carros() {
         const ba = a.num_bandeja ?? 999;
         const bb = b.num_bandeja ?? 999;
         if (ba !== bb) return ba - bb;
+        const pa = a.num_posicion ?? 999;
+        const pb = b.num_posicion ?? 999;
+        if (pa !== pb) return pa - pb;
         return (a.codigo ?? '').localeCompare(b.codigo ?? '');
       });
     });
@@ -229,8 +232,9 @@ export function Carros() {
           {carrosFiltrados.map((carro) => {
             const listaProbetas = probetasPorCarro[carro.id] ?? [];
             const expandido = expandidos.has(carro.id);
-            const pct = carro.num_bandejas > 0
-              ? Math.min(100, Math.round((listaProbetas.length / carro.num_bandejas) * 100))
+            const capacidadTotal = (carro.num_bandejas ?? 0) * (carro.posiciones_por_bandeja ?? 0);
+            const pct = capacidadTotal > 0
+              ? Math.min(100, Math.round((listaProbetas.length / capacidadTotal) * 100))
               : null;
 
             return (
@@ -280,11 +284,18 @@ export function Carros() {
                         </span>
                       )}
 
+                      {carro.posiciones_por_bandeja > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-blue/10 text-airbus-blue rounded-full font-semibold">
+                          <Grid3x3 className="w-3 h-3" />
+                          {carro.posiciones_por_bandeja} pos.
+                        </span>
+                      )}
+
                       <span className="font-semibold text-airbus-blue">
                         {listaProbetas.length} probeta{listaProbetas.length !== 1 ? 's' : ''}
-                        {carro.num_bandejas > 0 && (
+                        {capacidadTotal > 0 && (
                           <span className="text-gray-400 font-normal">
-                            {' '}/ {carro.num_bandejas}
+                            {' '}/ {capacidadTotal}
                           </span>
                         )}
                       </span>
@@ -396,7 +407,8 @@ export function Carros() {
                                   {probeta.num_bandeja && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[10px] font-bold">
                                       <Layers className="w-3 h-3" />
-                                      Bandeja {probeta.num_bandeja}
+                                      B{probeta.num_bandeja}
+                                      {probeta.num_posicion ? ` · P${probeta.num_posicion}` : ''}
                                     </span>
                                   )}
                                   {!probeta.activa && (
