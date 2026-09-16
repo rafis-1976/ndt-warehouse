@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, X, Edit3, Trash2, ChevronDown,
-  ChevronRight, Boxes, Hash, AlertTriangle, CheckCircle2,
+  ChevronRight, Boxes, Hash, AlertTriangle, CheckCircle2, Image as ImageIcon,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
@@ -309,9 +309,22 @@ export function Carros() {
                               key={probeta.id}
                               className="flex items-center gap-3 px-4 py-3 hover:bg-white transition group"
                             >
-                              <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center shrink-0">
-                                <Package className="w-4 h-4 text-airbus-sky" />
-                              </div>
+                              {probeta.foto_url ? (
+                                <div className="relative w-14 h-14 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+                                  <img
+                                    src={probeta.foto_url}
+                                    alt={probeta.nombre}
+                                    className="w-full h-full object-contain"
+                                    onError={(ev) => {
+                                      (ev.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-14 h-14 bg-white border border-gray-200 rounded-lg flex items-center justify-center shrink-0">
+                                  <Package className="w-5 h-5 text-airbus-sky" />
+                                </div>
+                              )}
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -343,9 +356,7 @@ export function Carros() {
                                 <div className={`text-[10px] font-semibold whitespace-nowrap flex items-center gap-1 ${
                                   vencida ? 'text-airbus-red' : alerta ? 'text-airbus-orange' : 'text-airbus-green'
                                 }`}>
-                                  {vencida ? (
-                                    <AlertTriangle className="w-3 h-3" />
-                                  ) : alerta ? (
+                                  {vencida || alerta ? (
                                     <AlertTriangle className="w-3 h-3" />
                                   ) : (
                                     <CheckCircle2 className="w-3 h-3" />
@@ -399,7 +410,20 @@ export function Carros() {
               <div className="divide-y divide-gray-100">
                 {probetasSinCarro.map((probeta) => (
                   <div key={probeta.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group">
-                    <Package className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                    {probeta.foto_url ? (
+                      <div className="w-12 h-12 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ml-4">
+                        <img
+                          src={probeta.foto_url}
+                          alt={probeta.nombre}
+                          className="w-full h-full object-contain"
+                          onError={(ev) => {
+                            (ev.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <Package className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <span className="font-mono font-bold text-airbus-blue text-xs mr-2">
                         {probeta.codigo}
