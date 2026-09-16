@@ -27,7 +27,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const imgBandejaRef = useRef<HTMLImageElement>(null);
   const [marcandoFoto, setMarcandoFoto] = useState(false);
 
-  // Lista de NTM introducidas manualmente
   const [ntms, setNtms] = useState<string[]>([]);
   const [ntmInput, setNtmInput] = useState('');
 
@@ -94,7 +93,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
           const fts: FotoEquipo[] = Array.isArray(data.fotos_urls) ? data.fotos_urls : [];
           setFotos(fts);
 
-          // Cargar NTM desde texto separado por comas
           if (data.normas_ntm) {
             setNtms(
               String(data.normas_ntm)
@@ -161,9 +159,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     setForm((f) => ({ ...f, pos_x: null, pos_y: null, num_posicion: '' }));
   };
 
-  // ============================================================
-  // NTM manual
-  // ============================================================
   const agregarNtm = () => {
     const valor = ntmInput.trim().toUpperCase();
     if (!valor) return;
@@ -184,7 +179,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
       e.preventDefault();
       agregarNtm();
     } else if (e.key === 'Backspace' && !ntmInput && ntms.length > 0) {
-      // Borrar la última NTM si el input está vacío
       setNtms(ntms.slice(0, -1));
     }
   };
@@ -204,7 +198,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
 
     setLoading(true);
     try {
-      // Unir NTM en un string separado por comas
       const normasTexto = ntms.length > 0 ? ntms.join(', ') : null;
 
       const payload: any = {
@@ -344,7 +337,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         </div>
 
         <div className="bg-white border-2 border-airbus-sky/30 rounded-lg p-3 focus-within:border-airbus-sky transition">
-          {/* Chips de NTM */}
           {ntms.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-gray-100">
               {ntms.map((ntm) => (
@@ -366,7 +358,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             </div>
           )}
 
-          {/* Input + botón */}
           <div className="flex gap-2">
             <input
               className="flex-1 border-0 focus:outline-none focus:ring-0 px-1 py-1.5 text-sm font-mono uppercase"
