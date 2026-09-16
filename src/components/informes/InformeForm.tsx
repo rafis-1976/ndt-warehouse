@@ -24,13 +24,6 @@ const ESTACIONES = [
   { value: 'BARCELONA', label: 'Barcelona' },
 ];
 
-const RESULTADOS = [
-  { value: 'aprobado',    label: 'Aprobado',    color: 'green'  },
-  { value: 'condicional', label: 'Condicional', color: 'orange' },
-  { value: 'rechazado',   label: 'Rechazado',   color: 'red'    },
-  { value: 'pendiente',   label: 'Pendiente',   color: 'gray'   },
-];
-
 interface EquipoStepData {
   id: string;
   id_equipo: string | null;
@@ -53,7 +46,8 @@ interface NtmStep {
   step: string;
   metodo: string;
   fecha: string;
-  resultado: string;
+  resultado: string;       // 'NIL FINDINGS' | 'FINDINGS'
+  findings_text: string;
   equipos: EquipoStepData[];
   probetas: ProbetaStepData[];
   inspector_nombre: string;
@@ -78,7 +72,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       step: '',
       metodo: 'ET',
       fecha: hoy,
-      resultado: 'pendiente',
+      resultado: 'NIL FINDINGS',
+      findings_text: '',
       equipos: [],
       probetas: [],
       inspector_nombre: '',
@@ -106,7 +101,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
     seleccionar: '',
 
-    hallazgos: '',
     conclusion: '',
     observaciones: '',
 
@@ -218,7 +212,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           operador: data.operador ?? 'IBERIA',
           cliente: data.cliente ?? '',
           seleccionar: data.seleccionar ?? '',
-          hallazgos: data.hallazgos ?? '',
           conclusion: data.conclusion ?? '',
           observaciones: data.observaciones ?? '',
           inspector_nombre: data.inspector_nombre ?? '',
@@ -244,7 +237,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             step: data.ntm_step ?? '',
             metodo: data.metodo ?? 'ET',
             fecha: data.fecha_inspeccion ?? hoy,
-            resultado: data.resultado ?? 'pendiente',
+            resultado: data.resultado === 'rechazado' || data.resultado === 'condicional'
+              ? 'FINDINGS'
+              : 'NIL FINDINGS',
+            findings_text: data.hallazgos ?? '',
             equipos: [],
             probetas: [],
             inspector_nombre: data.inspector_nombre ?? '',
@@ -274,12 +270,21 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               }))
             : [];
 
+          // Normalizar resultado antiguo al nuevo formato
+          let resultado = String(s?.resultado ?? 'NIL FINDINGS');
+          if (resultado === 'aprobado') resultado = 'NIL FINDINGS';
+          else if (resultado === 'rechazado' || resultado === 'condicional') resultado = 'FINDINGS';
+          else if (resultado !== 'NIL FINDINGS' && resultado !== 'FINDINGS') {
+            resultado = 'NIL FINDINGS';
+          }
+
           return {
             ntm: String(s?.ntm ?? ''),
             step: String(s?.step ?? ''),
             metodo: String(s?.metodo ?? 'ET'),
             fecha: String(s?.fecha ?? data.fecha_inspeccion ?? hoy),
-            resultado: String(s?.resultado ?? 'pendiente'),
+            resultado,
+            findings_text: String(s?.findings_text ?? ''),
             equipos: equiposStep,
             probetas: probetasStep,
             inspector_nombre: String(s?.inspector_nombre ?? ''),
@@ -310,7 +315,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         step: '',
         metodo: 'ET',
         fecha: hoy,
-        resultado: 'pendiente',
+        resultado: 'NIL FINDINGS',
+        findings_text: '',
         equipos: [],
         probetas: [],
         inspector_nombre: form.inspector_nombre,
@@ -368,6 +374,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       if (s.equipos.length === 0) return setError(`${pref} añade al menos un equipo`);
       if (s.probetas.length === 0) return setError(`${pref} añade al menos una probeta`);
       if (!s.inspector_nombre.trim()) return setError(`${pref} selecciona el inspector`);
+      if (!s.resultado) return setError(`${pref} selecciona el resultado`);
+      if (s.resultado === 'FINDINGS' && !s.findings_text.trim()) {
+        return setError(`${pref} describe los findings detectados`);
+      }
     }
 
     setLoading(true);
@@ -377,7 +387,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         step: s.step.trim(),
         metodo: s.metodo || '',
         fecha: s.fecha || '',
-        resultado: s.resultado || 'pendiente',
+        resultado: s.resultado,
+        findings_text: s.resultado === 'FINDINGS' ? s.findings_text.trim() : '',
         equipos: (s.equipos || []).map((e) => ({
           id: e.id,
           id_equipo: e.id_equipo,
@@ -397,18 +408,21 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         inspector_id: s.inspector_id ?? null,
       }));
 
-      // El resultado global se calcula como el "peor" de todos los steps (por compatibilidad)
-      const prioridad: Record<string, number> = {
-        rechazado: 4, condicional: 3, aprobado: 2, pendiente: 1,
-      };
-      const resultadoGlobal = ntmStepsFinal
-        .map((s) => s.resultado)
-        .sort((a, b) => (prioridad[b] ?? 0) - (prioridad[a] ?? 0))[0] ?? 'pendiente';
+      // El resultado global se calcula: si algún step tiene FINDINGS → 'FINDINGS', si no → 'NIL FINDINGS'
+      const resultadoGlobal = ntmStepsFinal.some((s) => s.resultado === 'FINDINGS')
+        ? 'FINDINGS'
+        : 'NIL FINDINGS';
 
       const fechasValidas = ntmStepsFinal.map((s) => s.fecha).filter((f) => !!f);
       const fechaGlobal = fechasValidas.length > 0 ? fechasValidas.sort().slice(-1)[0] : null;
 
       const metodoPrincipal = ntmStepsFinal[0]?.metodo ?? '';
+
+      // Hallazgos global: concatena los findings de todos los steps con FINDINGS
+      const hallazgosGlobal = ntmStepsFinal
+        .filter((s) => s.resultado === 'FINDINGS' && s.findings_text)
+        .map((s, i) => `[${s.ntm}${s.step ? ' · ' + s.step : ''}] ${s.findings_text}`)
+        .join('\n\n');
 
       const payload: any = {
         numero_informe: form.numero_informe.trim(),
@@ -434,7 +448,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         equipo_id: ntmStepsFinal[0]?.equipos?.[0]?.id ?? null,
         probeta_id: ntmStepsFinal[0]?.probetas?.[0]?.id ?? null,
         resultado: resultadoGlobal,
-        hallazgos: form.hallazgos.trim() || null,
+        hallazgos: hallazgosGlobal || null,
         conclusion: form.conclusion.trim() || null,
         observaciones: form.observaciones.trim() || null,
         inspector_id: inspectorActual?.id ?? null,
@@ -621,9 +635,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Todos los campos de cada step son <strong>obligatorios</strong>:
-            NTM, Step, fecha, técnica, al menos un equipo, al menos una probeta,
-            inspector y resultado.
+            Todos los campos de cada step son <strong>obligatorios</strong>.
+            El resultado debe ser <strong>NIL FINDINGS</strong> o <strong>FINDINGS</strong>
+            (en cuyo caso hay que describir los hallazgos).
           </p>
         </div>
 
@@ -654,16 +668,8 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Hallazgos, conclusión y observaciones">
+      <Section title="Conclusión y observaciones">
         <div className="space-y-4">
-          <Field label="Hallazgos">
-            <textarea
-              className="input min-h-[80px] resize-y"
-              value={form.hallazgos}
-              onChange={(e) => update('hallazgos', e.target.value)}
-              placeholder="Descripción de defectos, discontinuidades, indicaciones..."
-            />
-          </Field>
           <Field label="Conclusión">
             <textarea
               className="input min-h-[80px] resize-y"
@@ -843,13 +849,10 @@ function NtmStepCard({
     }
   };
 
-  // Color del resultado para el badge de la cabecera
-  const resultColor: Record<string, string> = {
-    aprobado:    'bg-airbus-green text-white',
-    condicional: 'bg-airbus-orange text-white',
-    rechazado:   'bg-airbus-red text-white',
-    pendiente:   'bg-gray-500 text-white',
-  };
+  const esFindings = step.resultado === 'FINDINGS';
+  const resultColor = esFindings
+    ? 'bg-airbus-red text-white'
+    : 'bg-airbus-green text-white';
 
   return (
     <div className="border-2 border-airbus-sky/40 rounded-xl overflow-hidden bg-white">
@@ -887,11 +890,9 @@ function NtmStepCard({
           )}
         </button>
 
-        {step.resultado && (
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${resultColor[step.resultado] ?? 'bg-gray-500'}`}>
-            {step.resultado}
-          </span>
-        )}
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${resultColor}`}>
+          {step.resultado}
+        </span>
 
         {canRemove && (
           <button
@@ -1164,41 +1165,52 @@ function NtmStepCard({
             </select>
           </div>
 
-          {/* RESULTADO DEL STEP */}
+          {/* RESULTADO: NIL FINDINGS / FINDINGS */}
           <div>
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Resultado de la inspección *
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {RESULTADOS.map((r) => {
-                const activo = step.resultado === r.value;
-                const activeClass: Record<string, string> = {
-                  green:  'bg-airbus-green text-white border-airbus-green shadow-sm',
-                  orange: 'bg-airbus-orange text-white border-airbus-orange shadow-sm',
-                  red:    'bg-airbus-red text-white border-airbus-red shadow-sm',
-                  gray:   'bg-gray-500 text-white border-gray-500 shadow-sm',
-                };
-                const Icone = r.value === 'aprobado' ? CheckCircle2
-                  : r.value === 'rechazado' ? XCircle
-                  : r.value === 'condicional' ? AlertTriangle
-                  : Calendar;
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => onUpdate({ resultado: r.value })}
-                    className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition ${
-                      activo
-                        ? activeClass[r.color]
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Icone className="w-4 h-4" />
-                    <span className="text-xs font-semibold">{r.label}</span>
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onUpdate({ resultado: 'NIL FINDINGS', findings_text: '' })}
+                className={`flex items-center justify-center gap-2 py-3 rounded-lg border-2 transition font-bold ${
+                  step.resultado === 'NIL FINDINGS'
+                    ? 'bg-airbus-green text-white border-airbus-green shadow-md'
+                    : 'bg-white text-airbus-green border-airbus-green/30 hover:bg-airbus-green/5'
+                }`}
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                NIL FINDINGS
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdate({ resultado: 'FINDINGS' })}
+                className={`flex items-center justify-center gap-2 py-3 rounded-lg border-2 transition font-bold ${
+                  step.resultado === 'FINDINGS'
+                    ? 'bg-airbus-red text-white border-airbus-red shadow-md'
+                    : 'bg-white text-airbus-red border-airbus-red/30 hover:bg-airbus-red/5'
+                }`}
+              >
+                <AlertTriangle className="w-5 h-5" />
+                FINDINGS
+              </button>
             </div>
+
+            {esFindings && (
+              <div className="mt-3">
+                <label className="block text-[10px] font-semibold text-airbus-red uppercase tracking-wider mb-1">
+                  Descripción de los findings *
+                </label>
+                <textarea
+                  className="input min-h-[100px] resize-y border-airbus-red/40 focus:ring-airbus-red"
+                  value={step.findings_text}
+                  onChange={(e) => onUpdate({ findings_text: e.target.value })}
+                  placeholder="Describe los defectos, discontinuidades o indicaciones detectadas..."
+                  required
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
