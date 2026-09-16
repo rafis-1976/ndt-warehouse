@@ -30,14 +30,47 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
         <style>
           @page { size: A4; margin: 12mm; }
           * { box-sizing: border-box; }
+          html, body {
+            margin: 0;
+            padding: 0;
+          }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
             font-size: 11px;
             line-height: 1.4;
-            margin: 0;
-            padding: 0;
             background: white;
+          }
+
+          /* ============ CONTROL DE SALTOS DE PÁGINA ============ */
+          /* Nada de bloques cortados entre páginas */
+          .step-block,
+          .firma-box,
+          .barcode-box,
+          .footer-grid,
+          .box,
+          .texto-largo,
+          .findings-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .step-row,
+          .chips,
+          .chip,
+          .head,
+          .section-title {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Los títulos siempre pegados a su contenido */
+          .section-title {
+            break-after: avoid;
+            page-break-after: avoid;
+          }
+          /* Cabecera del informe como bloque */
+          .head {
+            break-after: avoid;
+            page-break-after: avoid;
           }
 
           /* ============ CABECERA DEL INFORME ============ */
@@ -116,13 +149,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
 
-          /* ============ BLOQUE DE STEP (SIN CABECERA) ============ */
+          /* ============ BLOQUE DE STEP ============ */
           .step-block {
             border: 2px solid #00205B;
             border-radius: 8px;
             margin-bottom: 14px;
             overflow: hidden;
             background: #fdfdfd;
+            /* Nunca cortar un step entre páginas */
+            break-inside: avoid;
             page-break-inside: avoid;
           }
 
@@ -130,7 +165,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             padding: 14px 16px;
           }
 
-          /* Filas de datos dentro del step */
           .step-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -178,6 +212,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-weight: 600;
             color: #111;
             line-height: 1.2;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           .chip .c-id {
             font-family: 'Courier New', monospace;
@@ -212,6 +248,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: #fff5f5;
             padding: 10px 12px;
             margin-top: 10px;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           .findings-block .f-label {
             font-size: 10px;
@@ -240,6 +278,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             min-height: 30px;
             white-space: pre-wrap;
             color: #222;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
 
           /* Firma y código de barras */
@@ -249,6 +289,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             gap: 14px;
             margin-top: 18px;
             align-items: stretch;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           .firma-box {
             border: 2px solid #00205B;
@@ -294,6 +336,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           .barcode-box .b-num {
             font-family: 'Courier New', monospace;
@@ -310,6 +354,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 9px;
             color: #888;
             text-align: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
         </style>
       </head>
@@ -417,7 +463,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div ref={printRef}>
             <div className="p-6">
-              {/* HEADER */}
               <div className="head">
                 <div className="brand">
                   <div className="brand-logo">I</div>
@@ -433,7 +478,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               </div>
 
-              {/* IDENTIFICACIÓN Y CERTIFICACIÓN */}
               <div className="grid grid-2" style={{ marginTop: 0 }}>
                 <div>
                   <div className="section-title" style={{ marginTop: 0 }}>Identificación</div>
@@ -453,7 +497,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               </div>
 
-              {/* AERONAVE / COMPONENTE */}
               <div className="section-title">Aeronave / Componente</div>
               <div className="grid grid-4">
                 <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
@@ -466,7 +509,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <Box label="Cliente" value={informe.cliente || '—'} />
               </div>
 
-              {/* NTM / STEPS */}
               <div className="section-title">Inspecciones realizadas (NTM / Steps)</div>
               {ntmSteps.length === 0 ? (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
@@ -477,7 +519,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   {ntmSteps.map((s, i) => (
                     <div key={i} className="step-block">
                       <div className="step-body">
-                        {/* Fila 1: NTM · Step + Técnica + Resultado */}
                         <div className="step-row first" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}>
                           <div className="field">
                             <div className="f-label">NTM Doc. Ref. · Step</div>
@@ -510,7 +551,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila 2: Fecha + Inspector */}
                         <div className="step-row">
                           <div className="field">
                             <div className="f-label">Fecha de realización</div>
@@ -522,7 +562,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila 3: Equipos */}
                         <div className="step-row full">
                           <div className="field">
                             <div className="f-label">
@@ -551,7 +590,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila 4: Probetas */}
                         <div className="step-row full">
                           <div className="field">
                             <div className="f-label">
@@ -575,7 +613,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Findings */}
                         {s.resultado === 'FINDINGS' && s.findings_text && (
                           <div className="findings-block">
                             <div className="f-label">⚠ Findings detectados</div>
@@ -588,7 +625,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               )}
 
-              {/* OBSERVACIONES */}
               {informe.observaciones && (
                 <>
                   <div className="section-title">Observaciones</div>
@@ -596,7 +632,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              {/* FIRMA + BARCODE */}
               <div className="footer-grid">
                 <div className="firma-box">
                   <div className="firma-label">Inspector responsable del informe</div>
