@@ -12,18 +12,17 @@ interface InformeFormProps {
   onCancel: () => void;
 }
 
+// Orden requerido: ET, UT, TT, RT
 const METODOS = [
-  { value: 'UT', label: 'UT', nombre: 'Ultrasonic Testing' },
-  { value: 'RT', label: 'RT', nombre: 'Radiographic Testing' },
   { value: 'ET', label: 'ET', nombre: 'Eddy Current Testing' },
+  { value: 'UT', label: 'UT', nombre: 'Ultrasonic Testing' },
   { value: 'TT', label: 'TT', nombre: 'Thermographic Testing' },
+  { value: 'RT', label: 'RT', nombre: 'Radiographic Testing' },
 ];
 
 const ESTACIONES = [
-  { value: 'MADET', label: 'MADET — Madrid' },
-  { value: 'BCNET', label: 'BCNET — Barcelona' },
-  { value: 'SVQET', label: 'SVQET — Sevilla' },
-  { value: 'BIOET', label: 'BIOET — Bilbao' },
+  { value: 'MADRID', label: 'Madrid' },
+  { value: 'BARCELONA', label: 'Barcelona' },
 ];
 
 interface EquipoStepData {
@@ -68,7 +67,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     {
       ntm: '',
       step: '',
-      metodo: 'UT',
+      metodo: 'ET',
       fecha: hoy,
       equipos: [],
       probetas: [],
@@ -89,13 +88,12 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     numero_fr: '',
     zona: '',
 
-    estacion: 'MADET',
+    estacion: 'MADRID',
     easa_ref: 'ES.145.011',
     uk_caa_ref: 'UK.145.01413',
     operador: 'IBERIA',
     cliente: '',
 
-    fecha_inspeccion: hoy,
     seleccionar: '',
 
     resultado: 'pendiente',
@@ -180,6 +178,11 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       .then(({ data, error }) => {
         if (error) setError(error.message);
         else if (data) {
+          const estacionNormalizada =
+            data.estacion === 'MADET' ? 'MADRID'
+            : data.estacion === 'BCNET' ? 'BARCELONA'
+            : (data.estacion ?? 'MADRID');
+
           setForm({
             numero_informe: data.numero_informe ?? '',
             numero_sap: data.numero_sap ?? '',
@@ -190,12 +193,11 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             componente: data.componente ?? '',
             numero_fr: data.numero_fr ?? '',
             zona: data.zona ?? '',
-            estacion: data.estacion ?? 'MADET',
+            estacion: estacionNormalizada,
             easa_ref: data.easa_ref ?? 'ES.145.011',
             uk_caa_ref: data.uk_caa_ref ?? 'UK.145.01413',
             operador: data.operador ?? 'IBERIA',
             cliente: data.cliente ?? '',
-            fecha_inspeccion: data.fecha_inspeccion ?? hoy,
             seleccionar: data.seleccionar ?? '',
             resultado: data.resultado ?? 'pendiente',
             hallazgos: data.hallazgos ?? '',
@@ -211,7 +213,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               data.ntm_steps.map((s: any) => ({
                 ntm: s.ntm ?? '',
                 step: s.step ?? '',
-                metodo: s.metodo ?? 'UT',
+                metodo: s.metodo ?? 'ET',
                 fecha: s.fecha ?? data.fecha_inspeccion ?? hoy,
                 equipos: Array.isArray(s.equipos) ? s.equipos : [],
                 probetas: Array.isArray(s.probetas) ? s.probetas : [],
@@ -224,7 +226,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
               {
                 ntm: data.ntm_referencia ?? '',
                 step: data.ntm_step ?? '',
-                metodo: data.metodo ?? 'UT',
+                metodo: data.metodo ?? 'ET',
                 fecha: data.fecha_inspeccion ?? hoy,
                 equipos: [],
                 probetas: [],
@@ -247,7 +249,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       {
         ntm: '',
         step: '',
-        metodo: 'UT',
+        metodo: 'ET',
         fecha: hoy,
         equipos: [],
         probetas: [],
@@ -272,7 +274,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     setError('');
 
     if (!form.numero_informe.trim()) return setError('El N° de informe es obligatorio');
-    if (!form.fecha_inspeccion) return setError('Indica la fecha de inspección');
     if (ntmSteps.length === 0) return setError('Añade al menos un NTM/Step');
 
     setLoading(true);
@@ -301,7 +302,14 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         }))
         .filter((s) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
 
-      // El método principal se deduce del primer step (compatibilidad con columna antigua)
+      // Calcular fecha global como la más reciente de los steps
+      const fechasValidas = ntmStepsLimpio
+        .map((s) => s.fecha)
+        .filter((f) => !!f);
+      const fechaGlobal = fechasValidas.length > 0
+        ? fechasValidas.sort().slice(-1)[0]
+        : null;
+
       const metodoPrincipal = ntmStepsLimpio[0]?.metodo ?? '';
 
       const payload: any = {
@@ -323,7 +331,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         ntm_referencia: ntmStepsLimpio[0]?.ntm ?? null,
         ntm_step: ntmStepsLimpio[0]?.step ?? null,
         ntm_steps: ntmStepsLimpio,
-        fecha_inspeccion: form.fecha_inspeccion,
+        fecha_inspeccion: fechaGlobal,
         seleccionar: form.seleccionar.trim() || null,
         equipo_id: ntmStepsLimpio[0]?.equipos?.[0]?.id ?? null,
         probeta_id: ntmStepsLimpio[0]?.probetas?.[0]?.id ?? null,
@@ -540,23 +548,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Fecha global de inspección">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Fecha de inspección *">
-            <div className="relative">
-              <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="date"
-                className="input pl-10"
-                value={form.fecha_inspeccion}
-                onChange={(e) => update('fecha_inspeccion', e.target.value)}
-                required
-              />
-            </div>
-          </Field>
-        </div>
-      </Section>
-
       <Section title="Resultado global de la inspección">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           <button
@@ -713,9 +704,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
   );
 }
 
-// ============================================================
-// Tarjeta de NTM/Step
-// ============================================================
 function NtmStepCard({
   index, step, equipos, probetas, inspectores, onUpdate, onRemove, canRemove,
 }: {
