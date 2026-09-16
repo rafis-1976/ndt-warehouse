@@ -51,7 +51,11 @@ export function Carros() {
     setLoading(true);
     const [c, p] = await Promise.all([
       supabase.from('carros').select('*').order('codigo'),
-      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('pn'),
+      supabase
+        .from('probetas')
+        .select('*, tecnicas_ndt(codigo, nombre)')
+        .neq('estado', 'salida')
+        .order('pn'),
     ]);
     if (c.error) console.error(c.error);
     if (p.error) console.error(p.error);
@@ -146,15 +150,12 @@ export function Carros() {
     const carrosConMatchDirecto = new Set<string>();
 
     probetas.forEach((p) => {
-      const pasaFuera = soloFuera ? fueraMap.has(p.id) : true;
-      const pasaBusqueda = qLower ? probetaCoincide(p) : false;
-
       if (soloFuera) {
-        if (pasaFuera) {
+        if (fueraMap.has(p.id)) {
           probetasMatch.add(p.id);
           if (p.carro_id) carrosAutoExpandir.add(p.carro_id);
         }
-      } else if (pasaBusqueda) {
+      } else if (probetaCoincide(p)) {
         probetasMatch.add(p.id);
         if (p.carro_id) carrosAutoExpandir.add(p.carro_id);
       }
@@ -467,15 +468,13 @@ export function Carros() {
                 )}
               </span>
             </div>
-            {(hayBusquedaActiva || soloFuera) && (
-              <button
-                onClick={() => { setQ(''); setSoloFuera(false); }}
-                className="text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
-              >
-                <X className="w-3 h-3" />
-                Limpiar
-              </button>
-            )}
+            <button
+              onClick={() => { setQ(''); setSoloFuera(false); }}
+              className="text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Limpiar
+            </button>
           </div>
         )}
       </div>
