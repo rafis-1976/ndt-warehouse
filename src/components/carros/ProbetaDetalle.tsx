@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Layers, Package, Hash, Calendar, AlertTriangle, CheckCircle2,
-  Ruler, Box, Palette, X, Wrench,
+  Ruler, Box, Palette, Wrench,
 } from 'lucide-react';
 
 interface ProbetaDetalleProps {
@@ -16,6 +16,12 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
 
   const totalBandejas = carro?.num_bandejas ?? 0;
   const bandejaActiva = probeta?.num_bandeja ?? null;
+
+  const fotoBandeja = carro?.bandejas_fotos?.find?.(
+    (f: any) => f.num_bandeja === bandejaActiva
+  );
+
+  const fotoMostrar = fotoBandeja?.url ?? probeta?.foto_url ?? null;
 
   useEffect(() => {
     setAnimando(false);
@@ -73,7 +79,6 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
           <div className="relative flex flex-col-reverse items-center">
             {bandejas.map((n) => {
               const esActiva = n === bandejaActiva;
-              const fueraDeRango = !bandejaActiva;
 
               return (
                 <div
@@ -87,9 +92,7 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                       transition-all duration-700 ease-out
                       ${esActiva && animando ? '-translate-x-32 md:-translate-x-44' : 'translate-x-0'}
                     `}
-                    style={{
-                      transitionDelay: esActiva ? '400ms' : '0ms',
-                    }}
+                    style={{ transitionDelay: esActiva ? '400ms' : '0ms' }}
                   >
                     <div
                       className={`
@@ -131,9 +134,9 @@ export function ProbetaDetalle({ probeta, carro, onClose }: ProbetaDetalleProps)
                           }
                         `}
                       >
-                        {probeta?.foto_url ? (
+                        {fotoMostrar ? (
                           <img
-                            src={probeta.foto_url}
+                            src={fotoMostrar}
                             alt={probeta.nombre}
                             className="w-full h-full object-contain p-1"
                           />
