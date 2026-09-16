@@ -18,35 +18,12 @@ const METODO_NOMBRE: Record<string, string> = {
 };
 
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
-  const [equipo, setEquipo] = useState<any>(null);
-  const [probeta, setProbeta] = useState<any>(null);
   const [cargando, setCargando] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    async function load() {
-      const [eqRes, pbRes] = await Promise.all([
-        informe.equipo_id
-          ? supabase
-              .from('equipos')
-              .select('id_equipo, nombre, numero_serie, tecnicas_ndt(codigo), proxima_calibracion')
-              .eq('id', informe.equipo_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null } as any),
-        informe.probeta_id
-          ? supabase
-              .from('probetas')
-              .select('pn, nombre, numero_serie, tecnicas_ndt(codigo)')
-              .eq('id', informe.probeta_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null } as any),
-      ]);
-      setEquipo(eqRes.data);
-      setProbeta(pbRes.data);
-      setCargando(false);
-    }
-    load();
-  }, [informe.id, informe.equipo_id, informe.probeta_id]);
+    setCargando(false);
+  }, [informe.id]);
 
   const handlePrint = () => {
     const content = printRef.current?.innerHTML;
@@ -78,9 +55,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             display: flex;
             flex-direction: column;
           }
-          .page:last-child {
-            page-break-after: auto;
-          }
+          .page:last-child { page-break-after: auto; }
 
           .head {
             display: flex;
@@ -145,11 +120,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 6px;
           }
 
-          .metodos {
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-          }
+          .metodos { display: flex; gap: 4px; flex-wrap: wrap; }
           .metodo {
             border: 1px solid #ccc;
             border-radius: 3px;
@@ -165,35 +136,74 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-color: #00205B;
           }
 
-          .ntm-step-row {
-            display: grid;
-            grid-template-columns: 40px 1fr 1fr;
-            gap: 8px;
+          .step-block {
+            border: 1px solid #00205B;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            overflow: hidden;
+          }
+          .step-header {
+            background: #00205B;
+            color: white;
+            padding: 6px 10px;
+            display: flex;
             align-items: center;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 6px 8px;
-            background: #fafafa;
+            gap: 8px;
+            font-size: 10px;
+            font-weight: 700;
+          }
+          .step-header .num {
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: white;
+            color: #00205B;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 900;
+          }
+          .step-header .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 9px;
+          }
+          .step-body { padding: 8px 10px; background: #fafafa; }
+          .step-body .row {
             margin-bottom: 6px;
           }
-          .ntm-step-row .num {
-            width: 28px; height: 28px;
-            border-radius: 50%;
-            background: #00205B; color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 11px; font-weight: 800;
-          }
-          .ntm-step-row .cell .label {
+          .step-body .row:last-child { margin-bottom: 0; }
+          .step-body .label {
             font-size: 8px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: #777;
             font-weight: 700;
+            margin-bottom: 2px;
           }
-          .ntm-step-row .cell .value {
+          .step-body .val {
             font-size: 10px;
             font-weight: 600;
             font-family: 'Courier New', monospace;
+          }
+          .step-body .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+          .step-body .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 600;
+          }
+          .step-body .chip .mono { font-family: 'Courier New', monospace; }
+          .empty-chips {
+            font-size: 9px;
+            font-style: italic;
+            color: #999;
           }
 
           .resultado {
@@ -220,18 +230,13 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             white-space: pre-wrap;
           }
 
-          .firmas {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-            margin-top: 20px;
-          }
           .firma-box {
             border: 1px solid #ccc;
             border-radius: 4px;
             padding: 10px;
             min-height: 100px;
             position: relative;
+            margin-top: 20px;
           }
           .firma-box .firma-label {
             font-size: 8px;
@@ -284,21 +289,30 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     return <Clock className="w-5 h-5" />;
   };
 
-  /** Normaliza la lista de NTM/Steps, con compatibilidad hacia atrás */
-  const getNtmSteps = (): { ntm: string; step: string }[] => {
+  /** Normaliza la lista de NTM/Steps con toda su info */
+  const getNtmSteps = () => {
     if (Array.isArray(informe.ntm_steps) && informe.ntm_steps.length > 0) {
       return informe.ntm_steps
         .map((s: any) => ({
           ntm: String(s.ntm ?? '').trim(),
           step: String(s.step ?? '').trim(),
+          metodo: String(s.metodo ?? '').trim(),
+          equipos: Array.isArray(s.equipos) ? s.equipos : [],
+          probetas: Array.isArray(s.probetas) ? s.probetas : [],
+          inspector_nombre: String(s.inspector_nombre ?? '').trim(),
         }))
-        .filter((s: any) => s.ntm || s.step);
+        .filter((s: any) => s.ntm || s.step || s.equipos.length > 0 || s.probetas.length > 0);
     }
+    // Compatibilidad con informes antiguos
     if (informe.ntm_referencia || informe.ntm_step) {
       return [
         {
           ntm: String(informe.ntm_referencia ?? '').trim(),
           step: String(informe.ntm_step ?? '').trim(),
+          metodo: String(informe.metodo ?? '').trim(),
+          equipos: [],
+          probetas: [],
+          inspector_nombre: '',
         },
       ];
     }
@@ -332,9 +346,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div ref={printRef}>
-            {/* ============================================================
-                PÁGINA 1 — DATOS DE LA INSPECCIÓN
-                ============================================================ */}
+            {/* PÁGINA 1 */}
             <div className="page p-6">
               <div className="head">
                 <div className="brand">
@@ -352,7 +364,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               </div>
 
-              {/* IDENTIFICACIÓN */}
               <div className="section-title">Identificación</div>
               <div className="grid grid-4">
                 <Box label="N° Informe" value={informe.numero_informe} mono />
@@ -366,7 +377,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 />
               </div>
 
-              {/* AVIÓN / COMPONENTE */}
               <div className="section-title">Aeronave / Componente</div>
               <div className="grid grid-3">
                 <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
@@ -377,7 +387,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <Box label="Zona" value={informe.zona || '—'} />
               </div>
 
-              {/* CERTIFICACIÓN */}
               <div className="section-title">Certificación y Aprobación</div>
               <div className="grid grid-4">
                 <Box label="Instalación" value={informe.estacion || '—'} />
@@ -386,7 +395,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <Box label="Operador" value={informe.operador || '—'} />
               </div>
 
-              {/* MÉTODO NDT */}
               <div className="section-title">Método END (NDT Method)</div>
               <div className="metodos">
                 {Object.entries(METODO_NOMBRE).map(([cod, nombre]) => (
@@ -401,7 +409,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               </div>
 
               {/* NTM + STEPS */}
-              <div className="section-title">Normas NTM y Steps</div>
+              <div className="section-title">Normas NTM, Técnicas, Equipos, Probetas e Inspectores</div>
               {ntmSteps.length === 0 ? (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
                   Sin normas NTM asignadas
@@ -409,22 +417,86 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               ) : (
                 <div>
                   {ntmSteps.map((s, i) => (
-                    <div key={i} className="ntm-step-row">
-                      <div className="num">{i + 1}</div>
-                      <div className="cell">
-                        <div className="label">NTM Doc. Ref.</div>
-                        <div className="value">{s.ntm || '—'}</div>
+                    <div key={i} className="step-block">
+                      <div className="step-header">
+                        <div className="num">{i + 1}</div>
+                        <span style={{ flex: 1 }}>
+                          {s.ntm || 'Sin NTM'}
+                          {s.step ? ` · ${s.step}` : ''}
+                        </span>
+                        {s.metodo && <span className="badge">{s.metodo}</span>}
                       </div>
-                      <div className="cell">
-                        <div className="label">Step</div>
-                        <div className="value">{s.step || '—'}</div>
+
+                      <div className="step-body">
+                        <div className="row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <div className="label">NTM Doc. Ref.</div>
+                            <div className="val">{s.ntm || '—'}</div>
+                          </div>
+                          <div>
+                            <div className="label">Step</div>
+                            <div className="val">{s.step || '—'}</div>
+                          </div>
+                        </div>
+
+                        <div className="row">
+                          <div className="label">Equipos utilizados</div>
+                          {s.equipos.length === 0 ? (
+                            <div className="empty-chips">Sin equipos asignados</div>
+                          ) : (
+                            <div className="chips">
+                              {s.equipos.map((eq: any, idx: number) => (
+                                <span key={idx} className="chip">
+                                  <span className="mono">{eq.id_equipo ?? '—'}</span>
+                                  <span>·</span>
+                                  <span>{eq.nombre}</span>
+                                  {eq.numero_serie && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="mono">S/N {eq.numero_serie}</span>
+                                    </>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="row">
+                          <div className="label">Probetas utilizadas</div>
+                          {s.probetas.length === 0 ? (
+                            <div className="empty-chips">Sin probetas asignadas</div>
+                          ) : (
+                            <div className="chips">
+                              {s.probetas.map((pb: any, idx: number) => (
+                                <span key={idx} className="chip">
+                                  <span className="mono">P/N {pb.pn ?? '—'}</span>
+                                  <span>·</span>
+                                  <span>{pb.nombre}</span>
+                                  {pb.numero_serie && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="mono">S/N {pb.numero_serie}</span>
+                                    </>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="row">
+                          <div className="label">Inspector</div>
+                          <div className="val" style={{ fontFamily: 'inherit' }}>
+                            {s.inspector_nombre || '—'}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* RESULTADO */}
               <div className="section-title">Resultado de la Inspección</div>
               <div className="mb-3">
                 <div className={`resultado ${informe.resultado || 'pendiente'}`}>
@@ -462,17 +534,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              {/* FIRMA */}
-              <div className="firmas">
-                <div className="firma-box">
-                  <div className="firma-label">Inspector / Firmante</div>
-                  <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
-                  <div className="firma-info">
-                    Licencia: {informe.inspector_licencia || '—'}
-                  </div>
-                  <div className="firma-info">{informe.inspector_email || ''}</div>
-                  <div className="linea" />
-                </div>
+              <div className="firma-box">
+                <div className="firma-label">Inspector responsable del informe</div>
+                <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
+                <div className="firma-info">{informe.inspector_email || ''}</div>
+                <div className="linea" />
               </div>
 
               <div className="footer">
@@ -481,9 +547,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               </div>
             </div>
 
-            {/* ============================================================
-                PÁGINA 2 — EQUIPOS Y PROBETAS UTILIZADOS
-                ============================================================ */}
+            {/* PÁGINA 2 — TRAZABILIDAD Y CÓDIGO DE BARRAS */}
             <div className="page p-6">
               <div className="head">
                 <div className="brand">
@@ -501,41 +565,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </div>
               </div>
 
-              {/* EQUIPO UTILIZADO */}
-              <div className="section-title">Equipo NDT Utilizado</div>
-              {equipo ? (
-                <div className="grid grid-4">
-                  <Box label="P/N" value={equipo.id_equipo || '—'} mono />
-                  <Box label="N° Serie" value={equipo.numero_serie || '—'} mono />
-                  <Box label="Nombre" value={equipo.nombre || '—'} />
-                  <Box
-                    label="Próx. Calibración"
-                    value={equipo.proxima_calibracion || '—'}
-                  />
-                </div>
-              ) : (
-                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
-                  No se ha asignado ningún equipo a este informe
-                </div>
-              )}
-
-              {/* PROBETA UTILIZADA */}
-              <div className="section-title">Probeta de Calibración</div>
-              {probeta ? (
-                <div className="grid grid-3">
-                  <Box label="P/N" value={probeta.pn || '—'} mono />
-                  <Box label="N° Serie" value={probeta.numero_serie || '—'} mono />
-                  <Box label="Nombre" value={probeta.nombre || '—'} />
-                </div>
-              ) : (
-                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
-                  No se ha asignado ninguna probeta a este informe
-                </div>
-              )}
-
-              {/* TRAZABILIDAD */}
-              <div className="section-title">Trazabilidad</div>
-              <div className="grid grid-2">
+              <div className="section-title">Resumen de la inspección</div>
+              <div className="grid grid-3">
                 <Box label="N° Informe" value={informe.numero_informe} mono />
                 <Box
                   label="Fecha Inspección"
@@ -543,12 +574,81 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                     ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
                     : '—'}
                 />
-                <Box label="Inspector" value={informe.inspector_nombre || '—'} />
-                <Box label="Licencia Inspector" value={informe.inspector_licencia || '—'} mono />
+                <Box label="N° NTM/Steps" value={String(ntmSteps.length)} />
+              </div>
+
+              <div className="section-title">Trazabilidad de NTM / Steps</div>
+              {ntmSteps.length === 0 ? (
+                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
+                  Sin normas NTM asignadas
+                </div>
+              ) : (
+                <div>
+                  {ntmSteps.map((s, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        border: '1px solid #ccc',
+                        borderRadius: 4,
+                        padding: '6px 10px',
+                        background: '#fafafa',
+                        marginBottom: 6,
+                        display: 'grid',
+                        gridTemplateColumns: '30px 1fr 80px 120px',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 22, height: 22,
+                          borderRadius: '50%',
+                          background: '#00205B', color: 'white',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, fontWeight: 800,
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700 }}>
+                          {s.ntm || '—'}{s.step ? ` · ${s.step}` : ''}
+                        </div>
+                        <div style={{ fontSize: 8, color: '#666', marginTop: 1 }}>
+                          {s.equipos.length} equipo{s.equipos.length !== 1 ? 's' : ''} ·{' '}
+                          {s.probetas.length} probeta{s.probetas.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            background: '#00205B', color: 'white',
+                            fontSize: 9, fontWeight: 700,
+                            padding: '2px 8px', borderRadius: 10,
+                          }}
+                        >
+                          {s.metodo || '—'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 8, color: '#666', textAlign: 'right' }}>
+                        {s.inspector_nombre || '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="section-title">Firmas</div>
+              <div className="firma-box">
+                <div className="firma-label">Inspector responsable del informe</div>
+                <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
+                <div className="firma-info">{informe.inspector_email || ''}</div>
+                <div className="linea" />
               </div>
 
               {informe.numero_informe && (
-                <div className="barcode" style={{ marginTop: 8 }}>
+                <div className="barcode" style={{ marginTop: 12 }}>
                   <BarcodeLib
                     value={informe.numero_informe}
                     format="CODE128"
