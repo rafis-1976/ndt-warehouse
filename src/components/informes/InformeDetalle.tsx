@@ -40,7 +40,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: white;
           }
 
-          /* ============ CABECERA ============ */
+          /* ============ CABECERA DEL INFORME ============ */
           .head {
             display: flex;
             align-items: center;
@@ -87,7 +87,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 8px;
           }
 
-          /* ============ CUADRÍCULA DE DATOS ============ */
+          /* ============ CUADRÍCULA ============ */
           .grid { display: grid; gap: 8px; margin-bottom: 10px; }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -116,69 +116,71 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
 
-          /* ============ BLOQUE DE STEP ============ */
+          /* ============ BLOQUE DE STEP (SIN CABECERA) ============ */
           .step-block {
             border: 2px solid #00205B;
             border-radius: 8px;
             margin-bottom: 14px;
             overflow: hidden;
+            background: #fdfdfd;
             page-break-inside: avoid;
           }
-          .step-header {
-            background: linear-gradient(to right, #00205B, #005670);
-            color: white;
-            padding: 10px 14px;
+
+          .step-body {
+            padding: 14px 16px;
+          }
+
+          /* Cabecera compacta dentro del body: número + NTM/Step + badges */
+          .step-top {
             display: flex;
             align-items: center;
             gap: 10px;
-            font-size: 13px;
-            font-weight: 700;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #00205B;
+            flex-wrap: wrap;
           }
-          .step-header .num {
-            width: 28px; height: 28px;
+          .step-top .num {
+            width: 30px; height: 30px;
             border-radius: 50%;
-            background: white;
-            color: #00205B;
+            background: #00205B;
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 900;
             flex-shrink: 0;
           }
-          .step-header .title {
+          .step-top .ntm-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #00205B;
+            font-family: 'Courier New', monospace;
             flex: 1;
             min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-size: 13px;
           }
-          .step-header .badge {
-            background: rgba(255,255,255,0.25);
+          .step-top .badge-metodo {
+            background: #00205B;
+            color: white;
             padding: 3px 12px;
             border-radius: 12px;
             font-size: 11px;
             font-weight: 800;
             letter-spacing: 0.5px;
           }
-          .step-header .res {
-            padding: 4px 12px;
+          .step-top .badge-res {
+            padding: 3px 12px;
             border-radius: 12px;
             font-size: 11px;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.5px;
           }
-          .step-header .res.nil      { background: #009F4D; color: white; }
-          .step-header .res.findings { background: #E4002B; color: white; }
+          .step-top .badge-res.nil      { background: #009F4D; color: white; }
+          .step-top .badge-res.findings { background: #E4002B; color: white; }
 
-          .step-body {
-            padding: 12px 14px;
-            background: #fdfdfd;
-          }
-
-          /* Fila de datos dentro del step */
+          /* Filas de datos dentro del step */
           .step-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -189,9 +191,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .step-row:last-child { border-bottom: none; }
           .step-row.full { grid-template-columns: 1fr; }
 
-          .field {
-            min-width: 0;
-          }
+          .field { min-width: 0; }
           .field .f-label {
             font-size: 9px;
             text-transform: uppercase;
@@ -214,11 +214,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
 
           /* Chips de equipos y probetas */
-          .chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-          }
+          .chips { display: flex; flex-wrap: wrap; gap: 6px; }
           .chip {
             display: inline-flex;
             align-items: center;
@@ -264,7 +260,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-radius: 6px;
             background: #fff5f5;
             padding: 10px 12px;
-            margin-top: 8px;
+            margin-top: 10px;
           }
           .findings-block .f-label {
             font-size: 10px;
@@ -295,7 +291,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             color: #222;
           }
 
-          /* ============ FIRMA Y CÓDIGO DE BARRAS ============ */
+          /* Firma y código de barras */
           .footer-grid {
             display: grid;
             grid-template-columns: 1fr 180px;
@@ -529,21 +525,22 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 <div>
                   {ntmSteps.map((s, i) => (
                     <div key={i} className="step-block">
-                      {/* CABECERA DEL STEP */}
-                      <div className="step-header">
-                        <div className="num">{i + 1}</div>
-                        <span className="title">
-                          {s.ntm || 'Sin NTM'}
-                          {s.step ? ` · ${s.step}` : ''}
-                        </span>
-                        {s.metodo && <span className="badge">{s.metodo}</span>}
-                        <span className={`res ${s.resultado === 'FINDINGS' ? 'findings' : 'nil'}`}>
-                          {s.resultado}
-                        </span>
-                      </div>
-
-                      {/* CUERPO DEL STEP */}
                       <div className="step-body">
+                        {/* Cabecera compacta: número + NTM·Step + método + resultado */}
+                        <div className="step-top">
+                          <div className="num">{i + 1}</div>
+                          <div className="ntm-title">
+                            {s.ntm || 'Sin NTM'}
+                            {s.step ? ` · ${s.step}` : ''}
+                          </div>
+                          {s.metodo && (
+                            <span className="badge-metodo">{s.metodo}</span>
+                          )}
+                          <span className={`badge-res ${s.resultado === 'FINDINGS' ? 'findings' : 'nil'}`}>
+                            {s.resultado}
+                          </span>
+                        </div>
+
                         {/* Fila: Fecha + Inspector */}
                         <div className="step-row">
                           <div className="field">
@@ -556,7 +553,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila: NTM + Step + Técnica */}
+                        {/* Fila: NTM + Step */}
                         <div className="step-row">
                           <div className="field">
                             <div className="f-label">NTM Doc. Ref.</div>
