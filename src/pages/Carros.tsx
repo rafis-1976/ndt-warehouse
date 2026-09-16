@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
-  ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers, Grid3x3,
+  ChevronRight, Boxes, AlertTriangle, Layers, Grid3x3,
   FileCheck2, X, Highlighter, Barcode,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
@@ -86,7 +86,6 @@ export function Carros() {
       p.pn,
       p.codigo_barras,
       p.nombre,
-      p.tipo,
       p.material,
       p.dimensiones,
       p.numero_serie,
@@ -594,7 +593,6 @@ export function Carros() {
                                 </div>
 
                                 <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400 flex-wrap">
-                                  {probeta.tipo && <span>{resaltar(probeta.tipo)}</span>}
                                   {probeta.material && <span>{resaltar(probeta.material)}</span>}
                                   {probeta.dimensiones && <span>{probeta.dimensiones}</span>}
                                 </div>
