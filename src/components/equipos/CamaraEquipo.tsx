@@ -16,10 +16,11 @@ interface CamaraEquipoProps {
   onChange: (fotos: FotoEquipo[]) => void;
   disabled?: boolean;
   bucket?: string;
+  compacto?: boolean;
 }
 
 export function CamaraEquipo({
-  equipoId, fotos, onChange, disabled, bucket = BUCKET_EQUIPOS,
+  equipoId, fotos, onChange, disabled, bucket = BUCKET_EQUIPOS, compacto = false,
 }: CamaraEquipoProps) {
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [captura, setCaptura] = useState<string | null>(null);
@@ -111,8 +112,6 @@ export function CamaraEquipo({
     try {
       if (recortarAuto) {
         setProcesando(true);
-        setDebugInfo('Iniciando recorte con IA...');
-
         if (typeof recortarFondo !== 'function') {
           throw new Error('Función recortarFondo no disponible');
         }
@@ -125,10 +124,6 @@ export function CamaraEquipo({
 
         if (!recortado || recortado.size === 0) {
           throw new Error('El recorte devolvió un archivo vacío');
-        }
-
-        if (recortado.size === originalBlob.size) {
-          throw new Error('El recorte no produjo cambios.');
         }
 
         const foto = await subirFotoBlob(recortado, equipoId, 'png', bucket);
@@ -186,7 +181,7 @@ export function CamaraEquipo({
   };
 
   return (
-    <div className="space-y-3">
+    <div className={compacto ? 'space-y-2' : 'space-y-3'}>
       <input
         ref={inputFileRef}
         type="file"
@@ -196,7 +191,7 @@ export function CamaraEquipo({
         onChange={(e) => handleArchivo(e.target.files)}
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className={compacto ? 'space-y-2' : 'grid grid-cols-2 sm:grid-cols-4 gap-3'}>
         {fotos.map((foto) => (
           <div
             key={foto.path}
@@ -220,19 +215,19 @@ export function CamaraEquipo({
           </div>
         ))}
 
-        {!disabled && (
+        {!disabled && fotos.length === 0 && (
           <>
             <button
               type="button"
               onClick={() => setCamaraAbierta(true)}
               disabled={subiendo}
-              className="aspect-square rounded-lg border-2 border-dashed border-airbus-sky bg-airbus-sky/5 hover:bg-airbus-sky/10 transition flex flex-col items-center justify-center gap-1.5 text-airbus-sky disabled:opacity-50"
+              className={`${compacto ? 'w-full py-3' : 'aspect-square'} rounded-lg border-2 border-dashed border-airbus-sky bg-airbus-sky/5 hover:bg-airbus-sky/10 transition flex flex-col items-center justify-center gap-1.5 text-airbus-sky disabled:opacity-50`}
             >
               {subiendo ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  <Camera className="w-6 h-6" />
+                  <Camera className={compacto ? 'w-5 h-5' : 'w-6 h-6'} />
                   <span className="text-xs font-medium">Hacer foto</span>
                 </>
               )}
@@ -242,18 +237,41 @@ export function CamaraEquipo({
               type="button"
               onClick={() => inputFileRef.current?.click()}
               disabled={subiendo}
-              className="aspect-square rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 transition flex flex-col items-center justify-center gap-1.5 text-gray-500 disabled:opacity-50"
+              className={`${compacto ? 'w-full py-3' : 'aspect-square'} rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 hover:bg-gray-50 transition flex flex-col items-center justify-center gap-1.5 text-gray-500 disabled:opacity-50`}
             >
-              <ImageIcon className="w-6 h-6" />
+              <ImageIcon className={compacto ? 'w-5 h-5' : 'w-6 h-6'} />
               <span className="text-xs font-medium">Subir imagen</span>
             </button>
           </>
         )}
       </div>
 
+      {fotos.length > 0 && !disabled && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setCamaraAbierta(true)}
+            disabled={subiendo}
+            className="flex-1 text-xs py-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded-lg transition border border-airbus-sky/30 disabled:opacity-50 flex items-center justify-center gap-1"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            Cambiar
+          </button>
+          <button
+            type="button"
+            onClick={() => inputFileRef.current?.click()}
+            disabled={subiendo}
+            className="flex-1 text-xs py-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition border border-gray-200 disabled:opacity-50 flex items-center justify-center gap-1"
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            Otra
+          </button>
+        </div>
+      )}
+
       {fotos.length === 0 && disabled && (
         <p className="text-xs text-gray-400 italic text-center py-3">
-          Sin fotos
+          Sin foto
         </p>
       )}
 
@@ -292,9 +310,6 @@ export function CamaraEquipo({
                       EN DIRECTO
                     </div>
                     <div className="absolute inset-8 border-2 border-white/40 border-dashed rounded-xl" />
-                    <div className="absolute bottom-3 left-0 right-0 text-center text-white/80 text-xs">
-                      Centra el objeto en el recuadro
-                    </div>
                   </div>
                 )}
               </div>
@@ -344,7 +359,7 @@ export function CamaraEquipo({
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {recortarAuto
-                      ? 'Se eliminará el fondo y solo se verá el objeto (PNG transparente)'
+                      ? 'Se eliminará el fondo (PNG transparente)'
                       : 'Se guardará la foto tal cual'}
                   </p>
                 </div>
@@ -362,7 +377,7 @@ export function CamaraEquipo({
                   <div className="flex items-center gap-2 mb-2">
                     <Loader2 className="w-4 h-4 text-airbus-sky animate-spin" />
                     <span className="text-xs font-medium text-airbus-blue">
-                      Procesando imagen...
+                      Procesando...
                     </span>
                     <span className="ml-auto text-xs font-bold text-airbus-sky">
                       {progreso}%
@@ -389,7 +404,7 @@ export function CamaraEquipo({
                 <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-xs p-3 rounded-lg">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="font-semibold">Error al procesar la imagen</p>
+                    <p className="font-semibold">Error</p>
                     <p className="mt-1 opacity-90">{error}</p>
                   </div>
                 </div>
@@ -416,7 +431,7 @@ export function CamaraEquipo({
                   ) : (
                     <Check className="w-4 h-4" />
                   )}
-                  {procesando ? 'Procesando...' : 'Guardar foto'}
+                  {procesando ? 'Procesando...' : 'Guardar'}
                 </button>
               </div>
             </>
