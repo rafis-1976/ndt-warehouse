@@ -15,8 +15,6 @@ const METODO_NOMBRE: Record<string, string> = {
   RT: 'Radiographic Testing',
   ET: 'Eddy Current Testing',
   TT: 'Thermographic Testing',
-  MT: 'Magnetic Particle Testing',
-  PT: 'Penetrant Testing',
 };
 
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
@@ -72,6 +70,18 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             padding: 0;
             background: white;
           }
+
+          .page {
+            page-break-after: always;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+          }
+          .page:last-child {
+            page-break-after: auto;
+          }
+
           .head {
             display: flex;
             align-items: center;
@@ -93,6 +103,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .doc-title h2 { margin: 0; font-size: 15px; color: #00205B; font-weight: 800; }
           .doc-title .sub { font-size: 9px; color: #666; }
           .doc-title .num { font-family: monospace; font-size: 11px; color: #111; margin-top: 2px; font-weight: 700; }
+          .doc-title .pagina { font-size: 9px; color: #666; margin-top: 2px; font-weight: 600; }
 
           .grid { display: grid; gap: 6px; margin-bottom: 10px; }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -230,7 +241,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
 
           .footer {
-            margin-top: 16px;
+            margin-top: auto;
             padding-top: 8px;
             border-top: 1px solid #ccc;
             font-size: 8px;
@@ -279,188 +290,275 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
         <p className="text-center py-8 text-gray-400">Cargando informe...</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div ref={printRef} className="p-6">
-            {/* HEADER */}
-            <div className="head">
-              <div className="brand">
-                <div className="brand-logo">I</div>
-                <div className="brand-text">
-                  <h1>IBERIA MANTENIMIENTO</h1>
-                  <p>DT/MNG AVIONES · TALLERES · NDT</p>
+          <div ref={printRef}>
+            {/* ============================================================
+                PÁGINA 1 — DATOS DE LA INSPECCIÓN
+                ============================================================ */}
+            <div className="page p-6">
+              <div className="head">
+                <div className="brand">
+                  <div className="brand-logo">I</div>
+                  <div className="brand-text">
+                    <h1>IBERIA MANTENIMIENTO</h1>
+                    <p>DT/MNG AVIONES · TALLERES · NDT</p>
+                  </div>
+                </div>
+                <div className="doc-title">
+                  <h2>END · INFORME DE INSPECCIÓN</h2>
+                  <div className="sub">NDT Inspection Report</div>
+                  <div className="num">{informe.numero_informe}</div>
+                  <div className="pagina">Página 1 de 2</div>
                 </div>
               </div>
-              <div className="doc-title">
-                <h2>END · INFORME DE INSPECCIÓN</h2>
-                <div className="sub">NDT Inspection Report</div>
-                <div className="num">{informe.numero_informe}</div>
-              </div>
-            </div>
 
-            {/* IDENTIFICACIÓN */}
-            <div className="section-title">Identificación</div>
-            <div className="grid grid-4">
-              <Box label="N° Informe" value={informe.numero_informe} mono />
-              <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
-              <Box label="Revisión" value={`Rev. ${informe.revision ?? 1}`} />
-              <Box
-                label="Fecha Inspección"
-                value={informe.fecha_inspeccion
-                  ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
-                  : '—'}
-              />
-            </div>
-
-            {/* AVIÓN / COMPONENTE */}
-            <div className="section-title">Aeronave / Componente</div>
-            <div className="grid grid-3">
-              <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
-              <Box label="Modelo" value={informe.modelo_aeronave || '—'} />
-              <Box label="N° Serie A/C" value={informe.numero_serie_aeronave || '—'} mono />
-              <Box label="Componente" value={informe.componente || '—'} />
-              <Box label="FR" value={informe.numero_fr || '—'} mono />
-              <Box label="Zona" value={informe.zona || '—'} />
-            </div>
-
-            {/* CERTIFICACIÓN */}
-            <div className="section-title">Certificación y Aprobación</div>
-            <div className="grid grid-4">
-              <Box label="Instalación" value={informe.estacion || '—'} />
-              <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
-              <Box label="UK CAA Ref." value={informe.uk_caa_ref || '—'} mono />
-              <Box label="Operador" value={informe.operador || '—'} />
-            </div>
-
-            {/* MÉTODO NDT */}
-            <div className="section-title">Método END (NDT Method)</div>
-            <div className="metodos">
-              {Object.entries(METODO_NOMBRE).map(([cod, nombre]) => (
-                <div
-                  key={cod}
-                  className={`metodo ${informe.metodo === cod ? 'activo' : ''}`}
-                  title={nombre}
-                >
-                  {cod}
-                </div>
-              ))}
-            </div>
-
-            {/* NTM */}
-            <div className="section-title">Norma NTM</div>
-            <div className="grid grid-2">
-              <Box label="NTM Doc. Ref." value={informe.ntm_referencia || '—'} mono />
-              <Box label="Step NTM" value={informe.ntm_step || '—'} mono />
-            </div>
-
-            {/* EQUIPO */}
-            {equipo && (
-              <>
-                <div className="section-title">Equipo NDT Utilizado</div>
-                <div className="grid grid-4">
-                  <Box label="ID Equipo" value={equipo.id_equipo || '—'} mono />
-                  <Box label="Nombre" value={equipo.nombre || '—'} />
-                  <Box label="Marca / Modelo" value={`${equipo.marca ?? ''} ${equipo.modelo ?? ''}`.trim() || '—'} />
-                  <Box label="N° Serie" value={equipo.numero_serie || '—'} mono />
-                  <Box label="Técnica" value={equipo.tecnicas_ndt?.codigo || '—'} />
-                  <Box label="Última calibración" value={equipo.ultima_calibracion || '—'} />
-                  <Box label="Próx. calibración" value={equipo.proxima_calibracion || '—'} />
-                  <Box label="Código barras" value={equipo.codigo_barras || '—'} mono />
-                </div>
-              </>
-            )}
-
-            {/* PROBETA */}
-            {probeta && (
-              <>
-                <div className="section-title">Probeta de Calibración</div>
-                <div className="grid grid-4">
-                  <Box label="P/N" value={probeta.pn || '—'} mono />
-                  <Box label="S/N" value={probeta.numero_serie || '—'} mono />
-                  <Box label="Nombre" value={probeta.nombre || '—'} />
-                  <Box label="Técnica" value={probeta.tecnicas_ndt?.codigo || '—'} />
-                  <Box label="Material" value={probeta.material || '—'} />
-                  <Box label="Dimensiones" value={probeta.dimensiones || '—'} />
-                  <Box label="Carro" value={probeta.carros?.codigo || '—'} mono />
-                  <Box label="Código barras" value={probeta.codigo_barras || '—'} mono />
-                </div>
-              </>
-            )}
-
-            {/* RESULTADO */}
-            <div className="section-title">Resultado de la Inspección</div>
-            <div className="mb-3">
-              <div className={`resultado ${informe.resultado || 'pendiente'}`}>
-                {informe.resultado === 'aprobado' && '✓ Aprobado'}
-                {informe.resultado === 'rechazado' && '✗ Rechazado'}
-                {informe.resultado === 'condicional' && '⚠ Condicional'}
-                {informe.resultado === 'pendiente' && '● Pendiente'}
-              </div>
-            </div>
-
-            {informe.hallazgos && (
-              <>
-                <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                  Hallazgos
-                </div>
-                <div className="texto-largo">{informe.hallazgos}</div>
-              </>
-            )}
-
-            {informe.conclusion && (
-              <>
-                <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                  Conclusión
-                </div>
-                <div className="texto-largo">{informe.conclusion}</div>
-              </>
-            )}
-
-            {informe.observaciones && (
-              <>
-                <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
-                  Observaciones
-                </div>
-                <div className="texto-largo">{informe.observaciones}</div>
-              </>
-            )}
-
-            {/* FIRMAS */}
-            <div className="firmas">
-              <div className="firma-box">
-                <div className="firma-label">Inspector / Firmante</div>
-                <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
-                <div className="firma-info">
-                  Licencia: {informe.inspector_licencia || '—'}
-                </div>
-                <div className="firma-info">{informe.inspector_email || ''}</div>
-                <div className="linea" />
-              </div>
-              <div className="firma-box" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="sello">{informe.sello_texto || 'IBERIA MANTENIMIENTO · NDT'}</div>
-              </div>
-            </div>
-
-            {/* BARCODE */}
-            {informe.numero_informe && (
-              <div className="barcode">
-                <BarcodeLib
-                  value={informe.numero_informe}
-                  format="CODE128"
-                  displayValue={false}
-                  height={40}
-                  width={1.5}
-                  margin={0}
-                  lineColor="#00205B"
+              {/* IDENTIFICACIÓN */}
+              <div className="section-title">Identificación</div>
+              <div className="grid grid-4">
+                <Box label="N° Informe" value={informe.numero_informe} mono />
+                <Box label="N° SAP" value={informe.numero_sap || '—'} mono />
+                <Box label="Revisión" value={`Rev. ${informe.revision ?? 1}`} />
+                <Box
+                  label="Fecha Inspección"
+                  value={informe.fecha_inspeccion
+                    ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
+                    : '—'}
                 />
-                <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
-                  {informe.numero_informe}
+              </div>
+
+              {/* AVIÓN / COMPONENTE */}
+              <div className="section-title">Aeronave / Componente</div>
+              <div className="grid grid-3">
+                <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
+                <Box label="Modelo" value={informe.modelo_aeronave || '—'} />
+                <Box label="N° Serie A/C" value={informe.numero_serie_aeronave || '—'} mono />
+                <Box label="Componente" value={informe.componente || '—'} />
+                <Box label="FR" value={informe.numero_fr || '—'} mono />
+                <Box label="Zona" value={informe.zona || '—'} />
+              </div>
+
+              {/* CERTIFICACIÓN */}
+              <div className="section-title">Certificación y Aprobación</div>
+              <div className="grid grid-4">
+                <Box label="Instalación" value={informe.estacion || '—'} />
+                <Box label="EASA Ref." value={informe.easa_ref || '—'} mono />
+                <Box label="UK CAA Ref." value={informe.uk_caa_ref || '—'} mono />
+                <Box label="Operador" value={informe.operador || '—'} />
+              </div>
+
+              {/* MÉTODO NDT */}
+              <div className="section-title">Método END (NDT Method)</div>
+              <div className="metodos">
+                {Object.entries(METODO_NOMBRE).map(([cod, nombre]) => (
+                  <div
+                    key={cod}
+                    className={`metodo ${informe.metodo === cod ? 'activo' : ''}`}
+                    title={nombre}
+                  >
+                    {cod}
+                  </div>
+                ))}
+              </div>
+
+              {/* NTM */}
+              <div className="section-title">Norma NTM</div>
+              <div className="grid grid-2">
+                <Box label="NTM Doc. Ref." value={informe.ntm_referencia || '—'} mono />
+                <Box label="Step NTM" value={informe.ntm_step || '—'} mono />
+              </div>
+
+              {/* RESULTADO */}
+              <div className="section-title">Resultado de la Inspección</div>
+              <div className="mb-3">
+                <div className={`resultado ${informe.resultado || 'pendiente'}`}>
+                  {informe.resultado === 'aprobado' && '✓ Aprobado'}
+                  {informe.resultado === 'rechazado' && '✗ Rechazado'}
+                  {informe.resultado === 'condicional' && '⚠ Condicional'}
+                  {informe.resultado === 'pendiente' && '● Pendiente'}
                 </div>
               </div>
-            )}
 
-            {/* FOOTER */}
-            <div className="footer">
-              Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
-              {informe.estado && ` · Estado: ${informe.estado.toUpperCase()}`}
+              {informe.hallazgos && (
+                <>
+                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
+                    Hallazgos
+                  </div>
+                  <div className="texto-largo">{informe.hallazgos}</div>
+                </>
+              )}
+
+              {informe.conclusion && (
+                <>
+                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
+                    Conclusión
+                  </div>
+                  <div className="texto-largo">{informe.conclusion}</div>
+                </>
+              )}
+
+              {informe.observaciones && (
+                <>
+                  <div style={{ fontSize: 9, fontWeight: 700, marginTop: 8, marginBottom: 3, textTransform: 'uppercase', color: '#666', letterSpacing: 0.5 }}>
+                    Observaciones
+                  </div>
+                  <div className="texto-largo">{informe.observaciones}</div>
+                </>
+              )}
+
+              {/* FIRMAS */}
+              <div className="firmas">
+                <div className="firma-box">
+                  <div className="firma-label">Inspector / Firmante</div>
+                  <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
+                  <div className="firma-info">
+                    Licencia: {informe.inspector_licencia || '—'}
+                  </div>
+                  <div className="firma-info">{informe.inspector_email || ''}</div>
+                  <div className="linea" />
+                </div>
+                <div className="firma-box" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="sello">{informe.sello_texto || 'IBERIA MANTENIMIENTO · NDT'}</div>
+                </div>
+              </div>
+
+              <div className="footer">
+                Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
+                {informe.estado && ` · Estado: ${informe.estado.toUpperCase()}`}
+              </div>
+            </div>
+
+            {/* ============================================================
+                PÁGINA 2 — EQUIPOS Y PROBETAS UTILIZADOS
+                ============================================================ */}
+            <div className="page p-6">
+              <div className="head">
+                <div className="brand">
+                  <div className="brand-logo">I</div>
+                  <div className="brand-text">
+                    <h1>IBERIA MANTENIMIENTO</h1>
+                    <p>DT/MNG AVIONES · TALLERES · NDT</p>
+                  </div>
+                </div>
+                <div className="doc-title">
+                  <h2>END · INFORME DE INSPECCIÓN</h2>
+                  <div className="sub">NDT Inspection Report</div>
+                  <div className="num">{informe.numero_informe}</div>
+                  <div className="pagina">Página 2 de 2</div>
+                </div>
+              </div>
+
+              {/* EQUIPO UTILIZADO */}
+              <div className="section-title">Equipo NDT Utilizado</div>
+              {equipo ? (
+                <>
+                  <div className="grid grid-3">
+                    <Box label="ID Equipo" value={equipo.id_equipo || '—'} mono />
+                    <Box label="Nombre" value={equipo.nombre || '—'} />
+                    <Box label="Técnica" value={equipo.tecnicas_ndt?.codigo || '—'} />
+                    <Box label="Marca" value={equipo.marca || '—'} />
+                    <Box label="Modelo" value={equipo.modelo || '—'} />
+                    <Box label="N° Serie" value={equipo.numero_serie || '—'} mono />
+                    <Box label="Última calibración" value={equipo.ultima_calibracion || '—'} />
+                    <Box label="Próx. calibración" value={equipo.proxima_calibracion || '—'} />
+                    <Box label="Código de barras" value={equipo.codigo_barras || '—'} mono />
+                  </div>
+
+                  {equipo.codigo_barras && (
+                    <div className="barcode" style={{ marginTop: 8, marginBottom: 8 }}>
+                      <BarcodeLib
+                        value={equipo.codigo_barras}
+                        format="CODE128"
+                        displayValue={false}
+                        height={40}
+                        width={1.5}
+                        margin={0}
+                        lineColor="#00205B"
+                      />
+                      <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
+                        {equipo.codigo_barras}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
+                  No se ha asignado ningún equipo a este informe
+                </div>
+              )}
+
+              {/* PROBETA UTILIZADA */}
+              <div className="section-title">Probeta de Calibración</div>
+              {probeta ? (
+                <>
+                  <div className="grid grid-3">
+                    <Box label="P/N" value={probeta.pn || '—'} mono />
+                    <Box label="Nombre" value={probeta.nombre || '—'} />
+                    <Box label="Técnica" value={probeta.tecnicas_ndt?.codigo || '—'} />
+                    <Box label="N° Serie" value={probeta.numero_serie || '—'} mono />
+                    <Box label="Material" value={probeta.material || '—'} />
+                    <Box label="Dimensiones" value={probeta.dimensiones || '—'} />
+                    <Box label="Carro" value={probeta.carros?.codigo || '—'} mono />
+                    <Box label="Nombre Carro" value={probeta.carros?.nombre || '—'} />
+                    <Box label="Código de barras" value={probeta.codigo_barras || '—'} mono />
+                  </div>
+
+                  {probeta.codigo_barras && (
+                    <div className="barcode" style={{ marginTop: 8, marginBottom: 8 }}>
+                      <BarcodeLib
+                        value={probeta.codigo_barras}
+                        format="CODE128"
+                        displayValue={false}
+                        height={40}
+                        width={1.5}
+                        margin={0}
+                        lineColor="#00205B"
+                      />
+                      <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
+                        {probeta.codigo_barras}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
+                  No se ha asignado ninguna probeta a este informe
+                </div>
+              )}
+
+              {/* TRAZABILIDAD */}
+              <div className="section-title">Trazabilidad</div>
+              <div className="grid grid-2">
+                <Box label="N° Informe" value={informe.numero_informe} mono />
+                <Box
+                  label="Fecha Inspección"
+                  value={informe.fecha_inspeccion
+                    ? new Date(informe.fecha_inspeccion).toLocaleDateString('es-ES')
+                    : '—'}
+                />
+                <Box label="Inspector" value={informe.inspector_nombre || '—'} />
+                <Box label="Licencia Inspector" value={informe.inspector_licencia || '—'} mono />
+              </div>
+
+              {informe.numero_informe && (
+                <div className="barcode" style={{ marginTop: 8 }}>
+                  <BarcodeLib
+                    value={informe.numero_informe}
+                    format="CODE128"
+                    displayValue={false}
+                    height={40}
+                    width={1.5}
+                    margin={0}
+                    lineColor="#00205B"
+                  />
+                  <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
+                    {informe.numero_informe}
+                  </div>
+                </div>
+              )}
+
+              <div className="footer">
+                Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
+                {informe.estado && ` · Estado: ${informe.estado.toUpperCase()}`}
+              </div>
             </div>
           </div>
         </div>
