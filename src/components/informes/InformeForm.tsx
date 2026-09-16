@@ -24,6 +24,13 @@ const ESTACIONES = [
   { value: 'BARCELONA', label: 'Barcelona' },
 ];
 
+const RESULTADOS = [
+  { value: 'aprobado',    label: 'Aprobado',    color: 'green'  },
+  { value: 'condicional', label: 'Condicional', color: 'orange' },
+  { value: 'rechazado',   label: 'Rechazado',   color: 'red'    },
+  { value: 'pendiente',   label: 'Pendiente',   color: 'gray'   },
+];
+
 interface EquipoStepData {
   id: string;
   id_equipo: string | null;
@@ -46,6 +53,7 @@ interface NtmStep {
   step: string;
   metodo: string;
   fecha: string;
+  resultado: string;
   equipos: EquipoStepData[];
   probetas: ProbetaStepData[];
   inspector_nombre: string;
@@ -70,6 +78,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       step: '',
       metodo: 'ET',
       fecha: hoy,
+      resultado: 'pendiente',
       equipos: [],
       probetas: [],
       inspector_nombre: '',
@@ -97,7 +106,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
 
     seleccionar: '',
 
-    resultado: 'pendiente',
     hallazgos: '',
     conclusion: '',
     observaciones: '',
@@ -119,7 +127,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     }));
   }, [informeId]);
 
-  // Cargar equipos, probetas e inspectores
   useEffect(() => {
     async function load() {
       const userRes = await supabase.auth.getUser();
@@ -167,7 +174,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     load();
   }, []);
 
-  // Cargar el informe si estamos editando
   useEffect(() => {
     if (!informeId) {
       setLoadingData(false);
@@ -212,7 +218,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           operador: data.operador ?? 'IBERIA',
           cliente: data.cliente ?? '',
           seleccionar: data.seleccionar ?? '',
-          resultado: data.resultado ?? 'pendiente',
           hallazgos: data.hallazgos ?? '',
           conclusion: data.conclusion ?? '',
           observaciones: data.observaciones ?? '',
@@ -221,31 +226,25 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           estado: data.estado ?? 'borrador',
         });
 
-        // ==================================================
-        // CARGAR STEPS — con lectura explícita de equipos y probetas
-        // ==================================================
         let stepsRaw: any[] = [];
-
-        if (data.ntm_steps) {
-          if (Array.isArray(data.ntm_steps)) {
-            stepsRaw = data.ntm_steps;
-          } else if (typeof data.ntm_steps === 'string') {
-            try {
-              const parsed = JSON.parse(data.ntm_steps);
-              if (Array.isArray(parsed)) stepsRaw = parsed;
-            } catch (e) {
-              console.error('[InformeForm] Error parseando ntm_steps:', e);
-            }
+        if (Array.isArray(data.ntm_steps)) {
+          stepsRaw = data.ntm_steps;
+        } else if (typeof data.ntm_steps === 'string') {
+          try {
+            const parsed = JSON.parse(data.ntm_steps);
+            if (Array.isArray(parsed)) stepsRaw = parsed;
+          } catch (e) {
+            console.error('[InformeForm] Error parseando ntm_steps:', e);
           }
         }
 
-        // Fallback a formato antiguo
         if (stepsRaw.length === 0 && (data.ntm_referencia || data.ntm_step)) {
           stepsRaw = [{
             ntm: data.ntm_referencia ?? '',
             step: data.ntm_step ?? '',
             metodo: data.metodo ?? 'ET',
             fecha: data.fecha_inspeccion ?? hoy,
+            resultado: data.resultado ?? 'pendiente',
             equipos: [],
             probetas: [],
             inspector_nombre: data.inspector_nombre ?? '',
@@ -280,14 +279,13 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             step: String(s?.step ?? ''),
             metodo: String(s?.metodo ?? 'ET'),
             fecha: String(s?.fecha ?? data.fecha_inspeccion ?? hoy),
+            resultado: String(s?.resultado ?? 'pendiente'),
             equipos: equiposStep,
             probetas: probetasStep,
             inspector_nombre: String(s?.inspector_nombre ?? ''),
             inspector_id: s?.inspector_id ?? null,
           };
         });
-
-        console.log('[InformeForm] Steps cargados desde DB:', stepsNormalizados);
 
         if (stepsNormalizados.length > 0) {
           setNtmSteps(stepsNormalizados);
@@ -312,6 +310,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         step: '',
         metodo: 'ET',
         fecha: hoy,
+        resultado: 'pendiente',
         equipos: [],
         probetas: [],
         inspector_nombre: form.inspector_nombre,
@@ -359,57 +358,55 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     if (!form.numero_informe.trim()) return setError('El N° de informe es obligatorio');
     if (ntmSteps.length === 0) return setError('Añade al menos un NTM/Step');
 
+    // Validar cada step
+    for (let i = 0; i < ntmSteps.length; i++) {
+      const s = ntmSteps[i];
+      const pref = `Step ${i + 1}:`;
+      if (!s.ntm.trim()) return setError(`${pref} el campo NTM Doc. Ref. es obligatorio`);
+      if (!s.step.trim()) return setError(`${pref} el campo Step es obligatorio`);
+      if (!s.fecha) return setError(`${pref} la fecha de realización es obligatoria`);
+      if (s.equipos.length === 0) return setError(`${pref} añade al menos un equipo`);
+      if (s.probetas.length === 0) return setError(`${pref} añade al menos una probeta`);
+      if (!s.inspector_nombre.trim()) return setError(`${pref} selecciona el inspector`);
+    }
+
     setLoading(true);
     try {
-      // ==================================================
-      // CONSTRUIR ntm_steps — asegurando que equipos y probetas se guardan
-      // ==================================================
-      const ntmStepsLimpio = ntmSteps.map((s) => {
-        const equiposPayload = (s.equipos || []).map((e) => ({
+      const ntmStepsFinal = ntmSteps.map((s) => ({
+        ntm: s.ntm.trim(),
+        step: s.step.trim(),
+        metodo: s.metodo || '',
+        fecha: s.fecha || '',
+        resultado: s.resultado || 'pendiente',
+        equipos: (s.equipos || []).map((e) => ({
           id: e.id,
           id_equipo: e.id_equipo,
           nombre: e.nombre,
           numero_serie: e.numero_serie,
           proxima_calibracion: e.proxima_calibracion,
           tecnica_codigo: e.tecnica_codigo ?? null,
-        }));
-
-        const probetasPayload = (s.probetas || []).map((p) => ({
+        })),
+        probetas: (s.probetas || []).map((p) => ({
           id: p.id,
           pn: p.pn,
           nombre: p.nombre,
           numero_serie: p.numero_serie,
           tecnica_codigo: p.tecnica_codigo ?? null,
-        }));
+        })),
+        inspector_nombre: s.inspector_nombre.trim(),
+        inspector_id: s.inspector_id ?? null,
+      }));
 
-        return {
-          ntm: s.ntm.trim(),
-          step: s.step.trim(),
-          metodo: s.metodo || '',
-          fecha: s.fecha || '',
-          equipos: equiposPayload,
-          probetas: probetasPayload,
-          inspector_nombre: s.inspector_nombre?.trim() || '',
-          inspector_id: s.inspector_id ?? null,
-        };
-      });
-
-      // Conservar los steps aunque no tengan ntm o step, mientras tengan contenido
-      const ntmStepsFinal = ntmStepsLimpio.filter(
-        (s) =>
-          s.ntm ||
-          s.step ||
-          s.equipos.length > 0 ||
-          s.probetas.length > 0 ||
-          s.inspector_nombre
-      );
-
-      console.log('[InformeForm] Guardando ntm_steps:', JSON.stringify(ntmStepsFinal));
+      // El resultado global se calcula como el "peor" de todos los steps (por compatibilidad)
+      const prioridad: Record<string, number> = {
+        rechazado: 4, condicional: 3, aprobado: 2, pendiente: 1,
+      };
+      const resultadoGlobal = ntmStepsFinal
+        .map((s) => s.resultado)
+        .sort((a, b) => (prioridad[b] ?? 0) - (prioridad[a] ?? 0))[0] ?? 'pendiente';
 
       const fechasValidas = ntmStepsFinal.map((s) => s.fecha).filter((f) => !!f);
-      const fechaGlobal = fechasValidas.length > 0
-        ? fechasValidas.sort().slice(-1)[0]
-        : null;
+      const fechaGlobal = fechasValidas.length > 0 ? fechasValidas.sort().slice(-1)[0] : null;
 
       const metodoPrincipal = ntmStepsFinal[0]?.metodo ?? '';
 
@@ -436,7 +433,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         seleccionar: form.seleccionar.trim() || null,
         equipo_id: ntmStepsFinal[0]?.equipos?.[0]?.id ?? null,
         probeta_id: ntmStepsFinal[0]?.probetas?.[0]?.id ?? null,
-        resultado: form.resultado,
+        resultado: resultadoGlobal,
         hallazgos: form.hallazgos.trim() || null,
         conclusion: form.conclusion.trim() || null,
         observaciones: form.observaciones.trim() || null,
@@ -448,22 +445,16 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       };
 
       if (informeId) {
-        const { data: updated, error } = await supabase
+        const { error } = await supabase
           .from('informes')
           .update(payload)
-          .eq('id', informeId)
-          .select('id, ntm_steps')
-          .single();
+          .eq('id', informeId);
         if (error) throw error;
-        console.log('[InformeForm] Guardado OK. Steps en DB:', updated?.ntm_steps);
       } else {
-        const { data: inserted, error } = await supabase
+        const { error } = await supabase
           .from('informes')
-          .insert(payload)
-          .select('id, ntm_steps')
-          .single();
+          .insert(payload);
         if (error) throw error;
-        console.log('[InformeForm] Insertado OK. Steps en DB:', inserted?.ntm_steps);
       }
       onSuccess();
     } catch (err: any) {
@@ -630,8 +621,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Añade cada NTM/Step. Solo aparecerán los equipos y probetas que correspondan
-            a la técnica seleccionada en cada step.
+            Todos los campos de cada step son <strong>obligatorios</strong>:
+            NTM, Step, fecha, técnica, al menos un equipo, al menos una probeta,
+            inspector y resultado.
           </p>
         </div>
 
@@ -662,58 +654,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         </div>
       </Section>
 
-      <Section title="Resultado global de la inspección">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => update('resultado', 'pendiente')}
-            className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 transition ${
-              form.resultado === 'pendiente'
-                ? 'bg-gray-500 text-white border-gray-500'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-            }`}
-          >
-            <Calendar className="w-5 h-5" />
-            <span className="text-xs font-semibold">Pendiente</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => update('resultado', 'aprobado')}
-            className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 transition ${
-              form.resultado === 'aprobado'
-                ? 'bg-airbus-green text-white border-airbus-green'
-                : 'bg-white text-airbus-green border-airbus-green/30 hover:bg-airbus-green/5'
-            }`}
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="text-xs font-semibold">Aprobado</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => update('resultado', 'condicional')}
-            className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 transition ${
-              form.resultado === 'condicional'
-                ? 'bg-airbus-orange text-white border-airbus-orange'
-                : 'bg-white text-airbus-orange border-airbus-orange/30 hover:bg-airbus-orange/5'
-            }`}
-          >
-            <AlertTriangle className="w-5 h-5" />
-            <span className="text-xs font-semibold">Condicional</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => update('resultado', 'rechazado')}
-            className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 transition ${
-              form.resultado === 'rechazado'
-                ? 'bg-airbus-red text-white border-airbus-red'
-                : 'bg-white text-airbus-red border-airbus-red/30 hover:bg-airbus-red/5'
-            }`}
-          >
-            <XCircle className="w-5 h-5" />
-            <span className="text-xs font-semibold">Rechazado</span>
-          </button>
-        </div>
-
+      <Section title="Hallazgos, conclusión y observaciones">
         <div className="space-y-4">
           <Field label="Hallazgos">
             <textarea
@@ -836,12 +777,8 @@ function NtmStepCard({
   const [equipoSel, setEquipoSel] = useState('');
   const [probetaSel, setProbetaSel] = useState('');
 
-  const equiposDeLaTecnica = equipos.filter(
-    (e) => e.tecnicas_ndt?.codigo === step.metodo
-  );
-  const probetasDeLaTecnica = probetas.filter(
-    (p) => p.tecnicas_ndt?.codigo === step.metodo
-  );
+  const equiposDeLaTecnica = equipos.filter((e) => e.tecnicas_ndt?.codigo === step.metodo);
+  const probetasDeLaTecnica = probetas.filter((p) => p.tecnicas_ndt?.codigo === step.metodo);
 
   const equiposDisponibles = equiposDeLaTecnica.filter(
     (e) => !step.equipos.some((s) => s.id === e.id)
@@ -906,6 +843,14 @@ function NtmStepCard({
     }
   };
 
+  // Color del resultado para el badge de la cabecera
+  const resultColor: Record<string, string> = {
+    aprobado:    'bg-airbus-green text-white',
+    condicional: 'bg-airbus-orange text-white',
+    rechazado:   'bg-airbus-red text-white',
+    pendiente:   'bg-gray-500 text-white',
+  };
+
   return (
     <div className="border-2 border-airbus-sky/40 rounded-xl overflow-hidden bg-white">
       <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-airbus-blue to-airbus-navy text-white">
@@ -923,13 +868,9 @@ function NtmStepCard({
           ) : (
             <ChevronRight className="w-4 h-4 shrink-0" />
           )}
-          <span className="font-mono text-xs truncate">
-            {step.ntm || 'Sin NTM'}
-          </span>
+          <span className="font-mono text-xs truncate">{step.ntm || 'Sin NTM'}</span>
           {step.step && (
-            <span className="text-[10px] opacity-80 truncate">
-              · {step.step}
-            </span>
+            <span className="text-[10px] opacity-80 truncate">· {step.step}</span>
           )}
           {step.metodo && (
             <span className="px-2 py-0.5 bg-white/20 rounded-full text-[10px] font-bold shrink-0">
@@ -937,9 +878,7 @@ function NtmStepCard({
             </span>
           )}
           {step.fecha && (
-            <span className="text-[10px] opacity-80 shrink-0">
-              · {fmtFecha(step.fecha)}
-            </span>
+            <span className="text-[10px] opacity-80 shrink-0">· {fmtFecha(step.fecha)}</span>
           )}
           {(step.equipos.length > 0 || step.probetas.length > 0) && (
             <span className="text-[10px] opacity-80 shrink-0">
@@ -947,6 +886,12 @@ function NtmStepCard({
             </span>
           )}
         </button>
+
+        {step.resultado && (
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${resultColor[step.resultado] ?? 'bg-gray-500'}`}>
+            {step.resultado}
+          </span>
+        )}
 
         {canRemove && (
           <button
@@ -962,46 +907,51 @@ function NtmStepCard({
 
       {expandido && (
         <div className="p-4 space-y-5">
+          {/* NTM + STEP + FECHA */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                NTM Doc. Ref.
+                NTM Doc. Ref. *
               </label>
               <input
                 className="input font-mono"
                 value={step.ntm}
                 onChange={(e) => onUpdate({ ntm: e.target.value.toUpperCase() })}
                 placeholder="NTM 51-10-01"
+                required
               />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                Step
+                Step *
               </label>
               <input
                 className="input font-mono"
                 value={step.step}
                 onChange={(e) => onUpdate({ step: e.target.value })}
                 placeholder="Step 5.A.3"
+                required
               />
             </div>
             <div>
               <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
                 <Calendar className="w-3 h-3" />
-                Fecha de realización
+                Fecha de realización *
               </label>
               <input
                 type="date"
                 className="input"
                 value={step.fecha}
                 onChange={(e) => onUpdate({ fecha: e.target.value })}
+                required
               />
             </div>
           </div>
 
+          {/* TÉCNICA */}
           <div>
             <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Técnica END utilizada
+              Técnica END utilizada *
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {METODOS.map((m) => {
@@ -1027,10 +977,11 @@ function NtmStepCard({
             </div>
           </div>
 
+          {/* EQUIPOS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Package className="w-3 h-3" />
-              Equipos utilizados ({step.equipos.length})
+              Equipos utilizados * ({step.equipos.length})
               <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
                 {step.metodo || '—'} · {equiposDeLaTecnica.length} disponible{equiposDeLaTecnica.length !== 1 ? 's' : ''}
               </span>
@@ -1047,9 +998,7 @@ function NtmStepCard({
                     <span className="font-mono font-bold text-airbus-blue text-xs shrink-0">
                       {eq.id_equipo ?? '—'}
                     </span>
-                    <span className="text-xs text-gray-700 truncate flex-1">
-                      {eq.nombre}
-                    </span>
+                    <span className="text-xs text-gray-700 truncate flex-1">{eq.nombre}</span>
                     {eq.numero_serie && (
                       <span className="text-[10px] font-mono text-gray-400 truncate hidden sm:inline">
                         S/N: {eq.numero_serie}
@@ -1083,8 +1032,7 @@ function NtmStepCard({
                 </option>
                 {equiposDisponibles.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.id_equipo ? `[${e.id_equipo}] ` : ''}
-                    {e.nombre}
+                    {e.id_equipo ? `[${e.id_equipo}] ` : ''}{e.nombre}
                   </option>
                 ))}
               </select>
@@ -1098,22 +1046,13 @@ function NtmStepCard({
                 Añadir
               </button>
             </div>
-
-            {equiposDeLaTecnica.length === 0 && step.metodo && (
-              <div className="mt-2 flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-[11px] p-2.5 rounded-lg">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <p>
-                  No hay equipos registrados con la técnica <strong>{step.metodo}</strong>.
-                  Añádelos desde la sección "Equipos" o cambia la técnica del step.
-                </p>
-              </div>
-            )}
           </div>
 
+          {/* PROBETAS */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Hash className="w-3 h-3" />
-              Probetas utilizadas ({step.probetas.length})
+              Probetas utilizadas * ({step.probetas.length})
               <span className="ml-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[9px] font-bold normal-case tracking-normal">
                 {step.metodo || '—'} · {probetasDeLaTecnica.length} disponible{probetasDeLaTecnica.length !== 1 ? 's' : ''}
               </span>
@@ -1127,12 +1066,8 @@ function NtmStepCard({
                     className="flex items-center gap-2 px-2.5 py-2 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg"
                   >
                     <Hash className="w-3.5 h-3.5 text-airbus-sky shrink-0" />
-                    <span className="font-mono font-bold text-airbus-sky text-xs shrink-0">
-                      {pb.pn}
-                    </span>
-                    <span className="text-xs text-gray-700 truncate flex-1">
-                      {pb.nombre}
-                    </span>
+                    <span className="font-mono font-bold text-airbus-sky text-xs shrink-0">{pb.pn}</span>
+                    <span className="text-xs text-gray-700 truncate flex-1">{pb.nombre}</span>
                     {pb.numero_serie && (
                       <span className="text-[10px] font-mono text-gray-400 truncate hidden sm:inline">
                         S/N: {pb.numero_serie}
@@ -1165,9 +1100,7 @@ function NtmStepCard({
                       : '— Selecciona una probeta —'}
                 </option>
                 {probetasDisponibles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.pn} · {p.nombre}
-                  </option>
+                  <option key={p.id} value={p.id}>{p.pn} · {p.nombre}</option>
                 ))}
               </select>
               <button
@@ -1180,22 +1113,13 @@ function NtmStepCard({
                 Añadir
               </button>
             </div>
-
-            {probetasDeLaTecnica.length === 0 && step.metodo && (
-              <div className="mt-2 flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-[11px] p-2.5 rounded-lg">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <p>
-                  No hay probetas registradas con la técnica <strong>{step.metodo}</strong>.
-                  Añádelas desde la sección "Carros" o cambia la técnica del step.
-                </p>
-              </div>
-            )}
           </div>
 
+          {/* INSPECTOR */}
           <div>
             <label className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <User className="w-3 h-3" />
-              Inspector que realizó esta inspección
+              Inspector que realizó esta inspección *
             </label>
             <select
               className="input"
@@ -1223,6 +1147,7 @@ function NtmStepCard({
                   });
                 }
               }}
+              required
             >
               <option value="">— Sin asignar —</option>
               {inspectores.map((i) => (
@@ -1237,12 +1162,43 @@ function NtmStepCard({
                 </option>
               )}
             </select>
-            {step.inspector_nombre && (
-              <p className="mt-1 text-[11px] text-airbus-green flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                {step.inspector_nombre}
-              </p>
-            )}
+          </div>
+
+          {/* RESULTADO DEL STEP */}
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Resultado de la inspección *
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {RESULTADOS.map((r) => {
+                const activo = step.resultado === r.value;
+                const activeClass: Record<string, string> = {
+                  green:  'bg-airbus-green text-white border-airbus-green shadow-sm',
+                  orange: 'bg-airbus-orange text-white border-airbus-orange shadow-sm',
+                  red:    'bg-airbus-red text-white border-airbus-red shadow-sm',
+                  gray:   'bg-gray-500 text-white border-gray-500 shadow-sm',
+                };
+                const Icone = r.value === 'aprobado' ? CheckCircle2
+                  : r.value === 'rechazado' ? XCircle
+                  : r.value === 'condicional' ? AlertTriangle
+                  : Calendar;
+                return (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => onUpdate({ resultado: r.value })}
+                    className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition ${
+                      activo
+                        ? activeClass[r.color]
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icone className="w-4 h-4" />
+                    <span className="text-xs font-semibold">{r.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
