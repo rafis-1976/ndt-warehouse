@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Package, ArrowRight, Building2,
-  Warehouse, Users, Calendar, Truck, CornerDownLeft, Hash,
+  Warehouse, Users, Calendar, Truck, CornerDownLeft, Hash, Info,
 } from 'lucide-react';
 import { EquipoSelect, type EquipoOption } from '../ui/EquipoSelect';
 
@@ -83,11 +83,48 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
 
   const tipoMovActual = tiposMovimiento.find((t) => t.value === form.tipo);
   const requiereDestinoExterno = !!tipoMovActual?.requiereDestinoExterno;
+  const esEntrada = form.tipo === 'entrada';
 
-  const probetaSeleccionada = probetas.find((p) => p.id === form.probeta_id);
+  // ============================================================
+  // FILTRADO: solo mostramos objetos que estén dentro del almacén,
+  // EXCEPTO cuando el tipo es 'entrada' (para poder recuperarlos)
+  // ============================================================
+  const equiposDisponibles = useMemo(() => {
+    if (esEntrada) {
+      // En entrada: mostrar solo los que están FUERA del almacén (para recuperarlos)
+      return equipos.filter((e: any) => e.estado === 'salida');
+    }
+    // En cualquier otro tipo: mostrar solo los que están DENTRO
+    return equipos.filter((e: any) => e.estado !== 'salida');
+  }, [equipos, esEntrada]);
+
+  const probetasDisponibles = useMemo(() => {
+    if (esEntrada) {
+      return probetas.filter((p) => p.estado === 'salida');
+    }
+    return probetas.filter((p) => p.estado !== 'salida');
+  }, [probetas, esEntrada]);
+
+  // Si al cambiar el tipo de movimiento, el objeto seleccionado ya no es válido, lo limpiamos
+  useEffect(() => {
+    if (tipoObjeto === 'equipo') {
+      const sigueValido = equiposDisponibles.some((e) => e.id === form.equipo_id);
+      if (form.equipo_id && !sigueValido) {
+        setForm((f) => ({ ...f, equipo_id: '', ubicacion_origen: '' }));
+      }
+    } else {
+      const sigueValido = probetasDisponibles.some((p) => p.id === form.probeta_id);
+      if (form.probeta_id && !sigueValido) {
+        setForm((f) => ({ ...f, probeta_id: '' }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.tipo, tipoObjeto, equiposDisponibles, probetasDisponibles]);
+
+  const probetaSeleccionada = probetasDisponibles.find((p) => p.id === form.probeta_id);
 
   const handleEquipoChange = (id: string) => {
-    const eq = equipos.find((e) => e.id === id) as any;
+    const eq = equiposDisponibles.find((e) => e.id === id) as any;
     setForm((f) => ({
       ...f,
       equipo_id: id,
@@ -108,18 +145,29 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
     e.preventDefault();
     setError('');
 
-    if (tipoObjeto === 'equipo' && !form.equipo_id) return setError('Selecciona un equipo');
-    if (tipoObjeto === 'probeta' && !form.probeta_id) return setError('Selecciona una probeta');
+    if (tipoObjeto === 'equipo' && !form.equipo_id) {
+      return setError(
+        esEntrada
+          ? 'Selecciona un equipo que esté fuera del almacén para recuperarlo'
+          : 'Selecciona un equipo'
+      );
+    }
+    if (tipoObjeto === 'probeta' && !form.probeta_id) {
+      return setError(
+        esEntrada
+          ? 'Selecciona una probeta que esté fuera del almacén para recuperarla'
+          : 'Selecciona una probeta'
+      );
+    }
 
     if (requiereDestinoExterno) {
       if (!form.destino_tipo) return setError('Selecciona el tipo de destino');
       if (!form.destino_nombre.trim()) return setError('Indica el nombre del destino');
     }
 
-    // Confirmación extra para salida del almacén
     if (form.tipo === 'salida') {
       const nombre = tipoObjeto === 'equipo'
-        ? (equipos.find((e) => e.id === form.equipo_id) as any)?.nombre
+        ? (equiposDisponibles.find((e) => e.id === form.equipo_id) as any)?.nombre
         : probetaSeleccionada?.nombre;
       const confirmar = confirm(
         `⚠️ ¿Confirmar SALIDA DEFINITIVA del almacén?\n\n` +
@@ -151,7 +199,6 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
       const { error: insErr } = await supabase.from('movimientos').insert(payload);
       if (insErr) throw insErr;
 
-      // Aplicar efectos según tipo de movimiento
       if (tipoObjeto === 'equipo') {
         if (form.tipo === 'transferencia' && form.ubicacion_destino.trim()) {
           await supabase
@@ -163,23 +210,19 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         } else if (form.tipo === 'devolucion_externa') {
           await supabase.from('equipos').update({ estado: 'disponible' }).eq('id', form.equipo_id);
         } else if (form.tipo === 'salida') {
-          // Sale del almacén: desaparece de listados
           await supabase.from('equipos').update({ estado: 'salida' }).eq('id', form.equipo_id);
         } else if (form.tipo === 'entrada') {
-          // Vuelve al almacén: recupera disponibilidad
           const { data: eqActual } = await supabase
             .from('equipos')
             .select('estado, proxima_calibracion')
             .eq('id', form.equipo_id)
             .single();
-          if (eqActual?.estado === 'salida') {
-            const vencida = eqActual.proxima_calibracion &&
-              new Date(eqActual.proxima_calibracion) < new Date();
-            await supabase
-              .from('equipos')
-              .update({ estado: vencida ? 'pendiente_calibracion' : 'disponible' })
-              .eq('id', form.equipo_id);
-          }
+          const vencida = eqActual?.proxima_calibracion &&
+            new Date(eqActual.proxima_calibracion) < new Date();
+          await supabase
+            .from('equipos')
+            .update({ estado: vencida ? 'pendiente_calibracion' : 'disponible' })
+            .eq('id', form.equipo_id);
         }
       } else {
         if (form.tipo === 'prestamo_externo') {
@@ -214,8 +257,13 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
 
   const IconoTipoDestino = tiposDestino.find((t) => t.value === form.destino_tipo)?.icon ?? Building2;
 
+  const sinDisponibles =
+    (tipoObjeto === 'equipo' && equiposDisponibles.length === 0) ||
+    (tipoObjeto === 'probeta' && probetasDisponibles.length === 0);
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* TIPO DE OBJETO */}
       <Section title="¿Qué se mueve?">
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -245,73 +293,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </div>
       </Section>
 
-      <Section title={tipoObjeto === 'equipo' ? 'Equipo' : 'Probeta'}>
-        {tipoObjeto === 'equipo' ? (
-          <EquipoSelect
-            equipos={equipos}
-            value={form.equipo_id}
-            onChange={handleEquipoChange}
-            placeholder="— Selecciona un equipo —"
-          />
-        ) : (
-          <>
-            <select
-              className="input"
-              value={form.probeta_id}
-              onChange={(e) => handleProbetaChange(e.target.value)}
-            >
-              <option value="">— Selecciona una probeta —</option>
-              {probetas.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.pn} · {p.nombre}
-                  {p.carros?.codigo ? ` (${p.carros.codigo}${p.num_bandeja ? ` · B${p.num_bandeja}` : ''})` : ''}
-                </option>
-              ))}
-            </select>
-
-            {probetaSeleccionada && (
-              <div className="mt-3 p-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg flex items-center gap-3">
-                <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
-                  <Hash className="w-5 h-5 text-airbus-sky" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono font-bold text-airbus-blue text-xs">
-                    {probetaSeleccionada.pn}
-                  </p>
-                  <p className="text-sm font-medium text-gray-800 truncate">
-                    {probetaSeleccionada.nombre}
-                  </p>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {probetaSeleccionada.codigo_barras && (
-                      <span className="text-[10px] font-mono text-gray-500">
-                        {probetaSeleccionada.codigo_barras}
-                      </span>
-                    )}
-                    {probetaSeleccionada.carros?.codigo && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded text-[9px] font-bold">
-                        {probetaSeleccionada.carros.codigo}
-                        {probetaSeleccionada.num_bandeja ? ` · B${probetaSeleccionada.num_bandeja}` : ''}
-                      </span>
-                    )}
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                      probetaSeleccionada.estado === 'disponible'
-                        ? 'bg-airbus-green/15 text-airbus-green'
-                        : probetaSeleccionada.estado === 'prestado'
-                          ? 'bg-airbus-orange/15 text-airbus-orange'
-                          : probetaSeleccionada.estado === 'salida'
-                            ? 'bg-airbus-red/15 text-airbus-red'
-                            : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {probetaSeleccionada.estado}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </Section>
-
+      {/* TIPO DE MOVIMIENTO */}
       <Section title="Tipo de movimiento">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {tiposMovimiento.map((t) => {
@@ -359,8 +341,117 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
             </div>
           </div>
         )}
+
+        {esEntrada && (
+          <div className="mt-3 flex items-start gap-2 bg-airbus-green/10 border border-airbus-green/30 text-airbus-green text-xs p-3 rounded-lg">
+            <Info className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Recuperar objeto fuera del almacén</p>
+              <p className="opacity-80 mt-0.5">
+                Solo se muestran los equipos y probetas que actualmente están fuera del
+                almacén (estado "salida"). Al guardar volverán al inventario.
+              </p>
+            </div>
+          </div>
+        )}
       </Section>
 
+      {/* OBJETO */}
+      <Section title={tipoObjeto === 'equipo' ? 'Equipo' : 'Probeta'}>
+        {sinDisponibles ? (
+          <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg text-center">
+            {esEntrada ? (
+              <>
+                <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 font-medium mb-1">
+                  No hay {tipoObjeto === 'equipo' ? 'equipos' : 'probetas'} fuera del almacén
+                </p>
+                <p className="text-xs text-gray-400">
+                  Todos los objetos de este tipo están actualmente en el inventario.
+                </p>
+              </>
+            ) : (
+              <>
+                <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 font-medium mb-1">
+                  No hay {tipoObjeto === 'equipo' ? 'equipos' : 'probetas'} disponibles
+                </p>
+                <p className="text-xs text-gray-400">
+                  Todos los objetos de este tipo están fuera del almacén.
+                  <br />
+                  Si quieres recuperar uno, selecciona el tipo de movimiento "Entrada al almacén".
+                </p>
+              </>
+            )}
+          </div>
+        ) : tipoObjeto === 'equipo' ? (
+          <EquipoSelect
+            equipos={equiposDisponibles}
+            value={form.equipo_id}
+            onChange={handleEquipoChange}
+            placeholder="— Selecciona un equipo —"
+          />
+        ) : (
+          <>
+            <select
+              className="input"
+              value={form.probeta_id}
+              onChange={(e) => handleProbetaChange(e.target.value)}
+            >
+              <option value="">— Selecciona una probeta —</option>
+              {probetasDisponibles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.pn} · {p.nombre}
+                  {p.carros?.codigo ? ` (${p.carros.codigo}${p.num_bandeja ? ` · B${p.num_bandeja}` : ''})` : ''}
+                  {p.estado === 'salida' ? ' — FUERA' : ''}
+                </option>
+              ))}
+            </select>
+
+            {probetaSeleccionada && (
+              <div className="mt-3 p-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg flex items-center gap-3">
+                <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
+                  <Hash className="w-5 h-5 text-airbus-sky" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono font-bold text-airbus-blue text-xs">
+                    {probetaSeleccionada.pn}
+                  </p>
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {probetaSeleccionada.nombre}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {probetaSeleccionada.codigo_barras && (
+                      <span className="text-[10px] font-mono text-gray-500">
+                        {probetaSeleccionada.codigo_barras}
+                      </span>
+                    )}
+                    {probetaSeleccionada.carros?.codigo && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded text-[9px] font-bold">
+                        {probetaSeleccionada.carros.codigo}
+                        {probetaSeleccionada.num_bandeja ? ` · B${probetaSeleccionada.num_bandeja}` : ''}
+                      </span>
+                    )}
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      probetaSeleccionada.estado === 'disponible'
+                        ? 'bg-airbus-green/15 text-airbus-green'
+                        : probetaSeleccionada.estado === 'prestado'
+                          ? 'bg-airbus-orange/15 text-airbus-orange'
+                          : probetaSeleccionada.estado === 'salida'
+                            ? 'bg-airbus-red/15 text-airbus-red'
+                            : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {probetaSeleccionada.estado}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* DESTINO EXTERNO */}
       {requiereDestinoExterno && (
         <Section title="Destino externo">
           <div className="p-4 bg-airbus-orange/5 border-2 border-airbus-orange/30 rounded-lg space-y-4">
@@ -471,6 +562,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </Section>
       )}
 
+      {/* UBICACIONES */}
       {!requiereDestinoExterno && (
         <Section title="Ubicaciones">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-end">
@@ -497,6 +589,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </Section>
       )}
 
+      {/* REFERENCIA */}
       <Section title="Referencia">
         <Field label="Referencia / Nº de orden">
           <input
@@ -508,6 +601,7 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         </Field>
       </Section>
 
+      {/* OBSERVACIONES */}
       <Section title="Observaciones">
         <textarea
           className="input min-h-[80px] resize-y"
@@ -528,7 +622,11 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
         <button type="button" onClick={onCancel} className="btn-ghost border border-gray-300">
           Cancelar
         </button>
-        <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={loading || sinDisponibles}
+          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : form.tipo === 'salida' ? (
@@ -546,7 +644,9 @@ export function MovimientoForm({ onSuccess, onCancel }: MovimientoFormProps) {
               ? 'Registrar préstamo externo'
               : requiereDestinoExterno && form.tipo === 'devolucion_externa'
                 ? 'Registrar devolución'
-                : 'Registrar movimiento'}
+                : esEntrada
+                  ? 'Registrar entrada al almacén'
+                  : 'Registrar movimiento'}
         </button>
       </div>
     </form>
