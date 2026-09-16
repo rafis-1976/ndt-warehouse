@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 
-const BUCKET = 'equipos-documentos';
+export const BUCKET_EQUIPOS_DOCS = 'equipos-documentos';
+export const BUCKET_PROBETAS_CERT = 'probetas-certificados';
 
 export interface DocumentoEquipo {
   nombre: string;
@@ -12,20 +13,20 @@ export interface DocumentoEquipo {
 
 export async function subirDocumento(
   file: File,
-  equipoId: string,
-  categoria: 'manual' | 'certificado' | 'otros'
+  referenciaId: string,
+  categoria: 'manual' | 'certificado' | 'otros' = 'otros',
+  bucket: string = BUCKET_EQUIPOS_DOCS
 ): Promise<DocumentoEquipo> {
-  const ext = file.name.split('.').pop() ?? 'bin';
   const timestamp = Date.now();
-  const path = `${equipoId}/${categoria}/${timestamp}_${file.name}`;
+  const path = `${referenciaId}/${categoria}/${timestamp}_${file.name}`;
 
   const { error } = await supabase.storage
-    .from(BUCKET)
+    .from(bucket)
     .upload(path, file, { cacheControl: '3600', upsert: false });
 
   if (error) throw error;
 
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
 
   return {
     nombre: file.name,
@@ -36,13 +37,16 @@ export async function subirDocumento(
   };
 }
 
-export async function eliminarDocumento(url: string): Promise<void> {
-  const marker = `/${BUCKET}/`;
+export async function eliminarDocumento(
+  url: string,
+  bucket: string = BUCKET_EQUIPOS_DOCS
+): Promise<void> {
+  const marker = `/${bucket}/`;
   const idx = url.indexOf(marker);
   if (idx === -1) return;
   const path = url.substring(idx + marker.length);
 
-  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+  const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw error;
 }
 
