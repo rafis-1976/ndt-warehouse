@@ -29,14 +29,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
         informe.equipo_id
           ? supabase
               .from('equipos')
-              .select('id_equipo, nombre, codigo_barras, marca, modelo, numero_serie, tecnicas_ndt(codigo, nombre), ultima_calibracion, proxima_calibracion')
+              .select('id_equipo, nombre, numero_serie, tecnicas_ndt(codigo), proxima_calibracion')
               .eq('id', informe.equipo_id)
               .maybeSingle()
           : Promise.resolve({ data: null } as any),
         informe.probeta_id
           ? supabase
               .from('probetas')
-              .select('pn, nombre, numero_serie, codigo_barras, material, dimensiones, tecnicas_ndt(codigo), carros(codigo, nombre)')
+              .select('pn, nombre, numero_serie, tecnicas_ndt(codigo)')
               .eq('id', informe.probeta_id)
               .maybeSingle()
           : Promise.resolve({ data: null } as any),
@@ -165,6 +165,37 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-color: #00205B;
           }
 
+          .ntm-step-row {
+            display: grid;
+            grid-template-columns: 40px 1fr 1fr;
+            gap: 8px;
+            align-items: center;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 6px 8px;
+            background: #fafafa;
+            margin-bottom: 6px;
+          }
+          .ntm-step-row .num {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: #00205B; color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 800;
+          }
+          .ntm-step-row .cell .label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #777;
+            font-weight: 700;
+          }
+          .ntm-step-row .cell .value {
+            font-size: 10px;
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+          }
+
           .resultado {
             display: inline-block;
             padding: 8px 20px;
@@ -191,7 +222,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
 
           .firmas {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 12px;
             margin-top: 20px;
           }
@@ -199,7 +230,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border: 1px solid #ccc;
             border-radius: 4px;
             padding: 10px;
-            min-height: 80px;
+            min-height: 100px;
             position: relative;
           }
           .firma-box .firma-label {
@@ -227,19 +258,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-top: 1px solid #ccc;
           }
 
-          .sello {
-            border: 2px dashed #00205B;
-            border-radius: 6px;
-            padding: 10px;
-            text-align: center;
-            color: #00205B;
-            font-weight: 800;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            background: #f0f7ff;
-          }
-
           .footer {
             margin-top: auto;
             padding-top: 8px;
@@ -265,6 +283,29 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     if (informe.resultado === 'condicional') return <AlertTriangle className="w-5 h-5" />;
     return <Clock className="w-5 h-5" />;
   };
+
+  /** Normaliza la lista de NTM/Steps, con compatibilidad hacia atrás */
+  const getNtmSteps = (): { ntm: string; step: string }[] => {
+    if (Array.isArray(informe.ntm_steps) && informe.ntm_steps.length > 0) {
+      return informe.ntm_steps
+        .map((s: any) => ({
+          ntm: String(s.ntm ?? '').trim(),
+          step: String(s.step ?? '').trim(),
+        }))
+        .filter((s: any) => s.ntm || s.step);
+    }
+    if (informe.ntm_referencia || informe.ntm_step) {
+      return [
+        {
+          ntm: String(informe.ntm_referencia ?? '').trim(),
+          step: String(informe.ntm_step ?? '').trim(),
+        },
+      ];
+    }
+    return [];
+  };
+
+  const ntmSteps = getNtmSteps();
 
   return (
     <div className="space-y-4">
@@ -359,12 +400,29 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 ))}
               </div>
 
-              {/* NTM */}
-              <div className="section-title">Norma NTM</div>
-              <div className="grid grid-2">
-                <Box label="NTM Doc. Ref." value={informe.ntm_referencia || '—'} mono />
-                <Box label="Step NTM" value={informe.ntm_step || '—'} mono />
-              </div>
+              {/* NTM + STEPS */}
+              <div className="section-title">Normas NTM y Steps</div>
+              {ntmSteps.length === 0 ? (
+                <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
+                  Sin normas NTM asignadas
+                </div>
+              ) : (
+                <div>
+                  {ntmSteps.map((s, i) => (
+                    <div key={i} className="ntm-step-row">
+                      <div className="num">{i + 1}</div>
+                      <div className="cell">
+                        <div className="label">NTM Doc. Ref.</div>
+                        <div className="value">{s.ntm || '—'}</div>
+                      </div>
+                      <div className="cell">
+                        <div className="label">Step</div>
+                        <div className="value">{s.step || '—'}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* RESULTADO */}
               <div className="section-title">Resultado de la Inspección</div>
@@ -404,7 +462,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              {/* FIRMAS */}
+              {/* FIRMA */}
               <div className="firmas">
                 <div className="firma-box">
                   <div className="firma-label">Inspector / Firmante</div>
@@ -414,9 +472,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   </div>
                   <div className="firma-info">{informe.inspector_email || ''}</div>
                   <div className="linea" />
-                </div>
-                <div className="firma-box" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div className="sello">{informe.sello_texto || 'IBERIA MANTENIMIENTO · NDT'}</div>
                 </div>
               </div>
 
@@ -449,36 +504,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               {/* EQUIPO UTILIZADO */}
               <div className="section-title">Equipo NDT Utilizado</div>
               {equipo ? (
-                <>
-                  <div className="grid grid-3">
-                    <Box label="ID Equipo" value={equipo.id_equipo || '—'} mono />
-                    <Box label="Nombre" value={equipo.nombre || '—'} />
-                    <Box label="Técnica" value={equipo.tecnicas_ndt?.codigo || '—'} />
-                    <Box label="Marca" value={equipo.marca || '—'} />
-                    <Box label="Modelo" value={equipo.modelo || '—'} />
-                    <Box label="N° Serie" value={equipo.numero_serie || '—'} mono />
-                    <Box label="Última calibración" value={equipo.ultima_calibracion || '—'} />
-                    <Box label="Próx. calibración" value={equipo.proxima_calibracion || '—'} />
-                    <Box label="Código de barras" value={equipo.codigo_barras || '—'} mono />
-                  </div>
-
-                  {equipo.codigo_barras && (
-                    <div className="barcode" style={{ marginTop: 8, marginBottom: 8 }}>
-                      <BarcodeLib
-                        value={equipo.codigo_barras}
-                        format="CODE128"
-                        displayValue={false}
-                        height={40}
-                        width={1.5}
-                        margin={0}
-                        lineColor="#00205B"
-                      />
-                      <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
-                        {equipo.codigo_barras}
-                      </div>
-                    </div>
-                  )}
-                </>
+                <div className="grid grid-4">
+                  <Box label="P/N" value={equipo.id_equipo || '—'} mono />
+                  <Box label="N° Serie" value={equipo.numero_serie || '—'} mono />
+                  <Box label="Nombre" value={equipo.nombre || '—'} />
+                  <Box
+                    label="Próx. Calibración"
+                    value={equipo.proxima_calibracion || '—'}
+                  />
+                </div>
               ) : (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
                   No se ha asignado ningún equipo a este informe
@@ -488,36 +522,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               {/* PROBETA UTILIZADA */}
               <div className="section-title">Probeta de Calibración</div>
               {probeta ? (
-                <>
-                  <div className="grid grid-3">
-                    <Box label="P/N" value={probeta.pn || '—'} mono />
-                    <Box label="Nombre" value={probeta.nombre || '—'} />
-                    <Box label="Técnica" value={probeta.tecnicas_ndt?.codigo || '—'} />
-                    <Box label="N° Serie" value={probeta.numero_serie || '—'} mono />
-                    <Box label="Material" value={probeta.material || '—'} />
-                    <Box label="Dimensiones" value={probeta.dimensiones || '—'} />
-                    <Box label="Carro" value={probeta.carros?.codigo || '—'} mono />
-                    <Box label="Nombre Carro" value={probeta.carros?.nombre || '—'} />
-                    <Box label="Código de barras" value={probeta.codigo_barras || '—'} mono />
-                  </div>
-
-                  {probeta.codigo_barras && (
-                    <div className="barcode" style={{ marginTop: 8, marginBottom: 8 }}>
-                      <BarcodeLib
-                        value={probeta.codigo_barras}
-                        format="CODE128"
-                        displayValue={false}
-                        height={40}
-                        width={1.5}
-                        margin={0}
-                        lineColor="#00205B"
-                      />
-                      <div style={{ fontSize: 9, fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
-                        {probeta.codigo_barras}
-                      </div>
-                    </div>
-                  )}
-                </>
+                <div className="grid grid-3">
+                  <Box label="P/N" value={probeta.pn || '—'} mono />
+                  <Box label="N° Serie" value={probeta.numero_serie || '—'} mono />
+                  <Box label="Nombre" value={probeta.nombre || '—'} />
+                </div>
               ) : (
                 <div className="texto-largo" style={{ textAlign: 'center', fontStyle: 'italic', color: '#999' }}>
                   No se ha asignado ninguna probeta a este informe
