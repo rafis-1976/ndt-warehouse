@@ -130,56 +130,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             padding: 14px 16px;
           }
 
-          /* Cabecera compacta dentro del body: número + NTM/Step + badges */
-          .step-top {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #00205B;
-            flex-wrap: wrap;
-          }
-          .step-top .num {
-            width: 30px; height: 30px;
-            border-radius: 50%;
-            background: #00205B;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 15px;
-            font-weight: 900;
-            flex-shrink: 0;
-          }
-          .step-top .ntm-title {
-            font-size: 15px;
-            font-weight: 800;
-            color: #00205B;
-            font-family: 'Courier New', monospace;
-            flex: 1;
-            min-width: 0;
-          }
-          .step-top .badge-metodo {
-            background: #00205B;
-            color: white;
-            padding: 3px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-          }
-          .step-top .badge-res {
-            padding: 3px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .step-top .badge-res.nil      { background: #009F4D; color: white; }
-          .step-top .badge-res.findings { background: #E4002B; color: white; }
-
           /* Filas de datos dentro del step */
           .step-row {
             display: grid;
@@ -190,6 +140,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .step-row:last-child { border-bottom: none; }
           .step-row.full { grid-template-columns: 1fr; }
+          .step-row.first { padding-top: 0; }
 
           .field { min-width: 0; }
           .field .f-label {
@@ -526,22 +477,40 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   {ntmSteps.map((s, i) => (
                     <div key={i} className="step-block">
                       <div className="step-body">
-                        {/* Cabecera compacta: número + NTM·Step + método + resultado */}
-                        <div className="step-top">
-                          <div className="num">{i + 1}</div>
-                          <div className="ntm-title">
-                            {s.ntm || 'Sin NTM'}
-                            {s.step ? ` · ${s.step}` : ''}
+                        {/* Fila 1: NTM · Step + Técnica + Resultado */}
+                        <div className="step-row first" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}>
+                          <div className="field">
+                            <div className="f-label">NTM Doc. Ref. · Step</div>
+                            <div className="f-value mono big">
+                              {s.ntm || '—'}{s.step ? ` · ${s.step}` : ''}
+                            </div>
                           </div>
-                          {s.metodo && (
-                            <span className="badge-metodo">{s.metodo}</span>
-                          )}
-                          <span className={`badge-res ${s.resultado === 'FINDINGS' ? 'findings' : 'nil'}`}>
-                            {s.resultado}
-                          </span>
+                          <div className="field">
+                            <div className="f-label">Técnica</div>
+                            <div className="f-value mono big">{s.metodo || '—'}</div>
+                          </div>
+                          <div className="field">
+                            <div className="f-label">Resultado</div>
+                            <div
+                              className="f-value"
+                              style={{
+                                display: 'inline-block',
+                                padding: '3px 10px',
+                                borderRadius: 10,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.5,
+                                background: s.resultado === 'FINDINGS' ? '#E4002B' : '#009F4D',
+                                color: 'white',
+                              }}
+                            >
+                              {s.resultado}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Fila: Fecha + Inspector */}
+                        {/* Fila 2: Fecha + Inspector */}
                         <div className="step-row">
                           <div className="field">
                             <div className="f-label">Fecha de realización</div>
@@ -553,19 +522,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila: NTM + Step */}
-                        <div className="step-row">
-                          <div className="field">
-                            <div className="f-label">NTM Doc. Ref.</div>
-                            <div className="f-value mono">{s.ntm || '—'}</div>
-                          </div>
-                          <div className="field">
-                            <div className="f-label">Step</div>
-                            <div className="f-value mono">{s.step || '—'}</div>
-                          </div>
-                        </div>
-
-                        {/* Fila: Equipos */}
+                        {/* Fila 3: Equipos */}
                         <div className="step-row full">
                           <div className="field">
                             <div className="f-label">
@@ -594,7 +551,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila: Probetas */}
+                        {/* Fila 4: Probetas */}
                         <div className="step-row full">
                           <div className="field">
                             <div className="f-label">
