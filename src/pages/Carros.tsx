@@ -7,6 +7,7 @@ import {
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
+import { ProbetaDetalle } from '../components/carros/ProbetaDetalle';
 
 export function Carros() {
   const [carros, setCarros] = useState<any[]>([]);
@@ -22,6 +23,10 @@ export function Carros() {
   const [probetaEditando, setProbetaEditando] = useState<any | null>(null);
   const [carroDestino, setCarroDestino] = useState<string | null>(null);
 
+  const [detalleOpen, setDetalleOpen] = useState(false);
+  const [detalleProbeta, setDetalleProbeta] = useState<any | null>(null);
+  const [detalleCarro, setDetalleCarro] = useState<any | null>(null);
+
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
 
@@ -29,7 +34,7 @@ export function Carros() {
     setLoading(true);
     const [c, p] = await Promise.all([
       supabase.from('carros').select('*').order('codigo'),
-      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('num_bandeja', { ascending: true, nullsFirst: false }).order('codigo'),
+      supabase.from('probetas').select('*, tecnicas_ndt(codigo, nombre)').order('codigo'),
     ]);
     if (c.error) console.error(c.error);
     if (p.error) console.error(p.error);
@@ -148,6 +153,12 @@ export function Carros() {
     setModalProbetaOpen(true);
   };
 
+  const abrirDetalleProbeta = (probeta: any, carro: any | null) => {
+    setDetalleProbeta(probeta);
+    setDetalleCarro(carro);
+    setDetalleOpen(true);
+  };
+
   const isCalibracionProblema = (fecha: string | null) => {
     if (!fecha) return false;
     const diff = new Date(fecha).getTime() - Date.now();
@@ -221,13 +232,6 @@ export function Carros() {
             const pct = carro.num_bandejas > 0
               ? Math.min(100, Math.round((listaProbetas.length / carro.num_bandejas) * 100))
               : null;
-
-            const porBandeja = new Map<number | null, any[]>();
-            listaProbetas.forEach((pb) => {
-              const k = pb.num_bandeja ?? null;
-              if (!porBandeja.has(k)) porBandeja.set(k, []);
-              porBandeja.get(k)!.push(pb);
-            });
 
             return (
               <div key={carro.id} className="card p-0 overflow-hidden">
@@ -356,7 +360,8 @@ export function Carros() {
                           return (
                             <div
                               key={probeta.id}
-                              className="flex items-center gap-3 px-4 py-3 hover:bg-white transition group"
+                              className="flex items-center gap-3 px-4 py-3 hover:bg-white transition group cursor-pointer"
+                              onClick={() => abrirDetalleProbeta(probeta, carro)}
                             >
                               {probeta.foto_url ? (
                                 <div className="w-14 h-14 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
@@ -422,14 +427,14 @@ export function Carros() {
 
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
                                 <button
-                                  onClick={() => abrirEditarProbeta(probeta)}
+                                  onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
                                   className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
                                   title="Editar"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => eliminarProbeta(probeta)}
+                                  onClick={(e) => { e.stopPropagation(); eliminarProbeta(probeta); }}
                                   className="p-1.5 text-gray-400 hover:text-airbus-red hover:bg-airbus-red/10 rounded transition"
                                   title="Eliminar"
                                 >
@@ -464,7 +469,11 @@ export function Carros() {
               </div>
               <div className="divide-y divide-gray-100">
                 {probetasSinCarro.map((probeta) => (
-                  <div key={probeta.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group">
+                  <div
+                    key={probeta.id}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group cursor-pointer"
+                    onClick={() => abrirDetalleProbeta(probeta, null)}
+                  >
                     {probeta.foto_url ? (
                       <div className="w-12 h-12 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ml-4">
                         <img
@@ -486,7 +495,7 @@ export function Carros() {
                       <span className="text-sm text-gray-800">{probeta.nombre}</span>
                     </div>
                     <button
-                      onClick={() => abrirEditarProbeta(probeta)}
+                      onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
                       className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
                     >
                       Asignar a carro
@@ -524,6 +533,21 @@ export function Carros() {
           onSuccess={handleSuccessProbeta}
           onCancel={() => { setModalProbetaOpen(false); setProbetaEditando(null); setCarroDestino(null); }}
         />
+      </Modal>
+
+      <Modal
+        open={detalleOpen}
+        onClose={() => { setDetalleOpen(false); setDetalleProbeta(null); setDetalleCarro(null); }}
+        title={detalleProbeta ? `Probeta ${detalleProbeta.codigo}` : 'Detalle'}
+        size="lg"
+      >
+        {detalleProbeta && (
+          <ProbetaDetalle
+            probeta={detalleProbeta}
+            carro={detalleCarro}
+            onClose={() => { setDetalleOpen(false); setDetalleProbeta(null); setDetalleCarro(null); }}
+          />
+        )}
       </Modal>
     </div>
   );
