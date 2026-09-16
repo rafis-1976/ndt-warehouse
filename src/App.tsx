@@ -13,6 +13,7 @@ import { Scan } from './pages/Scan';
 import { Movimientos } from './pages/Movimientos';
 import { Usuarios } from './pages/Usuarios';
 import { UsuarioNuevo } from './pages/UsuarioNuevo';
+import { Carros } from './pages/Carros';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -48,6 +49,9 @@ export default function App() {
         } />
         <Route path="/movimientos" element={
           <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
+        } />
+        <Route path="/carros" element={
+          <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
         } />
         <Route path="/scan" element={
           <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
