@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Package, RefreshCw, Printer, X, Filter,
   AlertTriangle, Calendar, CheckCircle2, AlertCircle, Bell, Wrench,
-  Truck, Building2, Warehouse, Users, ChevronDown,
+  Truck, Building2, Warehouse, Users,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
@@ -24,6 +24,7 @@ const estadoBadge: Record<EstadoEfectivo, string> = {
   pendiente_calibracion: 'badge badge-red',
   mantenimiento:         'badge badge-yellow',
   baja:                  'badge badge-gray',
+  salida:                'badge badge-gray',
 };
 
 const estadosFiltro: { value: EstadoEfectivo; label: string }[] = [
@@ -32,6 +33,7 @@ const estadosFiltro: { value: EstadoEfectivo; label: string }[] = [
   { value: 'calibracion',           label: 'En calibración' },
   { value: 'pendiente_calibracion', label: 'Pendiente de Calibración' },
   { value: 'mantenimiento',         label: 'En mantenimiento' },
+  { value: 'salida',                label: 'Fuera del almacén' },
   { value: 'baja',                  label: 'Baja' },
 ];
 
@@ -109,7 +111,16 @@ export function Equipos() {
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return equipos.filter((e) => {
-      // Filtro rápido "fuera del almacén"
+      const efectivo = estadoEfectivoEquipo(e);
+
+      // Excluir los que están fuera del almacén salvo que:
+      // - Se filtre explícitamente por estado "salida"
+      // - Se muestre el filtro "Solo equipos fuera del almacén"
+      if (efectivo === 'salida' && filtroEstado !== 'salida') {
+        return false;
+      }
+
+      // Filtro rápido "fuera del almacén" (préstamos externos)
       if (soloFuera && !fueraMap.has(e.id)) return false;
 
       const coincideBusqueda =
@@ -123,7 +134,7 @@ export function Equipos() {
       if (filtroTecnica !== 'todas' && e.tecnicas_ndt?.codigo !== filtroTecnica) return false;
 
       if (filtroEstado !== 'todos') {
-        if (estadoEfectivoEquipo(e) !== filtroEstado) return false;
+        if (efectivo !== filtroEstado) return false;
       }
 
       if (filtroCalibracion !== 'todas') {
@@ -516,6 +527,7 @@ export function Equipos() {
               const count = contadores.porEstado[e.value] ?? 0;
               const esPendiente = e.value === 'pendiente_calibracion';
               const enCalibracion = e.value === 'calibracion';
+              const esSalida = e.value === 'salida';
 
               return (
                 <FilterChip
@@ -528,7 +540,7 @@ export function Equipos() {
                       ? 'green'
                       : e.value === 'baja' || esPendiente
                         ? 'red'
-                        : enCalibracion
+                        : enCalibracion || esSalida
                           ? 'orange'
                           : 'default'
                   }
@@ -537,6 +549,8 @@ export function Equipos() {
                       <AlertTriangle className="w-3 h-3" />
                     ) : enCalibracion ? (
                       <Wrench className="w-3 h-3" />
+                    ) : esSalida ? (
+                      <Truck className="w-3 h-3" />
                     ) : undefined
                   }
                 >
@@ -697,8 +711,28 @@ export function Equipos() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-800">{e.nombre}</p>
-                        <p className="text-xs text-gray-500">{e.marca} {e.modelo}</p>
+                        <div className="flex items-center gap-3">
+                          {e.foto_url ? (
+                            <img
+                              src={e.foto_url}
+                              alt={e.nombre}
+                              className="w-10 h-10 rounded-lg object-contain border border-gray-200 shrink-0 bg-gray-50"
+                              onError={(ev) => {
+                                (ev.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-airbus-blue/10 flex items-center justify-center shrink-0">
+                              <Package className="w-4 h-4 text-airbus-blue/50" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-800 truncate">{e.nombre}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {e.marca} {e.modelo}
+                            </p>
+                          </div>
+                        </div>
                       </td>
 
                       <td className="px-4 py-3">
@@ -715,6 +749,7 @@ export function Equipos() {
                             <span className="inline-flex items-center gap-1">
                               {esPendiente && <AlertTriangle className="w-3 h-3" />}
                               {enCalib && <Wrench className="w-3 h-3" />}
+                              {efectivo === 'salida' && <Truck className="w-3 h-3" />}
                               {estadoEfectivoLabel(efectivo)}
                             </span>
                           </span>
