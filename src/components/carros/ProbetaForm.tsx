@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, Camera, Layers, Grid3x3, Info,
-  MousePointerClick, X, Package,
+  MousePointerClick, X, Package, FileCheck2, Plus,
 } from 'lucide-react';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
@@ -27,6 +27,10 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
   const imgBandejaRef = useRef<HTMLImageElement>(null);
   const [marcandoFoto, setMarcandoFoto] = useState(false);
 
+  // Lista de NTM introducidas manualmente
+  const [ntms, setNtms] = useState<string[]>([]);
+  const [ntmInput, setNtmInput] = useState('');
+
   const [form, setForm] = useState({
     codigo: probeta?.codigo ?? '',
     nombre: probeta?.nombre ?? '',
@@ -40,8 +44,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     material: probeta?.material ?? '',
     dimensiones: probeta?.dimensiones ?? '',
     numero_serie: probeta?.numero_serie ?? '',
-    fecha_adquisicion: probeta?.fecha_adquisicion ?? '',
-    proxima_calibracion: probeta?.proxima_calibracion ?? '',
     observaciones: probeta?.observaciones ?? '',
     activa: probeta?.activa ?? true,
   });
@@ -86,13 +88,21 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             material: data.material ?? '',
             dimensiones: data.dimensiones ?? '',
             numero_serie: data.numero_serie ?? '',
-            fecha_adquisicion: data.fecha_adquisicion ?? '',
-            proxima_calibracion: data.proxima_calibracion ?? '',
             observaciones: data.observaciones ?? '',
             activa: data.activa ?? true,
           });
           const fts: FotoEquipo[] = Array.isArray(data.fotos_urls) ? data.fotos_urls : [];
           setFotos(fts);
+
+          // Cargar NTM desde texto separado por comas
+          if (data.normas_ntm) {
+            setNtms(
+              String(data.normas_ntm)
+                .split(',')
+                .map((s: string) => s.trim())
+                .filter(Boolean)
+            );
+          }
         }
         setLoadingData(false);
       });
@@ -151,6 +161,34 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
     setForm((f) => ({ ...f, pos_x: null, pos_y: null, num_posicion: '' }));
   };
 
+  // ============================================================
+  // NTM manual
+  // ============================================================
+  const agregarNtm = () => {
+    const valor = ntmInput.trim().toUpperCase();
+    if (!valor) return;
+    if (ntms.includes(valor)) {
+      setNtmInput('');
+      return;
+    }
+    setNtms([...ntms, valor]);
+    setNtmInput('');
+  };
+
+  const eliminarNtm = (valor: string) => {
+    setNtms(ntms.filter((n) => n !== valor));
+  };
+
+  const handleNtmKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      agregarNtm();
+    } else if (e.key === 'Backspace' && !ntmInput && ntms.length > 0) {
+      // Borrar la última NTM si el input está vacío
+      setNtms(ntms.slice(0, -1));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -166,6 +204,9 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
 
     setLoading(true);
     try {
+      // Unir NTM en un string separado por comas
+      const normasTexto = ntms.length > 0 ? ntms.join(', ') : null;
+
       const payload: any = {
         codigo: form.codigo.trim().toUpperCase(),
         nombre: form.nombre.trim(),
@@ -179,12 +220,11 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
         material: form.material.trim() || null,
         dimensiones: form.dimensiones.trim() || null,
         numero_serie: form.numero_serie.trim() || null,
-        fecha_adquisicion: form.fecha_adquisicion || null,
-        proxima_calibracion: form.proxima_calibracion || null,
         observaciones: form.observaciones.trim() || null,
         activa: form.activa,
         fotos_urls: fotos,
         foto_url: fotos[0]?.url ?? null,
+        normas_ntm: normasTexto,
       };
 
       if (probeta) {
@@ -293,6 +333,81 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
             </select>
           </Field>
         </div>
+      </Section>
+
+      <Section title="Normas NTM donde es necesaria">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <FileCheck2 className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Escribe el código NTM y pulsa Enter (o coma) para añadirlo a la lista.
+          </p>
+        </div>
+
+        <div className="bg-white border-2 border-airbus-sky/30 rounded-lg p-3 focus-within:border-airbus-sky transition">
+          {/* Chips de NTM */}
+          {ntms.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-gray-100">
+              {ntms.map((ntm) => (
+                <span
+                  key={ntm}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-airbus-sky/15 text-airbus-sky border border-airbus-sky/40 rounded-full text-xs font-bold font-mono"
+                >
+                  {ntm}
+                  <button
+                    type="button"
+                    onClick={() => eliminarNtm(ntm)}
+                    className="hover:bg-airbus-sky/20 rounded-full p-0.5 transition"
+                    title="Quitar"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Input + botón */}
+          <div className="flex gap-2">
+            <input
+              className="flex-1 border-0 focus:outline-none focus:ring-0 px-1 py-1.5 text-sm font-mono uppercase"
+              value={ntmInput}
+              onChange={(e) => setNtmInput(e.target.value.toUpperCase())}
+              onKeyDown={handleNtmKeyDown}
+              placeholder={ntms.length > 0 ? 'Añadir otra NTM...' : 'Ej: NTM-01, NTM-UT-05...'}
+            />
+            <button
+              type="button"
+              onClick={agregarNtm}
+              disabled={!ntmInput.trim()}
+              className="px-3 py-1.5 rounded-lg bg-airbus-sky text-white text-xs font-semibold hover:bg-airbus-blue transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Añadir
+            </button>
+          </div>
+        </div>
+
+        {ntms.length === 0 && (
+          <p className="mt-2 text-[11px] text-gray-400 italic">
+            Aún no hay normas NTM asignadas. Escribe el código y pulsa Enter.
+          </p>
+        )}
+
+        {ntms.length > 0 && (
+          <div className="mt-2 flex items-center justify-between text-[10px]">
+            <span className="text-gray-500">
+              {ntms.length} norma{ntms.length !== 1 ? 's' : ''} asignada{ntms.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setNtms([])}
+              className="text-airbus-red hover:bg-airbus-red/10 px-2 py-0.5 rounded transition flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Quitar todas
+            </button>
+          </div>
+        )}
       </Section>
 
       <Section title="Ubicación en el carro">
@@ -532,27 +647,6 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
               value={form.dimensiones}
               onChange={(e) => update('dimensiones', e.target.value)}
               placeholder="100 x 50 x 25 mm"
-            />
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Fechas">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Fecha de adquisición">
-            <input
-              type="date"
-              className="input"
-              value={form.fecha_adquisicion}
-              onChange={(e) => update('fecha_adquisicion', e.target.value)}
-            />
-          </Field>
-          <Field label="Próxima calibración">
-            <input
-              type="date"
-              className="input"
-              value={form.proxima_calibracion}
-              onChange={(e) => update('proxima_calibracion', e.target.value)}
             />
           </Field>
         </div>
