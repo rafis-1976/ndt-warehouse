@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Save, AlertCircle, Layers } from 'lucide-react';
 
 interface CarroFormProps {
   carro?: any;
@@ -14,6 +14,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
     nombre: carro?.nombre ?? '',
     descripcion: carro?.descripcion ?? '',
     ubicacion: carro?.ubicacion ?? '',
+    num_bandejas: carro?.num_bandejas ?? 0,
     activo: carro?.activo ?? true,
   });
   const [loading, setLoading] = useState(false);
@@ -27,6 +28,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
     setError('');
     if (!form.codigo.trim()) return setError('El código es obligatorio');
     if (!form.nombre.trim()) return setError('El nombre es obligatorio');
+    if (form.num_bandejas < 0) return setError('El número de bandejas no puede ser negativo');
 
     setLoading(true);
     try {
@@ -35,6 +37,7 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
         nombre: form.nombre.trim(),
         descripcion: form.descripcion.trim() || null,
         ubicacion: form.ubicacion.trim() || null,
+        num_bandejas: Number(form.num_bandejas) || 0,
         activo: form.activo,
       };
 
@@ -96,6 +99,64 @@ export function CarroForm({ carro, onSuccess, onCancel }: CarroFormProps) {
               <option value="inactivo">Inactivo</option>
             </select>
           </Field>
+        </div>
+      </Section>
+
+      <Section title="Capacidad">
+        <div className="bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-4">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-10 h-10 bg-airbus-sky/20 rounded-lg flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5 text-airbus-sky" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-airbus-blue">
+                Número de bandejas
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Indica cuántas bandejas tiene el carro para organizar las probetas.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => update('num_bandejas', Math.max(0, form.num_bandejas - 1))}
+              className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+              disabled={form.num_bandejas <= 0}
+            >
+              −
+            </button>
+
+            <input
+              type="number"
+              min={0}
+              max={100}
+              className="input text-center text-2xl font-bold text-airbus-blue w-24"
+              value={form.num_bandejas}
+              onChange={(e) => update('num_bandejas', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+            />
+
+            <button
+              type="button"
+              onClick={() => update('num_bandejas', Math.min(100, form.num_bandejas + 1))}
+              className="w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 flex items-center justify-center text-lg font-bold text-gray-600 disabled:opacity-50"
+              disabled={form.num_bandejas >= 100}
+            >
+              +
+            </button>
+
+            <span className="text-sm text-gray-500">
+              bandeja{form.num_bandejas !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {form.num_bandejas === 0 && (
+            <p className="mt-3 text-xs text-airbus-orange flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Sin bandejas definidas — puedes añadirlas más tarde
+            </p>
+          )}
         </div>
       </Section>
 
