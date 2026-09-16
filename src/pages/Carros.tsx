@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
   ChevronRight, Boxes, AlertTriangle, CheckCircle2, Layers, Grid3x3,
+  FileCheck2, X, Highlighter,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
@@ -75,17 +76,108 @@ export function Carros() {
     return map;
   }, [probetas]);
 
-  const carrosFiltrados = useMemo(() => {
-    if (!q.trim()) return carros;
-    const qLower = q.toLowerCase();
-    return carros.filter((c) =>
-      [c.codigo, c.nombre, c.descripcion, c.ubicacion]
-        .filter(Boolean).join(' ').toLowerCase().includes(qLower)
+  // ============================================================
+  // BÚSQUEDA AVANZADA — Carros + Probetas (incluye NTM)
+  // ============================================================
+  const qLower = q.trim().toLowerCase();
+
+  /** ¿Coincide la probeta con el texto buscado? */
+  const probetaCoincide = useCallback((p: any): boolean => {
+    if (!qLower) return false;
+    const campos = [
+      p.codigo,
+      p.nombre,
+      p.tipo,
+      p.material,
+      p.dimensiones,
+      p.numero_serie,
+      p.observaciones,
+      p.normas_ntm,
+      p.tecnicas_ndt?.codigo,
+      p.tecnicas_ndt?.nombre,
+      p.num_bandeja != null ? `B${p.num_bandeja}` : null,
+      p.num_bandeja != null ? `bandeja ${p.num_bandeja}` : null,
+      p.num_posicion != null ? `P${p.num_posicion}` : null,
+      p.num_posicion != null ? `posicion ${p.num_posicion}` : null,
+    ];
+    return campos
+      .filter((c) => c != null)
+      .join(' ')
+      .toLowerCase()
+      .includes(qLower);
+  }, [qLower]);
+
+  /** ¿Coincide el carro con el texto buscado? */
+  const carroCoincide = useCallback((c: any): boolean => {
+    if (!qLower) return true;
+    return [c.codigo, c.nombre, c.descripcion, c.ubicacion]
+      .filter(Boolean).join(' ').toLowerCase().includes(qLower);
+  }, [qLower]);
+
+  /** Resultado combinado: qué carros mostrar y qué probetas destacar */
+  const resultadoBusqueda = useMemo(() => {
+    if (!qLower) {
+      return {
+        carrosVisibles: carros,
+        probetasMatch: new Set<string>(),
+        carrosAutoExpandir: new Set<string>(),
+        probetasSinCarroVisibles: probetasPorCarro['__sin_carro__'] ?? [],
+        totalCoincidencias: 0,
+      };
+    }
+
+    const probetasMatch = new Set<string>();
+    const carrosAutoExpandir = new Set<string>();
+    const carrosConMatchDirecto = new Set<string>();
+
+    // 1. Detectar probetas que coinciden
+    probetas.forEach((p) => {
+      if (probetaCoincide(p)) {
+        probetasMatch.add(p.id);
+        if (p.carro_id) carrosAutoExpandir.add(p.carro_id);
+      }
+    });
+
+    // 2. Detectar carros que coinciden directamente
+    carros.forEach((c) => {
+      if (carroCoincide(c)) {
+        carrosConMatchDirecto.add(c.id);
+      }
+    });
+
+    // 3. Carros visibles = match directo + carros con probetas que coinciden
+    const carrosVisibles = carros.filter((c) =>
+      carrosConMatchDirecto.has(c.id) || carrosAutoExpandir.has(c.id)
     );
-  }, [carros, q]);
 
-  const probetasSinCarro = probetasPorCarro['__sin_carro__'] ?? [];
+    // 4. Probetas sin carro que coinciden
+    const probetasSinCarroVisibles = (probetasPorCarro['__sin_carro__'] ?? []).filter(
+      (p) => probetasMatch.has(p.id)
+    );
 
+    return {
+      carrosVisibles,
+      probetasMatch,
+      carrosAutoExpandir,
+      probetasSinCarroVisibles,
+      totalCoincidencias: probetasMatch.size + carrosConMatchDirecto.size,
+    };
+  }, [qLower, carros, probetas, probetasPorCarro, probetaCoincide, carroCoincide]);
+
+  const {
+    carrosVisibles,
+    probetasMatch,
+    carrosAutoExpandir,
+    probetasSinCarroVisibles,
+    totalCoincidencias,
+  } = resultadoBusqueda;
+
+  const hayBusquedaActiva = qLower.length > 0;
+  const hayResultados = carrosVisibles.length > 0 || probetasSinCarroVisibles.length > 0;
+
+  // ============================================================
+  // Handlers
+  // ============================================================
   const handleSuccessCarro = () => {
     setModalCarroOpen(false);
     setCarroEditando(null);
@@ -175,6 +267,31 @@ export function Carros() {
     );
   };
 
+  /** Extrae las NTM de una probeta como array */
+  const parseNtms = (probeta: any): string[] => {
+    if (!probeta?.normas_ntm) return [];
+    return String(probeta.normas_ntm)
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+  };
+
+  /** Resalta el texto coincidente con la búsqueda */
+  const resaltar = (texto: string) => {
+    if (!qLower || !texto) return texto;
+    const idx = texto.toLowerCase().indexOf(qLower);
+    if (idx === -1) return texto;
+    return (
+      <>
+        {texto.slice(0, idx)}
+        <mark className="bg-airbus-yellow/60 text-gray-900 rounded px-0.5">
+          {texto.slice(idx, idx + qLower.length)}
+        </mark>
+        {texto.slice(idx + qLower.length)}
+      </>
+    );
+  };
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -204,16 +321,58 @@ export function Carros() {
         </div>
       )}
 
-      <div className="card">
+      {/* ============================================ */}
+      {/* BUSCADOR */}
+      {/* ============================================ */}
+      <div className="card space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
-            className="input pl-10"
-            placeholder="Buscar carro por código, nombre, ubicación..."
+            className="input pl-10 pr-10"
+            placeholder="Buscar por carro, probeta, NTM, bandeja, posición..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQ('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+              title="Limpiar búsqueda"
+            >
+              <X className="w-3.5 h-3.5 text-gray-400" />
+            </button>
+          )}
         </div>
+
+        {hayBusquedaActiva && (
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 text-gray-500">
+              <Highlighter className="w-3.5 h-3.5" />
+              <span>
+                {hayResultados ? (
+                  <>
+                    <strong className="text-airbus-blue">{totalCoincidencias}</strong>{' '}
+                    coincidencia{totalCoincidencias !== 1 ? 's' : ''} · {' '}
+                    <strong className="text-airbus-blue">{carrosVisibles.length}</strong>{' '}
+                    carro{carrosVisibles.length !== 1 ? 's' : ''}
+                  </>
+                ) : (
+                  'Sin resultados'
+                )}
+              </span>
+            </div>
+            {hayResultados && (
+              <button
+                onClick={() => setQ('')}
+                className="text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
+              >
+                <X className="w-3 h-3" />
+                Limpiar
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -221,28 +380,46 @@ export function Carros() {
           <RefreshCw className="w-4 h-4 animate-spin" />
           Cargando...
         </div>
-      ) : carrosFiltrados.length === 0 ? (
+      ) : !hayResultados && hayBusquedaActiva ? (
+        <div className="card p-12 text-center">
+          <Search className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-gray-500 mb-1">
+            Sin resultados para "{q}"
+          </p>
+          <p className="text-sm text-gray-400 mb-4">
+            Prueba con el código de carro, el nombre de una probeta, o un código NTM
+          </p>
+          <button
+            onClick={() => setQ('')}
+            className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Limpiar búsqueda
+          </button>
+        </div>
+      ) : carros.length === 0 ? (
         <div className="card p-12 text-center">
           <Boxes className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-gray-500 mb-4">
-            {carros.length === 0 ? 'Aún no hay carros registrados' : 'Sin resultados'}
-          </p>
-          {carros.length === 0 && (
-            <button onClick={abrirNuevoCarro} className="btn-primary inline-flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Crear el primero
-            </button>
-          )}
+          <p className="text-gray-500 mb-4">Aún no hay carros registrados</p>
+          <button onClick={abrirNuevoCarro} className="btn-primary inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Crear el primero
+          </button>
         </div>
       ) : (
         <div className="space-y-3">
-          {carrosFiltrados.map((carro) => {
+          {carrosVisibles.map((carro) => {
             const listaProbetas = probetasPorCarro[carro.id] ?? [];
-            const expandido = expandidos.has(carro.id);
+            const autoExpandido = hayBusquedaActiva && carrosAutoExpandir.has(carro.id);
+            const expandido = expandidos.has(carro.id) || autoExpandido;
             const capacidadTotal = (carro.num_bandejas ?? 0) * (carro.posiciones_por_bandeja ?? 0);
             const pct = capacidadTotal > 0
               ? Math.min(100, Math.round((listaProbetas.length / capacidadTotal) * 100))
               : null;
+
+            const probetasDeEsteCarroQueMatchean = listaProbetas.filter((p) =>
+              probetasMatch.has(p.id)
+            ).length;
 
             return (
               <div key={carro.id} className="card p-0 overflow-hidden">
@@ -265,14 +442,21 @@ export function Carros() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono font-bold text-airbus-blue text-sm">
-                        {carro.codigo}
+                        {resaltar(carro.codigo)}
                       </span>
                       <span className="font-semibold text-gray-800">
-                        {carro.nombre}
+                        {resaltar(carro.nombre)}
                       </span>
                       {!carro.activo && (
                         <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-semibold rounded-full uppercase">
                           Inactivo
+                        </span>
+                      )}
+                      {hayBusquedaActiva && probetasDeEsteCarroQueMatchean > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-yellow/30 text-yellow-800 border border-airbus-yellow/60 rounded-full text-[10px] font-bold">
+                          <FileCheck2 className="w-3 h-3" />
+                          {probetasDeEsteCarroQueMatchean} probeta
+                          {probetasDeEsteCarroQueMatchean !== 1 ? 's' : ''} coinciden
                         </span>
                       )}
                     </div>
@@ -374,15 +558,25 @@ export function Carros() {
                           const alerta = isCalibracionProblema(probeta.proxima_calibracion);
                           const vencida = probeta.proxima_calibracion &&
                             new Date(probeta.proxima_calibracion) < new Date();
+                          const esMatch = probetasMatch.has(probeta.id);
+                          const ntms = parseNtms(probeta);
 
                           return (
                             <div
                               key={probeta.id}
-                              className="flex items-center gap-3 px-4 py-3 hover:bg-white transition group cursor-pointer"
+                              className={`flex items-center gap-3 px-4 py-3 hover:bg-white transition group cursor-pointer relative ${
+                                esMatch ? 'bg-airbus-yellow/10' : ''
+                              }`}
                               onClick={() => abrirDetalleProbeta(probeta, carro)}
                             >
+                              {esMatch && (
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
+                              )}
+
                               {probeta.foto_url ? (
-                                <div className="w-14 h-14 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+                                <div className={`w-14 h-14 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ${
+                                  esMatch ? 'border-airbus-yellow' : 'border-gray-200'
+                                }`}>
                                   <img
                                     src={probeta.foto_url}
                                     alt={probeta.nombre}
@@ -393,7 +587,9 @@ export function Carros() {
                                   />
                                 </div>
                               ) : (
-                                <div className="w-14 h-14 bg-white border border-gray-200 rounded-lg flex items-center justify-center shrink-0">
+                                <div className={`w-14 h-14 bg-white border rounded-lg flex items-center justify-center shrink-0 ${
+                                  esMatch ? 'border-airbus-yellow' : 'border-gray-200'
+                                }`}>
                                   <Package className="w-5 h-5 text-airbus-sky" />
                                 </div>
                               )}
@@ -401,10 +597,10 @@ export function Carros() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-mono font-bold text-airbus-blue text-xs">
-                                    {probeta.codigo}
+                                    {resaltar(probeta.codigo)}
                                   </span>
                                   <span className="text-sm text-gray-800 truncate">
-                                    {probeta.nombre}
+                                    {resaltar(probeta.nombre)}
                                   </span>
                                   {probeta.tecnicas_ndt && (
                                     <span className="badge badge-blue">
@@ -424,11 +620,34 @@ export function Carros() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400">
-                                  {probeta.tipo && <span>{probeta.tipo}</span>}
-                                  {probeta.material && <span>{probeta.material}</span>}
+
+                                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400 flex-wrap">
+                                  {probeta.tipo && <span>{resaltar(probeta.tipo)}</span>}
+                                  {probeta.material && <span>{resaltar(probeta.material)}</span>}
                                   {probeta.dimensiones && <span>{probeta.dimensiones}</span>}
                                 </div>
+
+                                {ntms.length > 0 && (
+                                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                    <FileCheck2 className="w-3 h-3 text-airbus-sky shrink-0" />
+                                    {ntms.map((ntm) => {
+                                      const ntmEsMatch = hayBusquedaActiva &&
+                                        ntm.toLowerCase().includes(qLower);
+                                      return (
+                                        <span
+                                          key={ntm}
+                                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                                            ntmEsMatch
+                                              ? 'bg-airbus-yellow text-gray-900 shadow-sm'
+                                              : 'bg-airbus-sky/10 text-airbus-sky'
+                                          }`}
+                                        >
+                                          {ntm}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
 
                               {probeta.proxima_calibracion && (
@@ -471,7 +690,8 @@ export function Carros() {
             );
           })}
 
-          {probetasSinCarro.length > 0 && (
+          {/* Probetas sin carro */}
+          {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length > 0 && (
             <div className="card p-0 overflow-hidden border-2 border-dashed border-airbus-orange/40">
               <div className="flex items-center gap-3 p-4 bg-airbus-orange/5">
                 <div className="w-12 h-12 bg-airbus-orange/20 rounded-xl flex items-center justify-center shrink-0">
@@ -482,45 +702,84 @@ export function Carros() {
                     Probetas sin carro asignado
                   </p>
                   <p className="text-xs text-gray-600">
-                    {probetasSinCarro.length} probeta{probetasSinCarro.length !== 1 ? 's' : ''} pendiente{probetasSinCarro.length !== 1 ? 's' : ''} de asignar a un carro
+                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length} probeta
+                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} pendiente
+                    {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length !== 1 ? 's' : ''} de asignar a un carro
                   </p>
                 </div>
               </div>
               <div className="divide-y divide-gray-100">
-                {probetasSinCarro.map((probeta) => (
-                  <div
-                    key={probeta.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group cursor-pointer"
-                    onClick={() => abrirDetalleProbeta(probeta, null)}
-                  >
-                    {probeta.foto_url ? (
-                      <div className="w-12 h-12 rounded-lg border border-gray-200 shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ml-4">
-                        <img
-                          src={probeta.foto_url}
-                          alt={probeta.nombre}
-                          className="w-full h-full object-contain"
-                          onError={(ev) => {
-                            (ev.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <Package className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="font-mono font-bold text-airbus-blue text-xs mr-2">
-                        {probeta.codigo}
-                      </span>
-                      <span className="text-sm text-gray-800">{probeta.nombre}</span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
-                      className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
+                {(!hayBusquedaActiva ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).map((probeta) => {
+                  const esMatch = probetasMatch.has(probeta.id);
+                  const ntms = parseNtms(probeta);
+                  return (
+                    <div
+                      key={probeta.id}
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition group cursor-pointer relative ${
+                        esMatch ? 'bg-airbus-yellow/10' : ''
+                      }`}
+                      onClick={() => abrirDetalleProbeta(probeta, null)}
                     >
-                      Asignar a carro
-                    </button>
-                  </div>
-                ))}
+                      {esMatch && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
+                      )}
+
+                      {probeta.foto_url ? (
+                        <div className={`w-12 h-12 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ml-4 ${
+                          esMatch ? 'border-airbus-yellow' : 'border-gray-200'
+                        }`}>
+                          <img
+                            src={probeta.foto_url}
+                            alt={probeta.nombre}
+                            className="w-full h-full object-contain"
+                            onError={(ev) => {
+                              (ev.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <Package className="w-4 h-4 text-gray-400 shrink-0 ml-4" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div>
+                          <span className="font-mono font-bold text-airbus-blue text-xs mr-2">
+                            {resaltar(probeta.codigo)}
+                          </span>
+                          <span className="text-sm text-gray-800">
+                            {resaltar(probeta.nombre)}
+                          </span>
+                        </div>
+                        {ntms.length > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            <FileCheck2 className="w-3 h-3 text-airbus-sky shrink-0" />
+                            {ntms.map((ntm) => {
+                              const ntmEsMatch = hayBusquedaActiva &&
+                                ntm.toLowerCase().includes(qLower);
+                              return (
+                                <span
+                                  key={ntm}
+                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                                    ntmEsMatch
+                                      ? 'bg-airbus-yellow text-gray-900 shadow-sm'
+                                      : 'bg-airbus-sky/10 text-airbus-sky'
+                                  }`}
+                                >
+                                  {ntm}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
+                        className="text-xs text-airbus-sky hover:text-airbus-blue font-medium"
+                      >
+                        Asignar a carro
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
