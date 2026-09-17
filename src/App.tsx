@@ -14,6 +14,7 @@ import { Movimientos } from './pages/Movimientos';
 import { Usuarios } from './pages/Usuarios';
 import { UsuarioNuevo } from './pages/UsuarioNuevo';
 import { Carros } from './pages/Carros';
+import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,15 @@ export default function App() {
         <Route path="/equipos" element={
           <ProtectedRoute><Layout><Equipos /></Layout></ProtectedRoute>
         } />
+        <Route path="/carros" element={
+          <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
+        } />
+        <Route path="/probetas" element={
+          <ProtectedRoute><Layout><Probetas /></Layout></ProtectedRoute>
+        } />
+        <Route path="/informes" element={
+          <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
+        } />
         <Route path="/prestamos" element={
           <ProtectedRoute><Layout><Prestamos /></Layout></ProtectedRoute>
         } />
@@ -50,12 +60,6 @@ export default function App() {
         } />
         <Route path="/movimientos" element={
           <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
-        } />
-        <Route path="/carros" element={
-          <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
-        } />
-        <Route path="/informes" element={
-          <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
         } />
         <Route path="/scan" element={
           <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
