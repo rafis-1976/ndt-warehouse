@@ -30,10 +30,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
         <style>
           @page { size: A4; margin: 12mm; }
           * { box-sizing: border-box; }
-          html, body {
-            margin: 0;
-            padding: 0;
-          }
+          html, body { margin: 0; padding: 0; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
@@ -42,12 +39,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: white;
           }
 
-          /* ============ CONTROL DE SALTOS DE PÁGINA ============ */
-          /* Nada de bloques cortados entre páginas */
           .step-block,
-          .firma-box,
           .barcode-box,
-          .footer-grid,
           .box,
           .texto-largo,
           .findings-block {
@@ -62,18 +55,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             break-inside: avoid;
             page-break-inside: avoid;
           }
-          /* Los títulos siempre pegados a su contenido */
           .section-title {
             break-after: avoid;
             page-break-after: avoid;
           }
-          /* Cabecera del informe como bloque */
           .head {
             break-after: avoid;
             page-break-after: avoid;
           }
 
-          /* ============ CABECERA DEL INFORME ============ */
           .head {
             display: flex;
             align-items: center;
@@ -106,7 +96,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             display: inline-block;
           }
 
-          /* ============ SECCIONES ============ */
           .section-title {
             background: #00205B;
             color: white;
@@ -120,7 +109,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 8px;
           }
 
-          /* ============ CUADRÍCULA ============ */
           .grid { display: grid; gap: 8px; margin-bottom: 10px; }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -149,21 +137,17 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
 
-          /* ============ BLOQUE DE STEP ============ */
           .step-block {
             border: 2px solid #00205B;
             border-radius: 8px;
             margin-bottom: 14px;
             overflow: hidden;
             background: #fdfdfd;
-            /* Nunca cortar un step entre páginas */
             break-inside: avoid;
             page-break-inside: avoid;
           }
 
-          .step-body {
-            padding: 14px 16px;
-          }
+          .step-body { padding: 14px 16px; }
 
           .step-row {
             display: grid;
@@ -198,7 +182,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             color: #00205B;
           }
 
-          /* Chips de equipos y probetas */
           .chips { display: flex; flex-wrap: wrap; gap: 6px; }
           .chip {
             display: inline-flex;
@@ -241,7 +224,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             color: #999;
           }
 
-          /* Findings */
           .findings-block {
             border: 2px solid #E4002B;
             border-radius: 6px;
@@ -267,7 +249,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             white-space: pre-wrap;
           }
 
-          /* Observaciones */
           .texto-largo {
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -282,51 +263,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             page-break-inside: avoid;
           }
 
-          /* Firma y código de barras */
-          .footer-grid {
-            display: grid;
-            grid-template-columns: 1fr 180px;
-            gap: 14px;
-            margin-top: 18px;
-            align-items: stretch;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .firma-box {
-            border: 2px solid #00205B;
-            border-radius: 6px;
-            padding: 12px 16px;
-            min-height: 90px;
-            position: relative;
-            background: #fafafa;
-          }
-          .firma-box .firma-label {
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #666;
-            font-weight: 800;
-            margin-bottom: 6px;
-          }
-          .firma-box .firma-nombre {
-            font-size: 14px;
-            font-weight: 800;
-            color: #00205B;
-            margin-bottom: 2px;
-          }
-          .firma-box .firma-info {
-            font-size: 11px;
-            color: #555;
-            margin-top: 2px;
-          }
-          .firma-box .linea {
-            position: absolute;
-            bottom: 12px;
-            left: 16px;
-            right: 16px;
-            border-top: 1.5px solid #999;
-          }
-
           .barcode-box {
             border: 1px solid #ccc;
             border-radius: 6px;
@@ -338,6 +274,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             justify-content: center;
             break-inside: avoid;
             page-break-inside: avoid;
+            margin-top: 18px;
           }
           .barcode-box .b-num {
             font-family: 'Courier New', monospace;
@@ -632,28 +569,20 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                 </>
               )}
 
-              <div className="footer-grid">
-                <div className="firma-box">
-                  <div className="firma-label">Inspector responsable del informe</div>
-                  <div className="firma-nombre">{informe.inspector_nombre || '—'}</div>
-                  <div className="firma-info">{informe.inspector_email || ''}</div>
-                  <div className="linea" />
+              {informe.numero_informe && (
+                <div className="barcode-box">
+                  <BarcodeLib
+                    value={informe.numero_informe}
+                    format="CODE128"
+                    displayValue={false}
+                    height={40}
+                    width={1.4}
+                    margin={0}
+                    lineColor="#00205B"
+                  />
+                  <div className="b-num">{informe.numero_informe}</div>
                 </div>
-                {informe.numero_informe && (
-                  <div className="barcode-box">
-                    <BarcodeLib
-                      value={informe.numero_informe}
-                      format="CODE128"
-                      displayValue={false}
-                      height={40}
-                      width={1.4}
-                      margin={0}
-                      lineColor="#00205B"
-                    />
-                    <div className="b-num">{informe.numero_informe}</div>
-                  </div>
-                )}
-              </div>
+              )}
 
               <div className="footer">
                 Documento generado automáticamente por NDT Warehouse · {new Date().toLocaleString('es-ES')}
