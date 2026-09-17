@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Save, AlertCircle, AlertTriangle, Wrench, CheckCircle2,
-  FileText, Camera,
+  FileText, Camera, Barcode, Hash,
 } from 'lucide-react';
+import BarcodeLib from 'react-barcode';
 import { estadoCalibracion } from '../../lib/calibracion';
 import { DocumentosUpload } from './DocumentosUpload';
 import { CamaraEquipo } from './CamaraEquipo';
@@ -45,6 +46,24 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const [error, setError] = useState('');
   const [avisoExito, setAvisoExito] = useState('');
 
+  // ============================================================
+  // Auto-sincronizar código de barras con ID de equipo
+  // Solo cuando el usuario no ha modificado manualmente el barcode
+  // ============================================================
+  const [barcodeTocado, setBarcodeTocado] = useState(false);
+
+  useEffect(() => {
+    if (barcodeTocado) return;
+    if (form.id_equipo && !form.codigo_barras) {
+      setForm((f) => ({ ...f, codigo_barras: form.id_equipo }));
+    }
+    // Sincronizar continuamente mientras no se haya tocado el barcode
+    if (form.id_equipo) {
+      setForm((f) => ({ ...f, codigo_barras: form.id_equipo }));
+    }
+  }, [form.id_equipo, barcodeTocado]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cargar técnicas
   useEffect(() => {
     let cancelled = false;
     async function loadTecnicas() {
@@ -54,6 +73,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         .select('id, codigo, nombre')
         .eq('activa', true)
         .order('codigo');
+
       if (cancelled) return;
       if (error) {
         setTecnicasError(`No se pudieron cargar las técnicas: ${error.message}`);
@@ -69,6 +89,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     return () => { cancelled = true; };
   }, []);
 
+  // Cargar equipo si es edición
   useEffect(() => {
     if (!equipoId) {
       setUploadKey(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -99,14 +120,12 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             proxima_calibracion: data.proxima_calibracion ?? '',
             observaciones: data.observaciones ?? '',
           });
-          const docs: DocumentoEquipo[] = Array.isArray(data.documentos_urls)
-            ? data.documentos_urls
-            : [];
-          setDocumentos(docs);
+          // Al editar, no auto-sincronizamos por defecto
+          setBarcodeTocado(true);
 
-          const fts: FotoEquipo[] = Array.isArray(data.fotos_urls)
-            ? data.fotos_urls
-            : [];
+          const docs: DocumentoEquipo[] = Array.isArray(data.documentos_urls) ? data.documentos_urls : [];
+          setDocumentos(docs);
+          const fts: FotoEquipo[] = Array.isArray(data.fotos_urls) ? data.fotos_urls : [];
           setFotos(fts);
         }
         setLoadingData(false);
@@ -116,9 +135,35 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
+  // Cambio manual del ID de equipo
+  const cambiarIdEquipo = (valor: string) => {
+    const upper = valor.toUpperCase();
+    setForm((f) => {
+      // Si el barcode está vacío o era igual al id anterior, seguir sincronizando
+      const debeSincronizar = !barcodeTocado || f.codigo_barras === f.id_equipo;
+      return {
+        ...f,
+        id_equipo: upper,
+        codigo_barras: debeSincronizar ? upper : f.codigo_barras,
+      };
+    });
+  };
+
+  // Cambio manual del código de barras
+  const cambiarCodigoBarras = (valor: string) => {
+    setBarcodeTocado(true);
+    setForm((f) => ({ ...f, codigo_barras: valor }));
+  };
+
+  // Botón "= Código": fuerza la sincronización
+  const igualarAlCodigo = () => {
+    if (!form.id_equipo) return;
+    setForm((f) => ({ ...f, codigo_barras: f.id_equipo }));
+    setBarcodeTocado(false);
+  };
+
   const calibracionVencida =
     !!form.proxima_calibracion && new Date(form.proxima_calibracion) < new Date();
-
   const calibracionProxima =
     !!form.proxima_calibracion &&
     !calibracionVencida &&
@@ -175,7 +220,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
 
       setForm((f) => ({ ...f, estado: 'calibracion' }));
       setAvisoExito('✅ Equipo enviado a calibración.');
-
       setTimeout(() => { onSuccess(); }, 1500);
     } catch (err: any) {
       setError(err.message ?? 'Error al enviar a calibrar');
@@ -252,9 +296,10 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     );
   }
 
+  const barcodeSincronizado = form.id_equipo && form.codigo_barras === form.id_equipo;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-
       {tecnicasError && (
         <div className="flex items-start gap-2 bg-airbus-orange/10 border border-airbus-orange/30 text-airbus-orange text-sm p-3 rounded-lg">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -321,14 +366,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         </div>
       )}
 
+      {/* FOTOS */}
       <Section title="Fotos del equipo">
         <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <Camera className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Haz una foto con la cámara del dispositivo o sube imágenes desde el equipo.
+            Haz una foto o sube imágenes. Puedes recortar manualmente o quitar el fondo con IA.
           </p>
         </div>
-
         <CamaraEquipo
           equipoId={uploadKey}
           fotos={fotos}
@@ -336,88 +381,215 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         />
       </Section>
 
+      {/* IDENTIFICACIÓN */}
       <Section title="Identificación">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="ID de equipo *">
-            <input className="input font-mono" value={form.id_equipo}
-              onChange={(e) => update('id_equipo', e.target.value.toUpperCase())}
-              placeholder="EQ-0001" required />
+            <div className="relative">
+              <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="input pl-10 font-mono"
+                value={form.id_equipo}
+                onChange={(e) => cambiarIdEquipo(e.target.value)}
+                placeholder="EQ-0001"
+                required
+              />
+            </div>
           </Field>
+
           <Field label="Código de barras *">
-            <input className="input font-mono" value={form.codigo_barras}
-              onChange={(e) => update('codigo_barras', e.target.value)}
-              placeholder="NDT-0001" required />
+            <div className="relative">
+              <Barcode className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="input pl-10 pr-20 font-mono"
+                value={form.codigo_barras}
+                onChange={(e) => cambiarCodigoBarras(e.target.value)}
+                placeholder="Igual que el ID de equipo"
+                required
+              />
+              {form.id_equipo && form.codigo_barras !== form.id_equipo && (
+                <button
+                  type="button"
+                  onClick={igualarAlCodigo}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[10px] bg-airbus-sky text-white rounded hover:bg-airbus-blue transition"
+                  title="Usar el ID de equipo como código de barras"
+                >
+                  = ID
+                </button>
+              )}
+            </div>
+            {barcodeSincronizado && (
+              <p className="mt-1 text-[10px] text-airbus-green flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Sincronizado con el ID de equipo
+              </p>
+            )}
+            {form.codigo_barras && (
+              <div className="mt-2 flex justify-center bg-white border border-gray-200 rounded-lg p-2">
+                <BarcodeLib
+                  value={form.codigo_barras}
+                  format="CODE128"
+                  displayValue={false}
+                  height={38}
+                  width={1.4}
+                  margin={0}
+                  lineColor="#00205B"
+                />
+              </div>
+            )}
           </Field>
+
           <Field label="Nombre del equipo *">
-            <input className="input" value={form.nombre}
+            <input
+              className="input"
+              value={form.nombre}
               onChange={(e) => update('nombre', e.target.value)}
-              placeholder="Detector de defectos por ultrasonidos" required />
+              placeholder="Detector de defectos por ultrasonidos"
+              required
+            />
           </Field>
           <Field label="Número de serie">
-            <input className="input font-mono" value={form.numero_serie}
-              onChange={(e) => update('numero_serie', e.target.value)} />
+            <input
+              className="input font-mono"
+              value={form.numero_serie}
+              onChange={(e) => update('numero_serie', e.target.value)}
+            />
           </Field>
           <Field label="Marca">
-            <input className="input" value={form.marca}
-              onChange={(e) => update('marca', e.target.value)} placeholder="Olympus" />
+            <input
+              className="input"
+              value={form.marca}
+              onChange={(e) => update('marca', e.target.value)}
+              placeholder="Olympus"
+            />
           </Field>
           <Field label="Modelo">
-            <input className="input" value={form.modelo}
-              onChange={(e) => update('modelo', e.target.value)} placeholder="EPOCH 650" />
+            <input
+              className="input"
+              value={form.modelo}
+              onChange={(e) => update('modelo', e.target.value)}
+              placeholder="EPOCH 650"
+            />
           </Field>
         </div>
       </Section>
 
+      {/* CLASIFICACIÓN */}
       <Section title="Clasificación">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Técnica NDT">
-            <select className="input" value={form.tecnica_id}
+            <select
+              className="input"
+              value={form.tecnica_id}
               onChange={(e) => update('tecnica_id', e.target.value)}
-              disabled={tecnicas.length === 0}>
-              <option value="">— Sin asignar —</option>
+              disabled={tecnicas.length === 0}
+            >
+              <option value="">
+                {tecnicas.length === 0 ? '— Cargando técnicas... —' : '— Sin asignar —'}
+              </option>
               {tecnicas.map((t) => (
-                <option key={t.id} value={t.id}>{t.codigo} · {t.nombre}</option>
+                <option key={t.id} value={t.id}>
+                  {t.codigo} · {t.nombre}
+                </option>
               ))}
             </select>
           </Field>
+
           <Field label="Estado">
-            <select className="input" value={form.estado}
-              onChange={(e) => update('estado', e.target.value)}>
-              <option value="disponible" disabled={calibracionVencida}>Disponible</option>
-              <option value="prestado" disabled={calibracionVencida}>Prestado</option>
+            <select
+              className="input"
+              value={form.estado}
+              onChange={(e) => update('estado', e.target.value)}
+            >
+              <option value="disponible" disabled={calibracionVencida}>
+                Disponible {calibracionVencida ? '— calibración vencida' : ''}
+              </option>
+              <option value="prestado" disabled={calibracionVencida}>
+                Prestado {calibracionVencida ? '— calibración vencida' : ''}
+              </option>
               <option value="calibracion">En calibración</option>
-              <option value="pendiente_calibracion">Pendiente de Calibración</option>
+              <option value="pendiente_calibracion">
+                Pendiente de Calibración {calibracionVencida ? '(recomendado)' : ''}
+              </option>
               <option value="mantenimiento">En mantenimiento</option>
               <option value="baja">Baja</option>
             </select>
+
+            {calibracionVencida && (
+              <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/30 text-airbus-red text-xs p-2.5 rounded-lg mt-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Calibración vencida</p>
+                  <p className="opacity-80 mt-0.5">
+                    Este equipo no puede estar como "Disponible" ni "Prestado".
+                  </p>
+                </div>
+              </div>
+            )}
           </Field>
+
           <Field label="Ubicación">
-            <input className="input" value={form.ubicacion}
+            <input
+              className="input"
+              value={form.ubicacion}
               onChange={(e) => update('ubicacion', e.target.value)}
-              placeholder="Estante A-3" />
+              placeholder="Estante A-3"
+            />
           </Field>
         </div>
       </Section>
 
+      {/* FECHAS */}
       <Section title="Fechas y vida útil">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Fecha de adquisición">
-            <input type="date" className="input" value={form.fecha_adquisicion}
-              onChange={(e) => update('fecha_adquisicion', e.target.value)} />
+            <input
+              type="date"
+              className="input"
+              value={form.fecha_adquisicion}
+              onChange={(e) => update('fecha_adquisicion', e.target.value)}
+            />
           </Field>
           <Field label="Vida útil (meses)">
-            <input type="number" min="0" className="input" value={form.vida_util_meses}
-              onChange={(e) => update('vida_util_meses', e.target.value)} placeholder="60" />
+            <input
+              type="number"
+              min="0"
+              className="input"
+              value={form.vida_util_meses}
+              onChange={(e) => update('vida_util_meses', e.target.value)}
+              placeholder="60"
+            />
           </Field>
           <Field label="Próxima calibración">
-            <input type="date"
-              className={`input ${calibracionVencida ? 'border-airbus-red' : calibracionProxima ? 'border-airbus-orange' : ''}`}
+            <input
+              type="date"
+              className={`input ${
+                calibracionVencida
+                  ? 'border-airbus-red focus:ring-airbus-red'
+                  : calibracionProxima
+                    ? 'border-airbus-orange focus:ring-airbus-orange'
+                    : ''
+              }`}
               value={form.proxima_calibracion}
-              onChange={(e) => update('proxima_calibracion', e.target.value)} />
+              onChange={(e) => update('proxima_calibracion', e.target.value)}
+            />
+            {calibracionVencida && (
+              <p className="mt-1 text-[11px] text-airbus-red font-medium flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                Calibración vencida
+              </p>
+            )}
+            {calibracionProxima && !calibracionVencida && (
+              <p className="mt-1 text-[11px] text-airbus-orange font-medium flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Vence en menos de 30 días
+              </p>
+            )}
           </Field>
         </div>
       </Section>
 
+      {/* DOCUMENTACIÓN */}
       <Section title="Documentación adjunta">
         <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
@@ -425,7 +597,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             Sube manuales, certificados, fichas técnicas u otros documentos del equipo.
           </p>
         </div>
-
         <DocumentosUpload
           equipoId={uploadKey}
           documentos={documentos}
@@ -433,11 +604,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         />
       </Section>
 
+      {/* OBSERVACIONES */}
       <Section title="Observaciones">
-        <textarea className="input min-h-[80px] resize-y"
+        <textarea
+          className="input min-h-[80px] resize-y"
           value={form.observaciones}
           onChange={(e) => update('observaciones', e.target.value)}
-          placeholder="Notas adicionales sobre el equipo..." />
+          placeholder="Notas adicionales sobre el equipo..."
+        />
       </Section>
 
       {error && (
@@ -451,8 +625,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
         <button type="button" onClick={onCancel} className="btn-ghost border border-gray-300">
           Cancelar
         </button>
-        <button type="submit" disabled={loading || enviandoCalibrar}
-          className="btn-primary flex items-center gap-2">
+        <button type="submit" disabled={loading || enviandoCalibrar} className="btn-primary flex items-center gap-2">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {equipoId ? 'Guardar cambios' : 'Crear equipo'}
         </button>
