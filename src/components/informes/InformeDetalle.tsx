@@ -19,7 +19,7 @@ function formatoInspector(numNomina: string | null | undefined, nombre: string |
   return `#${num} - ${n}`;
 }
 
-const LOGO_PATH = '/iberia-mantenimiento.svg';
+const LOGO_PATH = '/iberia-mantenimiento.png';
 
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   const [cargando, setCargando] = useState(true);
@@ -308,7 +308,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
         </style>
       </head>
-      <body>${content.replace(/src="\/iberia-mantenimiento\.svg"/g, `src="${logoAbs}"`)}</body>
+      <body>${content.replace(/src="\/iberia-mantenimiento\.png"/g, `src="${logoAbs}"`)}</body>
       </html>
     `);
     win.document.close();
