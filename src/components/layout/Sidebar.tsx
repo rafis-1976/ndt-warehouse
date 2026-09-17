@@ -68,7 +68,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="absolute bottom-4 left-3 right-3">
           <div className="bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl p-3 text-white">
             <p className="text-xs font-semibold">Sistema NDT</p>
-            <p className="text-[10px] opacity-70 mt-0.5">UT · RT · ET · TT · MT · PT</p>
+            <p className="text-[10px] opacity-70 mt-0.5">UT · RT · ET · TT</p>
           </div>
         </div>
       </aside>
