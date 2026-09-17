@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" role="img" aria-label="Iberia Mantenimiento">
+  <title>Iberia Mantenimiento</title>
+
+  <style>
+    .ib-red    { fill: #D71920; }
+    .ib-yellow { fill: #FFD100; }
+    .ib-text   {
+      font-family: Arial, Helvetica, sans-serif;
+      fill: #D71920;
+    }
+  </style>
+
+  <!-- Símbolo: parte amarilla -->
+  <path class="ib-yellow"
+        d="M470 62
+           C500 45 540 30 580 18
+           C570 38 555 52 535 63
+           C515 74 490 75 470 62 Z" />
+
+  <!-- Símbolo: parte roja -->
+  <path class="ib-red"
+        d="M415 132
+           C460 105 510 78 565 60
+           C555 85 535 110 500 128
+           C470 142 440 145 415 132 Z" />
+
+  <!-- Texto IBERIA -->
+  <text x="10" y="82"
+        class="ib-text"
+        font-size="80"
+        font-weight="900"
+        textLength="360"
+        lengthAdjust="spacingAndGlyphs">IBERIA</text>
+
+  <!-- Texto MANTENIMIENTO -->
+  <text x="12" y="125"
+        class="ib-text"
+        font-size="32"
+        font-weight="700"
+        textLength="355"
+        lengthAdjust="spacingAndGlyphs">MANTENIMIENTO</text>
+</svg>
