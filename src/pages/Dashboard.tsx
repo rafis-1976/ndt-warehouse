@@ -60,7 +60,7 @@ export function Dashboard() {
           </h2>
           <p className="text-airbus-light/90 max-w-2xl text-sm md:text-base">
             Control integral del almacén de equipos de Ensayos No Destructivos:
-            UT, RT, ET, TT, MT y PT.
+            ET, UT, RT y TT.
           </p>
         </div>
       </div>
