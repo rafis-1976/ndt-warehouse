@@ -54,9 +54,44 @@ interface NtmStep {
   inspector_id?: string | null;
 }
 
+// ============================================================
+// Genera el siguiente número de informe disponible
+// Formato: NDT-YYYYMM-XXXX (XXXX = secuencia de 4 dígitos)
+// ============================================================
+async function generarNumeroInforme(): Promise<string> {
+  const ahora = new Date();
+  const y = ahora.getFullYear();
+  const m = String(ahora.getMonth() + 1).padStart(2, '0');
+  const prefijo = `NDT-${y}${m}-`;
+
+  const { data, error } = await supabase
+    .from('informes')
+    .select('numero_informe')
+    .like('numero_informe', `${prefijo}%`)
+    .order('numero_informe', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('[generarNumeroInforme] Error consultando últimos números:', error);
+  }
+
+  let siguiente = 1;
+  if (data && data.length > 0) {
+    const ultimo = data[0].numero_informe as string;
+    const match = ultimo.match(/-(\d+)$/);
+    if (match) {
+      siguiente = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  const num = String(siguiente).padStart(4, '0');
+  return `${prefijo}${num}`;
+}
+
 export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps) {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!informeId);
+  const [generandoNumero, setGenerandoNumero] = useState(!informeId);
   const [error, setError] = useState('');
 
   const [equipos, setEquipos] = useState<any[]>([]);
@@ -100,7 +135,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     cliente: '',
 
     seleccionar: '',
-
     observaciones: '',
 
     inspector_nombre: '',
@@ -108,16 +142,23 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     estado: 'borrador',
   });
 
+  // ============================================================
+  // Generar número de informe único al crear uno nuevo
+  // ============================================================
   useEffect(() => {
     if (informeId) return;
-    const ahora = new Date();
-    const y = ahora.getFullYear();
-    const m = String(ahora.getMonth() + 1).padStart(2, '0');
-    const rand = String(Math.floor(Math.random() * 9000) + 1000);
-    setForm((f) => ({
-      ...f,
-      numero_informe: `NDT-${y}${m}-${rand}`,
-    }));
+    let cancelado = false;
+
+    async function cargar() {
+      setGenerandoNumero(true);
+      const numero = await generarNumeroInforme();
+      if (cancelado) return;
+      setForm((f) => ({ ...f, numero_informe: numero }));
+      setGenerandoNumero(false);
+    }
+
+    cargar();
+    return () => { cancelado = true; };
   }, [informeId]);
 
   useEffect(() => {
@@ -457,10 +498,33 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           .eq('id', informeId);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('informes')
-          .insert(payload);
-        if (error) throw error;
+        // Intento con el número generado. Si choca por colisión (otro usuario
+        // guardó a la vez), reintentamos con el siguiente número disponible.
+        let intentos = 0;
+        const maxIntentos = 5;
+        let insertado = false;
+        let ultimoError: any = null;
+
+        while (!insertado && intentos < maxIntentos) {
+          const { error } = await supabase.from('informes').insert(payload);
+          if (!error) {
+            insertado = true;
+            break;
+          }
+          if (error.message.includes('informes_numero_informe_key')) {
+            intentos++;
+            const nuevoNumero = await generarNumeroInforme();
+            payload.numero_informe = nuevoNumero;
+            continue;
+          }
+          throw error;
+        }
+
+        if (!insertado) {
+          throw new Error(
+            'No se pudo generar un número de informe único tras varios intentos. Inténtalo de nuevo.'
+          );
+        }
       }
       onSuccess();
     } catch (err: any) {
@@ -487,13 +551,20 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       <Section title="Identificación del informe">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="N° de informe *">
-            <input
-              className="input font-mono"
-              value={form.numero_informe}
-              onChange={(e) => update('numero_informe', e.target.value.toUpperCase())}
-              placeholder="NDT-202501-0001"
-              required
-            />
+            <div className="relative">
+              <input
+                className="input font-mono bg-gray-50 text-gray-700 cursor-not-allowed"
+                value={generandoNumero ? 'Generando número...' : form.numero_informe}
+                readOnly
+                title="Se asigna automáticamente con formato NDT-AAMM-XXXX"
+              />
+              {generandoNumero && (
+                <Loader2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-airbus-sky animate-spin" />
+              )}
+            </div>
+            <p className="mt-1 text-[10px] text-gray-400">
+              Se asigna automáticamente con formato NDT-AAMM-XXXX
+            </p>
           </Field>
           <Field label="N° SAP (Document N°)">
             <input
@@ -735,7 +806,11 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         <button type="button" onClick={onCancel} className="btn-ghost border border-gray-300">
           Cancelar
         </button>
-        <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={loading || generandoNumero}
+          className="btn-primary flex items-center gap-2"
+        >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {informeId ? 'Guardar cambios' : 'Crear informe'}
         </button>
