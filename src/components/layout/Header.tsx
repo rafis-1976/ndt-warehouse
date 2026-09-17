@@ -5,7 +5,7 @@ import { usePerfil, type Rol } from '../../hooks/usePerfil';
 import { supabase } from '../../lib/supabase';
 import { estadoCalibracion, estadoEfectivoEquipo } from '../../lib/calibracion';
 import {
-  Plane, LogOut, Bell, User, Menu, ShieldCheck, AlertTriangle, Wrench, Hash,
+  LogOut, Bell, User, Menu, ShieldCheck, AlertTriangle, Wrench, Hash,
 } from 'lucide-react';
 
 const rolStyles: Record<Rol, { label: string; badge: string; dot: string }> = {
@@ -101,12 +101,16 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* LOGO */}
-          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-airbus-light/30 to-airbus-sky/20 ring-1 ring-white/20 shadow-inner shrink-0">
-            <Plane className="w-6 h-6 text-white -rotate-45" strokeWidth={2.2} />
+          {/* LOGO IBERIA MANTENIMIENTO */}
+          <div className="flex items-center justify-center bg-white rounded-lg px-3 py-1.5 shadow-sm shrink-0">
+            <img
+              src="/iberia-mantenimiento.svg"
+              alt="Iberia Mantenimiento"
+              className="h-8 w-auto"
+            />
           </div>
 
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-base font-bold tracking-wide leading-tight">
               NDT WAREHOUSE
             </h1>
@@ -222,7 +226,6 @@ export function Header({ onToggleSidebar }: HeaderProps) {
               className="flex items-center gap-3 p-1.5 pl-3 hover:bg-white/10 rounded-full transition"
               aria-label="Menú de usuario"
             >
-              {/* Email + nº nómina + rol */}
               <div className="hidden sm:flex flex-col items-end leading-tight">
                 <span className="text-xs max-w-[180px] truncate opacity-90">
                   {user?.email}
@@ -243,7 +246,6 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                 </div>
               </div>
 
-              {/* Avatar */}
               <div className="w-8 h-8 bg-airbus-light/20 rounded-full flex items-center justify-center shrink-0">
                 {rol === 'admin' ? (
                   <ShieldCheck className="w-4 h-4" />
@@ -262,13 +264,11 @@ export function Header({ onToggleSidebar }: HeaderProps) {
 
                 <div className="absolute right-0 mt-2 w-72 bg-white text-gray-800 rounded-lg shadow-xl border border-gray-100 py-1 overflow-hidden z-50">
 
-                  {/* Info del usuario */}
                   <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-xs text-gray-500 mb-0.5">
                       Sesión iniciada como
                     </p>
 
-                    {/* Nº nómina destacado */}
                     {perfil?.num_nomina && (
                       <div className="flex items-center gap-1.5 mb-1">
                         <Hash className="w-3.5 h-3.5 text-airbus-blue" />
@@ -301,7 +301,6 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                     </div>
                   </div>
 
-                  {/* Resumen de alertas */}
                   {(calibVencidas > 0 || calibProximas > 0 || equiposEnCalibracion > 0) && (
                     <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
                       <div className="flex items-center gap-3 text-xs flex-wrap">
