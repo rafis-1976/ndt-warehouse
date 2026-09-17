@@ -24,7 +24,7 @@
   }
   .btn-ghost {
     @apply text-airbus-blue px-4 py-2 rounded-lg font-medium
-           hover:bg-airbus-light/20 transition-colors;
+           hover:bg-airbus-cream transition-colors;
   }
   .input {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg
