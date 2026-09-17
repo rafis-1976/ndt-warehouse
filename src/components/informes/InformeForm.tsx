@@ -50,8 +50,9 @@ interface NtmStep {
   findings_text: string;
   equipos: EquipoStepData[];
   probetas: ProbetaStepData[];
-  inspector_nombre: string;
   inspector_id?: string | null;
+  inspector_num_nomina: string;
+  inspector_nombre: string;
 }
 
 async function generarNumeroInforme(): Promise<string> {
@@ -84,6 +85,16 @@ async function generarNumeroInforme(): Promise<string> {
   return `${prefijo}${num}`;
 }
 
+/** Genera el texto unificado del inspector: "#NOMINA - Nombre" */
+function formatoInspector(numNomina: string | null | undefined, nombre: string | null | undefined): string {
+  const n = (nombre ?? '').trim();
+  const num = (numNomina ?? '').trim();
+  if (!n && !num) return '';
+  if (!num) return n;
+  if (!n) return `#${num}`;
+  return `#${num} - ${n}`;
+}
+
 export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps) {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(!!informeId);
@@ -107,8 +118,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       findings_text: '',
       equipos: [],
       probetas: [],
-      inspector_nombre: '',
       inspector_id: null,
+      inspector_num_nomina: '',
+      inspector_nombre: '',
     },
   ]);
 
@@ -189,11 +201,15 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       setInspectores(perfiles.data ?? []);
       if (perfil.data) {
         setInspectorActual(perfil.data);
-        // Autorellenar el inspector del primer step
         setNtmSteps((prev) =>
           prev.map((s, i) =>
-            i === 0 && !s.inspector_nombre
-              ? { ...s, inspector_nombre: perfil.data.nombre_completo, inspector_id: perfil.data.id }
+            i === 0 && !s.inspector_nombre && !s.inspector_num_nomina
+              ? {
+                  ...s,
+                  inspector_id: perfil.data.id,
+                  inspector_num_nomina: perfil.data.num_nomina ?? '',
+                  inspector_nombre: perfil.data.nombre_completo ?? '',
+                }
               : s
           )
         );
@@ -274,8 +290,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             findings_text: data.hallazgos ?? '',
             equipos: [],
             probetas: [],
-            inspector_nombre: data.inspector_nombre ?? '',
             inspector_id: null,
+            inspector_num_nomina: '',
+            inspector_nombre: data.inspector_nombre ?? '',
           }];
         }
 
@@ -315,8 +332,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
             findings_text: String(s?.findings_text ?? ''),
             equipos: equiposStep,
             probetas: probetasStep,
-            inspector_nombre: String(s?.inspector_nombre ?? ''),
             inspector_id: s?.inspector_id ?? null,
+            inspector_num_nomina: String(s?.inspector_num_nomina ?? ''),
+            inspector_nombre: String(s?.inspector_nombre ?? ''),
           };
         });
 
@@ -347,8 +365,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         findings_text: '',
         equipos: [],
         probetas: [],
-        inspector_nombre: inspectorActual?.nombre_completo ?? '',
         inspector_id: inspectorActual?.id ?? null,
+        inspector_num_nomina: inspectorActual?.num_nomina ?? '',
+        inspector_nombre: inspectorActual?.nombre_completo ?? '',
       },
     ]);
   };
@@ -431,8 +450,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           numero_serie: p.numero_serie,
           tecnica_codigo: p.tecnica_codigo ?? null,
         })),
-        inspector_nombre: s.inspector_nombre.trim(),
         inspector_id: s.inspector_id ?? null,
+        inspector_num_nomina: s.inspector_num_nomina?.trim() || '',
+        inspector_nombre: s.inspector_nombre.trim(),
       }));
 
       const resultadoGlobal = ntmStepsFinal.some((s) => s.resultado === 'FINDINGS')
@@ -1135,26 +1155,20 @@ function NtmStepCard({
             </label>
             <select
               className="input"
-              value={
-                step.inspector_id
-                  ? step.inspector_id
-                  : step.inspector_nombre
-                    ? `__nombre__:${step.inspector_nombre}`
-                    : ''
-              }
+              value={step.inspector_id ?? ''}
               onChange={(e) => {
                 const v = e.target.value;
                 if (!v) {
-                  onUpdate({ inspector_id: null, inspector_nombre: '' });
-                } else if (v.startsWith('__nombre__:')) {
                   onUpdate({
                     inspector_id: null,
-                    inspector_nombre: v.replace('__nombre__:', ''),
+                    inspector_num_nomina: '',
+                    inspector_nombre: '',
                   });
                 } else {
                   const insp = inspectores.find((i) => i.id === v);
                   onUpdate({
                     inspector_id: v,
+                    inspector_num_nomina: insp?.num_nomina ?? '',
                     inspector_nombre: insp?.nombre_completo ?? '',
                   });
                 }
@@ -1164,16 +1178,16 @@ function NtmStepCard({
               <option value="">— Sin asignar —</option>
               {inspectores.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.nombre_completo}
-                  {i.num_nomina ? ` · #${i.num_nomina}` : ''}
+                  {formatoInspector(i.num_nomina, i.nombre_completo)}
                 </option>
               ))}
-              {step.inspector_nombre && !step.inspector_id && (
-                <option value={`__nombre__:${step.inspector_nombre}`}>
-                  {step.inspector_nombre}
-                </option>
-              )}
             </select>
+            {step.inspector_nombre && (
+              <p className="mt-1 text-[11px] text-airbus-green flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                {formatoInspector(step.inspector_num_nomina, step.inspector_nombre)}
+              </p>
+            )}
           </div>
 
           <div>
