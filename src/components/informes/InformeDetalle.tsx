@@ -91,7 +91,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             width: auto;
             object-fit: contain;
           }
-          .brand-text p { margin: 0; font-size: 10px; color: #666; }
           .doc-title { text-align: right; }
           .doc-title h2 { margin: 0; font-size: 17px; color: #00205B; font-weight: 800; }
           .doc-title .sub { font-size: 10px; color: #666; margin-top: 1px; }
@@ -420,9 +419,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                     alt="Iberia Mantenimiento"
                     className="brand-img"
                   />
-                  <div className="brand-text">
-                    <p>DT/MNG AVIONES · TALLERES · NDT</p>
-                  </div>
                 </div>
                 <div className="doc-title">
                   <h2>END · INFORME DE INSPECCIÓN</h2>
