@@ -9,6 +9,16 @@ interface InformeDetalleProps {
   onClose: () => void;
 }
 
+/** Genera el texto unificado del inspector: "#NOMINA - Nombre" */
+function formatoInspector(numNomina: string | null | undefined, nombre: string | null | undefined): string {
+  const n = (nombre ?? '').trim();
+  const num = (numNomina ?? '').trim();
+  if (!n && !num) return '—';
+  if (!num) return n;
+  if (!n) return `#${num}`;
+  return `#${num} - ${n}`;
+}
+
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   const [cargando, setCargando] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
@@ -321,6 +331,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             findings_text: String(s.findings_text ?? '').trim(),
             equipos: Array.isArray(s.equipos) ? s.equipos : [],
             probetas: Array.isArray(s.probetas) ? s.probetas : [],
+            inspector_num_nomina: String(s.inspector_num_nomina ?? '').trim(),
             inspector_nombre: String(s.inspector_nombre ?? '').trim(),
           };
         })
@@ -337,6 +348,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           findings_text: '',
           equipos: [],
           probetas: [],
+          inspector_num_nomina: '',
           inspector_nombre: '',
         },
       ];
@@ -495,7 +507,9 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                           <div className="field">
                             <div className="f-label">Inspector</div>
-                            <div className="f-value big">{s.inspector_nombre || '—'}</div>
+                            <div className="f-value big">
+                              {formatoInspector(s.inspector_num_nomina, s.inspector_nombre)}
+                            </div>
                           </div>
                         </div>
 
