@@ -101,8 +101,9 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             <Menu className="w-5 h-5" />
           </button>
 
-          <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
-            <Plane className="w-6 h-6 text-airbus-light" />
+          {/* LOGO */}
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-airbus-light/30 to-airbus-sky/20 ring-1 ring-white/20 shadow-inner shrink-0">
+            <Plane className="w-6 h-6 text-white -rotate-45" strokeWidth={2.2} />
           </div>
 
           <div>
