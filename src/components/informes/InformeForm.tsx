@@ -54,10 +54,6 @@ interface NtmStep {
   inspector_id?: string | null;
 }
 
-// ============================================================
-// Genera el siguiente número de informe disponible
-// Formato: NDT-YYYYMM-XXXX (XXXX = secuencia de 4 dígitos)
-// ============================================================
 async function generarNumeroInforme(): Promise<string> {
   const ahora = new Date();
   const y = ahora.getFullYear();
@@ -137,14 +133,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
     seleccionar: '',
     observaciones: '',
 
-    inspector_nombre: '',
-    inspector_email: '',
     estado: 'borrador',
   });
 
-  // ============================================================
-  // Generar número de informe único al crear uno nuevo
-  // ============================================================
   useEffect(() => {
     if (informeId) return;
     let cancelado = false;
@@ -198,11 +189,14 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
       setInspectores(perfiles.data ?? []);
       if (perfil.data) {
         setInspectorActual(perfil.data);
-        setForm((f) => ({
-          ...f,
-          inspector_nombre: f.inspector_nombre || perfil.data.nombre_completo,
-          inspector_email: f.inspector_email || perfil.data.email,
-        }));
+        // Autorellenar el inspector del primer step
+        setNtmSteps((prev) =>
+          prev.map((s, i) =>
+            i === 0 && !s.inspector_nombre
+              ? { ...s, inspector_nombre: perfil.data.nombre_completo, inspector_id: perfil.data.id }
+              : s
+          )
+        );
       }
     }
     load();
@@ -253,8 +247,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           cliente: data.cliente ?? '',
           seleccionar: data.seleccionar ?? '',
           observaciones: data.observaciones ?? '',
-          inspector_nombre: data.inspector_nombre ?? '',
-          inspector_email: data.inspector_email ?? '',
           estado: data.estado ?? 'borrador',
         });
 
@@ -355,7 +347,7 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         findings_text: '',
         equipos: [],
         probetas: [],
-        inspector_nombre: form.inspector_nombre,
+        inspector_nombre: inspectorActual?.nombre_completo ?? '',
         inspector_id: inspectorActual?.id ?? null,
       },
     ]);
@@ -484,10 +476,10 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         hallazgos: hallazgosGlobal || null,
         conclusion: null,
         observaciones: form.observaciones.trim() || null,
-        inspector_id: inspectorActual?.id ?? null,
-        inspector_nombre: form.inspector_nombre.trim() || null,
+        inspector_id: null,
+        inspector_nombre: null,
         inspector_licencia: null,
-        inspector_email: form.inspector_email.trim() || null,
+        inspector_email: null,
         estado: form.estado,
       };
 
@@ -498,12 +490,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           .eq('id', informeId);
         if (error) throw error;
       } else {
-        // Intento con el número generado. Si choca por colisión (otro usuario
-        // guardó a la vez), reintentamos con el siguiente número disponible.
         let intentos = 0;
         const maxIntentos = 5;
         let insertado = false;
-        let ultimoError: any = null;
 
         while (!insertado && intentos < maxIntentos) {
           const { error } = await supabase.from('informes').insert(payload);
@@ -698,8 +687,9 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
         <div className="flex items-start gap-2 mb-4 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
           <FileText className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
           <p className="text-xs text-gray-600">
-            Todos los campos de cada step son <strong>obligatorios</strong>.
-            El resultado debe ser <strong>NIL FINDINGS</strong> o <strong>FINDINGS</strong>.
+            Todos los campos de cada step son <strong>obligatorios</strong>, incluido
+            el inspector de cada step. El resultado debe ser{' '}
+            <strong>NIL FINDINGS</strong> o <strong>FINDINGS</strong>.
           </p>
         </div>
 
@@ -737,31 +727,6 @@ export function InformeForm({ informeId, onSuccess, onCancel }: InformeFormProps
           onChange={(e) => update('observaciones', e.target.value)}
           placeholder="Notas adicionales, condiciones ambientales, etc."
         />
-      </Section>
-
-      <Section title="Inspector responsable del informe">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Nombre del inspector">
-            <div className="relative">
-              <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                className="input pl-10"
-                value={form.inspector_nombre}
-                onChange={(e) => update('inspector_nombre', e.target.value)}
-                placeholder="Nombre y apellidos"
-              />
-            </div>
-          </Field>
-          <Field label="Email">
-            <input
-              type="email"
-              className="input"
-              value={form.inspector_email}
-              onChange={(e) => update('inspector_email', e.target.value)}
-              placeholder="inspector@iberia.es"
-            />
-          </Field>
-        </div>
       </Section>
 
       <Section title="Estado del informe">
