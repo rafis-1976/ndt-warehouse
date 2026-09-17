@@ -91,8 +91,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             width: auto;
             object-fit: contain;
           }
-          .brand-text h1 { margin: 0; font-size: 16px; color: #00205B; letter-spacing: 0.5px; }
-          .brand-text p { margin: 2px 0 0; font-size: 10px; color: #666; }
+          .brand-text p { margin: 0; font-size: 10px; color: #666; }
           .doc-title { text-align: right; }
           .doc-title h2 { margin: 0; font-size: 17px; color: #00205B; font-weight: 800; }
           .doc-title .sub { font-size: 10px; color: #666; margin-top: 1px; }
@@ -422,7 +421,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                     className="brand-img"
                   />
                   <div className="brand-text">
-                    <h1>IBERIA MANTENIMIENTO</h1>
                     <p>DT/MNG AVIONES · TALLERES · NDT</p>
                   </div>
                 </div>
