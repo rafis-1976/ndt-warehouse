@@ -19,6 +19,8 @@ function formatoInspector(numNomina: string | null | undefined, nombre: string |
   return `#${num} - ${n}`;
 }
 
+const LOGO_PATH = '/iberia-mantenimiento.svg';
+
 export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
   const [cargando, setCargando] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
@@ -32,6 +34,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     if (!content) return;
     const win = window.open('', '_blank');
     if (!win) return;
+    const logoAbs = `${window.location.origin}${LOGO_PATH}`;
     win.document.write(`
       <!DOCTYPE html>
       <html>
@@ -83,11 +86,10 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 14px;
           }
           .brand { display: flex; align-items: center; gap: 12px; }
-          .brand-logo {
-            width: 52px; height: 52px;
-            background: #00205B; color: #74D2E7;
-            display: flex; align-items: center; justify-content: center;
-            border-radius: 8px; font-size: 24px; font-weight: 900;
+          .brand-img {
+            height: 52px;
+            width: auto;
+            object-fit: contain;
           }
           .brand-text h1 { margin: 0; font-size: 16px; color: #00205B; letter-spacing: 0.5px; }
           .brand-text p { margin: 2px 0 0; font-size: 10px; color: #666; }
@@ -306,7 +308,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
         </style>
       </head>
-      <body>${content}</body>
+      <body>${content.replace(/src="\/iberia-mantenimiento\.svg"/g, `src="${logoAbs}"`)}</body>
       </html>
     `);
     win.document.close();
@@ -414,7 +416,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             <div className="p-6">
               <div className="head">
                 <div className="brand">
-                  <div className="brand-logo">I</div>
+                  <img
+                    src={LOGO_PATH}
+                    alt="Iberia Mantenimiento"
+                    className="brand-img"
+                  />
                   <div className="brand-text">
                     <h1>IBERIA MANTENIMIENTO</h1>
                     <p>DT/MNG AVIONES · TALLERES · NDT</p>
