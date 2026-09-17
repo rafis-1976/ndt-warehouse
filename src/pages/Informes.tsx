@@ -2,33 +2,63 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, FileText, Search, X, Edit3, Trash2, Printer,
-  Filter, Calendar, Plane, CheckCircle2, XCircle, AlertTriangle,
-  Clock, User, Hash,
+  Filter, Calendar, Plane, CheckCircle2, AlertTriangle,
+  User, Hash, Building2,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { InformeForm } from '../components/informes/InformeForm';
 import { InformeDetalle } from '../components/informes/InformeDetalle';
 
+// ============================================================
+// Configuración de estados y colores
+// ============================================================
 const resultadoConfig: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  aprobado:    { label: 'Aprobado',    color: 'text-airbus-green',  bg: 'bg-airbus-green/15',  icon: CheckCircle2 },
-  rechazado:   { label: 'Rechazado',   color: 'text-airbus-red',    bg: 'bg-airbus-red/15',    icon: XCircle },
-  condicional: { label: 'Condicional', color: 'text-airbus-orange', bg: 'bg-airbus-orange/15', icon: AlertTriangle },
-  pendiente:   { label: 'Pendiente',   color: 'text-gray-500',      bg: 'bg-gray-100',         icon: Clock },
+  'NIL FINDINGS': { label: 'NIL FINDINGS', color: 'text-airbus-green',  bg: 'bg-airbus-green/15',  icon: CheckCircle2 },
+  'FINDINGS':     { label: 'FINDINGS',     color: 'text-airbus-red',    bg: 'bg-airbus-red/15',    icon: AlertTriangle },
 };
 
 const estadoConfig: Record<string, { label: string; color: string; bg: string }> = {
-  borrador: { label: 'Borrador', color: 'text-gray-600',      bg: 'bg-gray-100' },
-  emitido:  { label: 'Emitido',  color: 'text-airbus-green',  bg: 'bg-airbus-green/15' },
-  anulado:  { label: 'Anulado',  color: 'text-airbus-red',    bg: 'bg-airbus-red/15' },
+  borrador: { label: 'Borrador', color: 'text-gray-600',     bg: 'bg-gray-100' },
+  emitido:  { label: 'Emitido',  color: 'text-airbus-green', bg: 'bg-airbus-green/15' },
+  anulado:  { label: 'Anulado',  color: 'text-airbus-red',   bg: 'bg-airbus-red/15' },
 };
+
+const METODOS = ['ET', 'UT', 'TT', 'RT'];
+
+const ESTACIONES = [
+  { value: 'MADRID', label: 'Madrid' },
+  { value: 'BARCELONA', label: 'Barcelona' },
+];
+
+// ============================================================
+// Helpers
+// ============================================================
+/** Extrae los inspectores únicos de todos los steps de un informe */
+function inspectoresDelInforme(informe: any): string[] {
+  const set = new Set<string>();
+  const steps = Array.isArray(informe.ntm_steps) ? informe.ntm_steps : [];
+  steps.forEach((s: any) => {
+    const num = String(s?.inspector_num_nomina ?? '').trim();
+    const nombre = String(s?.inspector_nombre ?? '').trim();
+    if (num && nombre) set.add(`#${num} - ${nombre}`);
+    else if (num) set.add(`#${num}`);
+    else if (nombre) set.add(nombre);
+  });
+  return Array.from(set);
+}
 
 export function Informes() {
   const [informes, setInformes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+
+  // Filtros
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
   const [filtroResultado, setFiltroResultado] = useState<string>('todos');
   const [filtroMetodo, setFiltroMetodo] = useState<string>('todos');
+  const [filtroEstacion, setFiltroEstacion] = useState<string>('todas');
+  const [filtroInspector, setFiltroInspector] = useState<string>('todos');
+  const [filtroMes, setFiltroMes] = useState<string>('todos');
 
   const [modalFormOpen, setModalFormOpen] = useState(false);
   const [informeEditando, setInformeEditando] = useState<any | null>(null);
@@ -43,12 +73,7 @@ export function Informes() {
     setLoading(true);
     const { data, error } = await supabase
       .from('informes')
-      .select(`
-        *,
-        equipos(id_equipo, nombre, tecnicas_ndt(codigo)),
-        probetas(pn, nombre),
-        perfiles(num_nomina, nombre_completo)
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
     if (error) console.error(error);
     setInformes(data ?? []);
@@ -57,49 +82,149 @@ export function Informes() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ============================================================
+  // Listas únicas para los filtros (extraídas de los datos)
+  // ============================================================
+  const mesesDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    informes.forEach((i) => {
+      if (!i.fecha_inspeccion) return;
+      const f = new Date(i.fecha_inspeccion);
+      const key = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`;
+      set.add(key);
+    });
+    return Array.from(set).sort().reverse().map((m) => {
+      const [y, mes] = m.split('-');
+      const nombreMes = new Date(Number(y), Number(mes) - 1, 1)
+        .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      return { value: m, label: nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1) };
+    });
+  }, [informes]);
+
+  const inspectoresDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    informes.forEach((i) => {
+      inspectoresDelInforme(i).forEach((n) => set.add(n));
+    });
+    return Array.from(set).sort();
+  }, [informes]);
+
+  // ============================================================
+  // Filtrado combinado
+  // ============================================================
   const filtered = useMemo(() => {
     const qLower = q.trim().toLowerCase();
     return informes.filter((i) => {
+      // Búsqueda global
+      if (qLower) {
+        const campos = [
+          i.numero_informe,
+          i.numero_sap,
+          i.matricula,
+          i.modelo_aeronave,
+          i.numero_serie_aeronave,
+          i.componente,
+          i.numero_fr,
+          i.zona,
+          i.cliente,
+          i.operador,
+          i.ntm_referencia,
+          i.ntm_step,
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        // Buscar también en los steps
+        const stepsTexto = Array.isArray(i.ntm_steps)
+          ? i.ntm_steps.map((s: any) =>
+              [
+                s?.ntm,
+                s?.step,
+                s?.metodo,
+                s?.inspector_num_nomina,
+                s?.inspector_nombre,
+                ...(s?.equipos ?? []).map((e: any) => `${e.id_equipo ?? ''} ${e.nombre ?? ''} ${e.numero_serie ?? ''}`),
+                ...(s?.probetas ?? []).map((p: any) => `${p.pn ?? ''} ${p.nombre ?? ''} ${p.numero_serie ?? ''}`),
+              ].join(' ')
+            ).join(' ').toLowerCase()
+          : '';
+
+        if (!campos.includes(qLower) && !stepsTexto.includes(qLower)) return false;
+      }
+
+      // Estado
       if (filtroEstado !== 'todos' && i.estado !== filtroEstado) return false;
+
+      // Resultado
       if (filtroResultado !== 'todos' && i.resultado !== filtroResultado) return false;
+
+      // Método principal
       if (filtroMetodo !== 'todos' && i.metodo !== filtroMetodo) return false;
 
-      if (!qLower) return true;
-      const campos = [
-        i.numero_informe, i.numero_sap, i.matricula, i.modelo_aeronave,
-        i.numero_serie_aeronave, i.componente, i.numero_fr, i.zona,
-        i.ntm_referencia, i.ntm_step, i.inspector_nombre, i.inspector_licencia,
-        i.equipos?.id_equipo, i.equipos?.nombre,
-        i.probetas?.pn, i.probetas?.nombre,
-        i.perfiles?.nombre_completo,
-      ].filter(Boolean).join(' ').toLowerCase();
-      return campos.includes(qLower);
-    });
-  }, [informes, q, filtroEstado, filtroResultado, filtroMetodo]);
+      // Instalación
+      if (filtroEstacion !== 'todas') {
+        const est = i.estacion === 'MADET' ? 'MADRID' : i.estacion === 'BCNET' ? 'BARCELONA' : i.estacion;
+        if (est !== filtroEstacion) return false;
+      }
 
+      // Inspector (buscamos en los steps)
+      if (filtroInspector !== 'todos') {
+        const inspectores = inspectoresDelInforme(i);
+        if (!inspectores.includes(filtroInspector)) return false;
+      }
+
+      // Mes de inspección
+      if (filtroMes !== 'todos') {
+        if (!i.fecha_inspeccion) return false;
+        const f = new Date(i.fecha_inspeccion);
+        const key = `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`;
+        if (key !== filtroMes) return false;
+      }
+
+      return true;
+    });
+  }, [informes, q, filtroEstado, filtroResultado, filtroMetodo, filtroEstacion, filtroInspector, filtroMes]);
+
+  // ============================================================
+  // Contadores
+  // ============================================================
   const contadores = useMemo(() => {
     const c = {
       total: informes.length,
-      borrador: 0, emitido: 0, anulado: 0,
-      aprobado: 0, rechazado: 0, condicional: 0, pendiente: 0,
+      borrador: 0,
+      emitido: 0,
+      anulado: 0,
+      findings: 0,
+      nil: 0,
     };
     informes.forEach((i) => {
-      if (c[i.estado] !== undefined) c[i.estado as keyof typeof c]++;
-      if (c[i.resultado] !== undefined) c[i.resultado as keyof typeof c]++;
+      if (c[i.estado as keyof typeof c] !== undefined) (c as any)[i.estado]++;
+      if (i.resultado === 'FINDINGS') c.findings++;
+      if (i.resultado === 'NIL FINDINGS') c.nil++;
     });
     return c;
   }, [informes]);
 
   const hayFiltrosActivos =
-    q !== '' || filtroEstado !== 'todos' || filtroResultado !== 'todos' || filtroMetodo !== 'todos';
+    q !== '' ||
+    filtroEstado !== 'todos' ||
+    filtroResultado !== 'todos' ||
+    filtroMetodo !== 'todos' ||
+    filtroEstacion !== 'todas' ||
+    filtroInspector !== 'todos' ||
+    filtroMes !== 'todos';
 
   const limpiarFiltros = () => {
     setQ('');
     setFiltroEstado('todos');
     setFiltroResultado('todos');
     setFiltroMetodo('todos');
+    setFiltroEstacion('todas');
+    setFiltroInspector('todos');
+    setFiltroMes('todos');
   };
 
+  // ============================================================
+  // Acciones
+  // ============================================================
   const abrirNuevo = () => {
     setInformeEditando(null);
     setModalFormOpen(true);
@@ -145,14 +270,15 @@ export function Informes() {
 
   return (
     <div className="p-6 space-y-4">
+      {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Informes de Inspección</h1>
           <p className="text-sm text-gray-500">
-            {informes.length} informes registrados
-            {contadores.emitido > 0 && (
-              <span className="ml-2 text-airbus-green font-semibold">
-                · {contadores.emitido} emitidos
+            {filtered.length} de {informes.length} informes
+            {contadores.findings > 0 && (
+              <span className="ml-2 text-airbus-red font-semibold">
+                · {contadores.findings} con findings
               </span>
             )}
           </p>
@@ -179,24 +305,24 @@ export function Informes() {
       )}
 
       {/* ESTADÍSTICAS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <StatCard label="Total" value={contadores.total} color="blue" />
-        <StatCard label="Borradores" value={contadores.borrador} color="gray" />
-        <StatCard label="Emitidos" value={contadores.emitido} color="green" />
-        <StatCard label="Aprobados" value={contadores.aprobado} color="green" />
-        <StatCard label="Condicionales" value={contadores.condicional} color="orange" />
-        <StatCard label="Rechazados" value={contadores.rechazado} color="red" />
-        <StatCard label="Anulados" value={contadores.anulado} color="red" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard label="Total"        value={contadores.total}    color="blue" />
+        <StatCard label="Borradores"   value={contadores.borrador} color="gray" />
+        <StatCard label="Emitidos"     value={contadores.emitido}  color="green" />
+        <StatCard label="Anulados"     value={contadores.anulado}  color="red" />
+        <StatCard label="NIL FINDINGS" value={contadores.nil}      color="green" />
+        <StatCard label="FINDINGS"     value={contadores.findings} color="red" />
       </div>
 
       {/* FILTROS */}
-      <div className="card space-y-3">
+      <div className="card space-y-4">
+        {/* Buscador global */}
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-10"
-              placeholder="Buscar por nº informe, matrícula, componente, NTM, inspector..."
+              placeholder="Buscar por nº informe, matrícula, componente, NTM, equipo, probeta, inspector..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -212,64 +338,111 @@ export function Informes() {
           )}
         </div>
 
+        {/* Fila 1: Estado + Resultado + Mes */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* ESTADO */}
           <div>
             <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Filter className="w-3 h-3" />
               Estado
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                { value: 'todos', label: 'Todos' },
-                { value: 'borrador', label: 'Borrador' },
-                { value: 'emitido', label: 'Emitido' },
-                { value: 'anulado', label: 'Anulado' },
-              ].map((e) => (
-                <FilterChip
-                  key={e.value}
-                  active={filtroEstado === e.value}
-                  onClick={() => setFiltroEstado(e.value)}
-                >
-                  {e.label}
-                </FilterChip>
-              ))}
+              <FilterChip
+                active={filtroEstado === 'todos'}
+                onClick={() => setFiltroEstado('todos')}
+              >
+                Todos
+              </FilterChip>
+              <FilterChip
+                active={filtroEstado === 'borrador'}
+                onClick={() => setFiltroEstado('borrador')}
+              >
+                Borrador
+              </FilterChip>
+              <FilterChip
+                active={filtroEstado === 'emitido'}
+                onClick={() => setFiltroEstado('emitido')}
+                color="green"
+              >
+                Emitido
+              </FilterChip>
+              <FilterChip
+                active={filtroEstado === 'anulado'}
+                onClick={() => setFiltroEstado('anulado')}
+                color="red"
+              >
+                Anulado
+              </FilterChip>
             </div>
           </div>
 
+          {/* RESULTADO */}
           <div>
             <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Filter className="w-3 h-3" />
               Resultado
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                { value: 'todos', label: 'Todos' },
-                { value: 'aprobado', label: 'Aprobado' },
-                { value: 'condicional', label: 'Condicional' },
-                { value: 'rechazado', label: 'Rechazado' },
-                { value: 'pendiente', label: 'Pendiente' },
-              ].map((e) => (
-                <FilterChip
-                  key={e.value}
-                  active={filtroResultado === e.value}
-                  onClick={() => setFiltroResultado(e.value)}
-                >
-                  {e.label}
-                </FilterChip>
-              ))}
+              <FilterChip
+                active={filtroResultado === 'todos'}
+                onClick={() => setFiltroResultado('todos')}
+              >
+                Todos
+              </FilterChip>
+              <FilterChip
+                active={filtroResultado === 'NIL FINDINGS'}
+                onClick={() => setFiltroResultado('NIL FINDINGS')}
+                color="green"
+                icon={<CheckCircle2 className="w-3 h-3" />}
+              >
+                NIL FINDINGS
+              </FilterChip>
+              <FilterChip
+                active={filtroResultado === 'FINDINGS'}
+                onClick={() => setFiltroResultado('FINDINGS')}
+                color="red"
+                icon={<AlertTriangle className="w-3 h-3" />}
+              >
+                FINDINGS
+              </FilterChip>
             </div>
           </div>
 
+          {/* MES */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <Calendar className="w-3 h-3" />
+              Mes de inspección
+            </label>
+            <select
+              className="input text-sm"
+              value={filtroMes}
+              onChange={(e) => setFiltroMes(e.target.value)}
+            >
+              <option value="todos">Todos los meses</option>
+              {mesesDisponibles.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Fila 2: Método + Instalación + Inspector */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* MÉTODO */}
           <div>
             <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
               <Filter className="w-3 h-3" />
-              Método
+              Técnica principal
             </label>
             <div className="flex flex-wrap gap-1.5">
-              <FilterChip active={filtroMetodo === 'todos'} onClick={() => setFiltroMetodo('todos')}>
-                Todos
+              <FilterChip
+                active={filtroMetodo === 'todos'}
+                onClick={() => setFiltroMetodo('todos')}
+              >
+                Todas
               </FilterChip>
-              {['UT', 'RT', 'ET', 'TT', 'MT', 'PT'].map((m) => (
+              {METODOS.map((m) => (
                 <FilterChip
                   key={m}
                   active={filtroMetodo === m}
@@ -280,6 +453,50 @@ export function Informes() {
                 </FilterChip>
               ))}
             </div>
+          </div>
+
+          {/* INSTALACIÓN */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <Building2 className="w-3 h-3" />
+              Instalación
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              <FilterChip
+                active={filtroEstacion === 'todas'}
+                onClick={() => setFiltroEstacion('todas')}
+              >
+                Todas
+              </FilterChip>
+              {ESTACIONES.map((e) => (
+                <FilterChip
+                  key={e.value}
+                  active={filtroEstacion === e.value}
+                  onClick={() => setFiltroEstacion(e.value)}
+                  color="blue"
+                >
+                  {e.label}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          {/* INSPECTOR */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              <User className="w-3 h-3" />
+              Inspector
+            </label>
+            <select
+              className="input text-sm"
+              value={filtroInspector}
+              onChange={(e) => setFiltroInspector(e.target.value)}
+            >
+              <option value="todos">Todos los inspectores</option>
+              {inspectoresDisponibles.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -321,8 +538,10 @@ export function Informes() {
                 <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
                   <th className="px-4 py-3">N° Informe</th>
                   <th className="px-4 py-3">Aeronave</th>
-                  <th className="px-4 py-3">Método</th>
+                  <th className="px-4 py-3">Técnica</th>
+                  <th className="px-4 py-3">Instalación</th>
                   <th className="px-4 py-3">Fecha</th>
+                  <th className="px-4 py-3">Inspectores</th>
                   <th className="px-4 py-3">Resultado</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3"></th>
@@ -330,9 +549,16 @@ export function Informes() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((i) => {
-                  const resConf = resultadoConfig[i.resultado] ?? resultadoConfig.pendiente;
+                  const resConf = resultadoConfig[i.resultado] ?? resultadoConfig['NIL FINDINGS'];
                   const estConf = estadoConfig[i.estado] ?? estadoConfig.borrador;
                   const ResIcon = resConf.icon;
+                  const inspectores = inspectoresDelInforme(i);
+                  const estacionMostrar =
+                    i.estacion === 'MADET' ? 'Madrid'
+                    : i.estacion === 'BCNET' ? 'Barcelona'
+                    : i.estacion === 'MADRID' ? 'Madrid'
+                    : i.estacion === 'BARCELONA' ? 'Barcelona'
+                    : i.estacion || '—';
 
                   return (
                     <tr
@@ -383,13 +609,42 @@ export function Informes() {
 
                       <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3 h-3 text-gray-400" />
+                          {estacionMostrar}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                           <Calendar className="w-3 h-3 text-gray-400" />
                           {fmtFecha(i.fecha_inspeccion)}
                         </div>
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${resConf.bg} ${resConf.color}`}>
+                        {inspectores.length === 0 ? (
+                          <span className="text-xs text-gray-400 italic">—</span>
+                        ) : inspectores.length === 1 ? (
+                          <span className="text-xs text-gray-700 truncate max-w-[180px] inline-block">
+                            {inspectores[0]}
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-xs text-gray-700 truncate max-w-[150px]">
+                              {inspectores[0]}
+                            </span>
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded text-[9px] font-bold cursor-help"
+                              title={inspectores.join('\n')}
+                            >
+                              +{inspectores.length - 1}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${resConf.bg} ${resConf.color}`}>
                           <ResIcon className="w-3 h-3" />
                           {resConf.label}
                         </span>
@@ -467,6 +722,9 @@ export function Informes() {
   );
 }
 
+// ============================================================
+// StatCard
+// ============================================================
 function StatCard({
   label, value, color,
 }: {
@@ -494,13 +752,17 @@ function StatCard({
   );
 }
 
+// ============================================================
+// FilterChip
+// ============================================================
 function FilterChip({
-  active, onClick, children, color = 'default',
+  active, onClick, children, color = 'default', icon,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   color?: 'default' | 'blue' | 'green' | 'orange' | 'red';
+  icon?: React.ReactNode;
 }) {
   const activeColor: Record<string, string> = {
     default: 'bg-airbus-blue text-white border-airbus-blue',
@@ -518,6 +780,7 @@ function FilterChip({
           : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
       }`}
     >
+      {icon && <span className="shrink-0">{icon}</span>}
       {children}
     </button>
   );
