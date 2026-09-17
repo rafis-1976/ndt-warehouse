@@ -104,7 +104,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           {/* LOGO IBERIA MANTENIMIENTO */}
           <div className="flex items-center justify-center bg-white rounded-lg px-3 py-1.5 shadow-sm shrink-0">
             <img
-              src="/iberia-mantenimiento.svg"
+              src="/iberia-mantenimiento.png"
               alt="Iberia Mantenimiento"
               className="h-8 w-auto"
             />
