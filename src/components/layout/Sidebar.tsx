@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode,
-  Settings, ArrowRightLeft, UserCog, Boxes, FileText,
+  Settings, ArrowRightLeft, UserCog, Boxes, FileText, Hash,
 } from 'lucide-react';
 import { usePerfil } from '../../hooks/usePerfil';
 
@@ -16,6 +16,7 @@ const items: Item[] = [
   { to: '/dashboard',     label: 'Dashboard',      icon: LayoutDashboard },
   { to: '/equipos',       label: 'Equipos',        icon: Package },
   { to: '/carros',        label: 'Carros',         icon: Boxes },
+  { to: '/probetas',      label: 'Probetas',       icon: Hash },
   { to: '/informes',      label: 'Informes',       icon: FileText },
   { to: '/prestamos',     label: 'Préstamos',      icon: Users },
   { to: '/calibraciones', label: 'Calibraciones',  icon: Calendar },
