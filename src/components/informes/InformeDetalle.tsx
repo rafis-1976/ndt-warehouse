@@ -47,7 +47,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
-            font-size: 11px;
+            font-size: 10px;
             line-height: 1.4;
             background: white;
           }
@@ -92,11 +92,11 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             object-fit: contain;
           }
           .doc-title { text-align: right; }
-          .doc-title h2 { margin: 0; font-size: 17px; color: #00205B; font-weight: 800; }
-          .doc-title .sub { font-size: 10px; color: #666; margin-top: 1px; }
+          .doc-title h2 { margin: 0; font-size: 16px; color: #00205B; font-weight: 800; }
+          .doc-title .sub { font-size: 9px; color: #666; margin-top: 1px; }
           .doc-title .num {
             font-family: 'Courier New', monospace;
-            font-size: 13px;
+            font-size: 12px;
             color: #00205B;
             margin-top: 4px;
             font-weight: 700;
@@ -109,7 +109,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .section-title {
             background: #00205B;
             color: white;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
             letter-spacing: 1px;
             text-transform: uppercase;
@@ -131,7 +131,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: #fafafa;
           }
           .box .label {
-            font-size: 9px;
+            font-size: 8px;
             text-transform: uppercase;
             letter-spacing: 0.6px;
             color: #777;
@@ -139,7 +139,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 3px;
           }
           .box .value {
-            font-size: 12px;
+            font-size: 11px;
             color: #111;
             font-weight: 600;
             word-break: break-word;
@@ -172,7 +172,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
 
           .field { min-width: 0; }
           .field .f-label {
-            font-size: 9px;
+            font-size: 8px;
             text-transform: uppercase;
             letter-spacing: 0.6px;
             color: #666;
@@ -180,14 +180,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 4px;
           }
           .field .f-value {
-            font-size: 12px;
+            font-size: 11px;
             color: #111;
             font-weight: 600;
             line-height: 1.35;
           }
           .field .f-value.mono { font-family: 'Courier New', monospace; }
           .field .f-value.big {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 800;
             color: #00205B;
           }
@@ -201,7 +201,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: white;
             border: 1.5px solid #00205B;
             border-radius: 6px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             color: #111;
             line-height: 1.2;
@@ -215,21 +215,21 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: #e6efff;
             padding: 1px 6px;
             border-radius: 3px;
-            font-size: 11px;
+            font-size: 10px;
           }
           .chip .c-name { color: #333; }
           .chip .c-sn {
             font-family: 'Courier New', monospace;
             color: #666;
-            font-size: 10px;
+            font-size: 9px;
           }
           .chip .c-cal {
             color: #FE5000;
             font-weight: 700;
-            font-size: 10px;
+            font-size: 9px;
           }
           .empty-chips {
-            font-size: 11px;
+            font-size: 10px;
             font-style: italic;
             color: #999;
           }
@@ -244,7 +244,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             page-break-inside: avoid;
           }
           .findings-block .f-label {
-            font-size: 10px;
+            font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 0.8px;
             color: #E4002B;
@@ -252,7 +252,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 6px;
           }
           .findings-block .f-text {
-            font-size: 12px;
+            font-size: 11px;
             color: #7a0015;
             font-weight: 500;
             line-height: 1.5;
@@ -264,7 +264,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             border-radius: 4px;
             padding: 10px 12px;
             background: #fafafa;
-            font-size: 12px;
+            font-size: 11px;
             line-height: 1.5;
             min-height: 30px;
             white-space: pre-wrap;
@@ -288,7 +288,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .barcode-box .b-num {
             font-family: 'Courier New', monospace;
-            font-size: 11px;
+            font-size: 10px;
             color: #333;
             margin-top: 4px;
             font-weight: 700;
@@ -298,7 +298,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-top: 12px;
             padding-top: 8px;
             border-top: 1px solid #ccc;
-            font-size: 9px;
+            font-size: 8px;
             color: #888;
             text-align: center;
             break-inside: avoid;
@@ -487,7 +487,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                                 display: 'inline-block',
                                 padding: '3px 10px',
                                 borderRadius: 10,
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: 800,
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.5,
