@@ -46,21 +46,47 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
     const win = window.open('', '_blank');
     if (!win) return;
     const logoAbs = `${window.location.origin}${LOGO_PATH}`;
+    const numInforme = (informe.numero_informe ?? '').toString();
     win.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Informe ${informe.numero_informe}</title>
+        <title>Informe ${numInforme}</title>
         <style>
           /* =========================================================
              A4 APAISADA (297 × 210 mm)
-             Márgenes aplicados EN CADA PÁGINA por @page:
-               - sup 8mm · inf 10mm · izq 10mm · der 10mm
-             → Área útil: 277 × 192 mm  (~1047 × 726 px @96dpi)
+             Márgenes por página:
+               sup 8mm · inf 16mm · izq 10mm · der 10mm
+             El inferior de 16mm reserva espacio para el pie de página
+             (nº de página) que dibuja @bottom-center.
+             Área útil: 277 × 186 mm
              ========================================================= */
           @page {
             size: A4 landscape;
-            margin: 8mm 10mm 10mm 10mm;
+            margin: 8mm 10mm 16mm 10mm;
+
+            /* 👇 PIE DE PÁGINA REPETIDO EN CADA HOJA */
+            @bottom-left {
+              content: "NDT Warehouse";
+              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+              font-size: 8px;
+              color: #999;
+              padding-left: 2mm;
+            }
+            @bottom-center {
+              content: "Página " counter(page) " de " counter(pages) " · Page " counter(page) " of " counter(pages);
+              font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+              font-size: 8.5px;
+              color: #555;
+              font-weight: 600;
+            }
+            @bottom-right {
+              content: "${numInforme}";
+              font-family: 'Courier New', monospace;
+              font-size: 8px;
+              color: #666;
+              padding-right: 2mm;
+            }
           }
           * { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
@@ -109,7 +135,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 8px;
           }
           .brand { display: flex; align-items: center; gap: 10px; }
-          .brand-img { height: 38px; width: auto; object-fit: contain; }
+          .brand-img { height: 36px; width: auto; object-fit: contain; }
           .doc-title { text-align: right; }
           .doc-title h2 { margin: 0; font-size: 13px; color: #00205B; font-weight: 800; }
           .doc-title .sub { font-size: 7.5px; color: #666; margin-top: 1px; }
@@ -135,7 +161,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             text-transform: uppercase;
             padding: 3px 7px;
             border-radius: 3px;
-            margin-top: 8px;
+            margin-top: 7px;
             margin-bottom: 4px;
             display: flex;
             justify-content: space-between;
@@ -189,13 +215,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             letter-spacing: 0.3px;
           }
 
-          /* --- BLOQUE DE PASO --- */
+          /* --- BLOQUE DE PASO ---
+             👇 SIN overflow:hidden → Chrome rompe el salto de página
+             cuando un ancestro tiene overflow != visible. */
           .step-block {
             border: 1.5px solid #00205B;
             border-radius: 5px;
             margin-bottom: 6px;
-            overflow: hidden;
             background: #fdfdfd;
+            display: block;
           }
           .step-body { padding: 6px 8px; }
 
@@ -260,7 +288,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           }
           .chip .c-name {
             color: #333;
-            max-width: 130px;
+            max-width: 120px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -339,7 +367,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-weight: 700;
           }
 
-          /* --- PIE --- */
+          /* --- PIE IN-FLOW (solo aparece al final del documento) --- */
           .footer {
             margin-top: 6px;
             padding-top: 4px;
