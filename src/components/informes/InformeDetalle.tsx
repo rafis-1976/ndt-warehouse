@@ -52,7 +52,13 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          @page { size: A4 landscape; margin: 0; }
+          /* 👇 CLAVE 1: el margin de @page SÍ se aplica en CADA página.
+             Antes usábamos margin: 0 + padding en body, y ese padding
+             solo se aplicaba al inicio/fin del documento, no en cada salto. */
+          @page {
+            size: A4 landscape;
+            margin: 10mm 12mm 12mm 12mm;
+          }
           * { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
           body {
@@ -61,28 +67,42 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 9px;
             line-height: 1.35;
             background: white;
-            padding: 8mm 12mm;
+            /* 👇 Sin padding: el margen lo pone @page en cada página */
+            padding: 0;
           }
 
+          /* 👇 CLAVE 2: evitar cortes dentro de bloques y filas.
+             - break-inside: avoid → el bloque no se parte
+             - orphans/widows → evita que un texto deje 1-2 líneas huérfanas */
           .step-block,
           .barcode-box,
           .box,
           .texto-largo,
-          .findings-block {
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
+          .findings-block,
           .step-row,
+          .step-body,
           .chips,
           .chip,
           .head,
-          .section-title {
+          .section-title,
+          .footer {
             break-inside: avoid;
             page-break-inside: avoid;
           }
-          .section-title, .head {
+          .step-block,
+          .section-title,
+          .head {
             break-after: avoid;
             page-break-after: avoid;
+          }
+          p, .texto-largo, .findings-block .f-text, .field .f-value {
+            orphans: 3;
+            widows: 3;
+          }
+          /* Evita que un section-title quede solo al final de página */
+          .section-title {
+            break-inside: avoid;
+            break-after: avoid;
           }
 
           .head {
@@ -180,8 +200,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             margin-bottom: 8px;
             overflow: hidden;
             background: #fdfdfd;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
 
           .step-body { padding: 8px 10px; }
@@ -232,8 +250,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-weight: 600;
             color: #111;
             line-height: 1.15;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
           .chip .c-id {
             font-family: 'Courier New', monospace;
@@ -267,8 +283,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             background: #fff5f5;
             padding: 7px 10px;
             margin-top: 6px;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
           .findings-block .f-label {
             font-size: 8px;
@@ -295,8 +309,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             min-height: 24px;
             white-space: pre-wrap;
             color: #222;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
 
           .barcode-box {
@@ -308,8 +320,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            break-inside: avoid;
-            page-break-inside: avoid;
             margin-top: 12px;
           }
           .barcode-box .b-num {
@@ -327,9 +337,15 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 7.5px;
             color: #888;
             text-align: center;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
+
+          /* 👇 CLAVE 3: si un step-block no cabe completo en lo que resta de
+             página, el navegador lo baja entero a la siguiente. Pero si es
+             MÁS ALTO que una página entera, no queda otra que partirlo.
+             Con esto al menos aseguramos que las filas internas (.step-row)
+             no se rompan por la mitad. */
+          .step-block { break-inside: avoid; page-break-inside: avoid; }
+          .step-row  { break-inside: avoid; page-break-inside: avoid; }
         </style>
       </head>
       <body>${content.replace(/src="\/iberia-mantenimiento\.png"/g, `src="${logoAbs}"`)}</body>
