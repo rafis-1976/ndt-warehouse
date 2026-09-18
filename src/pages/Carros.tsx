@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
-  ChevronRight, Boxes, AlertTriangle, Layers, Grid3x3,
+  ChevronRight, Wrench, AlertTriangle, Layers, Grid3x3,
   FileCheck2, X, Highlighter, Barcode,
   Truck, Building2, Warehouse, Users,
 } from 'lucide-react';
@@ -507,7 +507,7 @@ export function Carros() {
         </div>
       ) : carros.length === 0 ? (
         <div className="card p-12 text-center">
-          <Boxes className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-2" />
           <p className="text-gray-500 mb-4">Aún no hay carros registrados</p>
           <button onClick={abrirNuevoCarro} className="btn-primary inline-flex items-center gap-2">
             <Plus className="w-4 h-4" />
@@ -547,7 +547,7 @@ export function Carros() {
                   </div>
 
                   <div className="w-12 h-12 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl flex items-center justify-center shrink-0">
-                    <Boxes className="w-6 h-6 text-airbus-light" />
+                    <Wrench className="w-6 h-6 text-airbus-light" />
                   </div>
 
                   <div className="flex-1 min-w-0">
