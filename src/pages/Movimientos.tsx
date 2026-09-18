@@ -4,10 +4,11 @@ import {
   Plus, RefreshCw, ArrowDownRight, ArrowUpRight, ArrowRightLeft,
   Sliders, Search, X, Filter, Hash, Package, User as UserIcon,
   Truck, CornerDownLeft, Building2, Warehouse, Users, Calendar,
-  Loader2, CheckCircle2,
+  Loader2, CheckCircle2, ScanBarcode,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { MovimientoForm } from '../components/movimientos/MovimientoForm';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 
 type TipoMov =
   | 'entrada'
@@ -83,6 +84,10 @@ export function Movimientos() {
   const [filtroObjeto, setFiltroObjeto] = useState<TipoObjeto>('todos');
   const [limite, setLimite] = useState<number>(50);
   const [devolviendo, setDevolviendo] = useState<string | null>(null);
+
+  // Escáner
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [ultimoEscaneo, setUltimoEscaneo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -249,6 +254,17 @@ export function Movimientos() {
     setQ('');
     setFiltroTipo('todos');
     setFiltroObjeto('todos');
+    setUltimoEscaneo(null);
+  };
+
+  // ============================================================
+  // Escáner: al leer un código, lo usamos como término de búsqueda
+  // ============================================================
+  const handleScan = (code: string) => {
+    const limpio = code.trim();
+    setQ(limpio);
+    setUltimoEscaneo(limpio);
+    setScannerOpen(false);
   };
 
   const fmtFechaHora = (iso: string) => {
@@ -386,16 +402,35 @@ export function Movimientos() {
       </div>
 
       {/* BUSCADOR */}
-      <div className="card">
+      <div className="card space-y-3">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              className="input pl-10"
+              className="input pl-10 pr-10"
               placeholder="Buscar por equipo, probeta, referencia, ubicación, destino o usuario..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            {q ? (
+              <button
+                type="button"
+                onClick={() => setQ('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-airbus-sky hover:text-airbus-blue hover:bg-airbus-sky/10 rounded transition"
+                title="Escanear código de barras"
+              >
+                <ScanBarcode className="w-4 h-4" />
+              </button>
+            )}
           </div>
           {hayFiltrosActivos && (
             <button
@@ -407,6 +442,24 @@ export function Movimientos() {
             </button>
           )}
         </div>
+
+        {/* Aviso de último escaneo */}
+        {ultimoEscaneo && (
+          <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
+            <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Código escaneado:{' '}
+              <span className="font-mono font-bold">{ultimoEscaneo}</span>
+            </span>
+            <button
+              onClick={() => { setUltimoEscaneo(null); setQ(''); }}
+              className="ml-auto text-airbus-sky hover:text-airbus-blue"
+              title="Quitar"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* TABLA */}
@@ -422,7 +475,9 @@ export function Movimientos() {
             <p className="text-gray-500 mb-4">
               {items.length === 0
                 ? 'Aún no hay movimientos registrados'
-                : 'Sin resultados con los filtros actuales'}
+                : ultimoEscaneo && q === ultimoEscaneo
+                  ? `No hay movimientos para el código "${ultimoEscaneo}"`
+                  : 'Sin resultados con los filtros actuales'}
             </p>
             {hayFiltrosActivos ? (
               <button
@@ -656,6 +711,21 @@ export function Movimientos() {
           onSuccess={handleSuccess}
           onCancel={() => setModalOpen(false)}
         />
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        title="Escanear código de barras"
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara al código de barras de un equipo o probeta. El código se usará como término de búsqueda para filtrar el historial de movimientos de ese objeto.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
