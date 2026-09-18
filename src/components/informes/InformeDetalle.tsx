@@ -627,7 +627,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                                       <span className="c-sn">S/N {eq.numero_serie}</span>
                                     )}
                                     {eq.proxima_calibracion && (
-                                      <span className="c-cal">📅 {fmtFecha(eq.proxima_calibracion)}</span>
+                                      <span className="c-cal">Calib → {fmtFecha(eq.proxima_calibracion)}</span>
                                     )}
                                   </span>
                                 ))}
