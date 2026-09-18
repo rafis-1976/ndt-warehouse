@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Calendar, Plus, RefreshCw, AlertTriangle, CheckCircle2,
-  Package, Wrench, Clock, Hash, X, Filter,
+  Package, Wrench, Clock, Hash, X, Filter, ScanBarcode,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CalibracionForm } from '../components/calibraciones/CalibracionForm';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 
 // ============================================================
 // Componente principal
@@ -19,6 +20,10 @@ export function Calibraciones() {
   const [calibracionSeleccionada, setCalibracionSeleccionada] = useState<any | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [q, setQ] = useState('');
+
+  // Escáner
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [ultimoEscaneo, setUltimoEscaneo] = useState<string | null>(null);
 
   // ============================================================
   // Cargar
@@ -131,6 +136,39 @@ export function Calibraciones() {
     load();
   };
 
+  const limpiarBusqueda = () => {
+    setQ('');
+    setUltimoEscaneo(null);
+  };
+
+  // ============================================================
+  // Escáner: al leer un código, lo usamos como término de búsqueda
+  // y si coincide con un equipo en calibración pendiente, abrimos
+  // automáticamente el modal de "Registrar retorno"
+  // ============================================================
+  const handleScan = (code: string) => {
+    const limpio = code.trim();
+    setQ(limpio);
+    setUltimoEscaneo(limpio);
+    setScannerOpen(false);
+
+    // Buscar si hay una calibración pendiente con ese equipo
+    const match = pendientes.find((c) => {
+      const eq = c.equipos;
+      if (!eq) return false;
+      return (
+        eq.codigo_barras?.toLowerCase() === limpio.toLowerCase() ||
+        eq.id_equipo?.toLowerCase() === limpio.toLowerCase()
+      );
+    });
+
+    if (match) {
+      // Vamos a la pestaña pendientes y abrimos "Registrar retorno"
+      setTab('pendientes');
+      setTimeout(() => abrirCompletar(match), 200);
+    }
+  };
+
   // ============================================================
   // Render
   // ============================================================
@@ -181,16 +219,53 @@ export function Calibraciones() {
       )}
 
       {/* BUSCADOR */}
-      <div className="card">
+      <div className="card space-y-3">
         <div className="relative">
           <Filter className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
-            className="input pl-10"
+            className="input pl-10 pr-10"
             placeholder="Buscar por equipo, laboratorio o certificado..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {q ? (
+            <button
+              type="button"
+              onClick={() => setQ('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+              title="Limpiar búsqueda"
+            >
+              <X className="w-3.5 h-3.5 text-gray-400" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setScannerOpen(true)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-airbus-sky hover:text-airbus-blue hover:bg-airbus-sky/10 rounded transition"
+              title="Escanear código de barras"
+            >
+              <ScanBarcode className="w-4 h-4" />
+            </button>
+          )}
         </div>
+
+        {/* Aviso de último escaneo */}
+        {ultimoEscaneo && (
+          <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
+            <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Código escaneado:{' '}
+              <span className="font-mono font-bold">{ultimoEscaneo}</span>
+            </span>
+            <button
+              onClick={limpiarBusqueda}
+              className="ml-auto text-airbus-sky hover:text-airbus-blue"
+              title="Quitar"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* TABS */}
@@ -249,11 +324,24 @@ export function Calibraciones() {
             <div className="p-12 text-center">
               <CheckCircle2 className="w-12 h-12 text-airbus-green mx-auto mb-3" />
               <p className="text-gray-700 font-medium mb-1">
-                No hay equipos en calibración
+                {ultimoEscaneo && q === ultimoEscaneo
+                  ? `No hay calibraciones pendientes para "${ultimoEscaneo}"`
+                  : 'No hay equipos en calibración'}
               </p>
               <p className="text-sm text-gray-500">
-                Todos los equipos enviados a calibrar han sido procesados.
+                {ultimoEscaneo && q === ultimoEscaneo
+                  ? 'Comprueba el código escaneado o límpialo para ver todos los pendientes.'
+                  : 'Todos los equipos enviados a calibrar han sido procesados.'}
               </p>
+              {ultimoEscaneo && q === ultimoEscaneo && (
+                <button
+                  onClick={limpiarBusqueda}
+                  className="btn-ghost border border-gray-300 inline-flex items-center gap-2 mt-4"
+                >
+                  <X className="w-4 h-4" />
+                  Limpiar búsqueda
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -357,7 +445,9 @@ export function Calibraciones() {
               <p className="text-gray-500 mb-4">
                 {historial.length === 0
                   ? 'Sin calibraciones registradas'
-                  : 'Sin resultados para tu búsqueda'}
+                  : ultimoEscaneo && q === ultimoEscaneo
+                    ? `No hay calibraciones completadas para "${ultimoEscaneo}"`
+                    : 'Sin resultados para tu búsqueda'}
               </p>
               {historial.length === 0 && (
                 <button
@@ -483,6 +573,21 @@ export function Calibraciones() {
           calibracionId={modalModo === 'completar' ? calibracionSeleccionada?.id : undefined}
           equipoId={modalModo === 'completar' ? calibracionSeleccionada?.equipo_id : undefined}
         />
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        title="Escanear código de barras"
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara al código de barras del equipo. Si el equipo está en calibración pendiente, se abrirá automáticamente el formulario de <strong>Registrar retorno</strong>. Si no, simplemente se filtrará el listado.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
