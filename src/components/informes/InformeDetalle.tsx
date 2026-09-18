@@ -41,7 +41,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          @page { size: A4; margin: 12mm; }
+          /* 👇 CLAVE: margin 0 elimina las cabeceras/pies que añade el navegador */
+          @page { size: A4; margin: 0; }
           * { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
           body {
@@ -50,6 +51,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 10px;
             line-height: 1.4;
             background: white;
+            /* 👇 El margen que antes daba @page ahora lo aporta el padding del body */
+            padding: 12mm;
           }
 
           .step-block,
