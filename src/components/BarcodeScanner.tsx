@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import { DecodeHintType, BarcodeFormat } from '@zxing/library';
 import {
   Camera, CameraOff, Zap, ZapOff, RefreshCw, CheckCircle2,
+  RotateCw,
 } from 'lucide-react';
 
 export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<any>(null);
+  const detectorRef = useRef<any>(null);
+  const rafRef = useRef<number | null>(null);
   const lastScanRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
 
   const [active, setActive] = useState(false);
@@ -20,6 +23,8 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
   const [ultimoCodigo, setUltimoCodigo] = useState<string | null>(null);
   const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0); // 0, 90, 180, 270
+  const [modo, setModo] = useState<'native' | 'zxing' | null>(null);
 
   // ----------------------------------------------------------
   // 1. Enumerar cámaras y preferir la trasera
@@ -30,77 +35,154 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
       try {
         const tmp = await navigator.mediaDevices.getUserMedia({ video: true });
         tmp.getTracks().forEach((t) => t.stop());
-
         const list = await navigator.mediaDevices.enumerateDevices();
         if (cancelado) return;
         const cams = list.filter((d) => d.kind === 'videoinput');
         setDevices(cams);
-
         const back =
           cams.find((c) => /back|rear|trasera|environment/i.test(c.label)) ??
-          cams[cams.length - 1] ??
-          cams[0];
+          cams[cams.length - 1] ?? cams[0];
         if (back) setDeviceId(back.deviceId);
       } catch (e: any) {
         if (!cancelado) setError(e?.message ?? 'No se pudo acceder a las cámaras');
       }
     })();
-    return () => {
-      cancelado = true;
-    };
+    return () => { cancelado = true; };
   }, []);
 
   // ----------------------------------------------------------
-  // 2. Parar
+  // 2. Parar todo
   // ----------------------------------------------------------
   const stop = useCallback(() => {
-    try {
-      controlsRef.current?.stop();
-    } catch {}
+    try { controlsRef.current?.stop(); } catch {}
     controlsRef.current = null;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    detectorRef.current = null;
     setActive(false);
     setTorchOn(false);
     setTorchAvailable(false);
     setZoomRange(null);
+    setModo(null);
   }, []);
 
   // ----------------------------------------------------------
-  // 3. Arrancar con hints 1D + TRY_HARDER + alta resolución
+  // 3. Detección nativa (BarcodeDetector API) — rápida y precisa para 1D
+  // ----------------------------------------------------------
+  const startNative = useCallback(async (video: HTMLVideoElement) => {
+    const Detector = (window as any).BarcodeDetector;
+    const formats = await Detector.getSupportedFormats();
+    const det = new Detector({
+      formats: formats.filter((f: string) =>
+        [
+          'code_128', 'code_39', 'code_93', 'codabar', 'itf',
+          'ean_13', 'ean_8', 'upc_a', 'upc_e',
+          'qr_code', 'data_matrix', 'pdf417', 'aztec',
+        ].includes(f)
+      ),
+    });
+    detectorRef.current = det;
+
+    const scanLoop = async () => {
+      if (!detectorRef.current || !videoRef.current) return;
+      try {
+        const barcodes = await detectorRef.current.detect(videoRef.current);
+        if (barcodes.length > 0) {
+          const code = barcodes[0].rawValue;
+          const now = Date.now();
+          if (!(lastScanRef.current.code === code && now - lastScanRef.current.at < 1500)) {
+            lastScanRef.current = { code, at: now };
+            setFlash(true); setUltimoCodigo(code);
+            setTimeout(() => setFlash(false), 220);
+            onScan(code);
+          }
+        }
+      } catch {}
+      rafRef.current = requestAnimationFrame(scanLoop);
+    };
+    scanLoop();
+  }, [onScan]);
+
+  // ----------------------------------------------------------
+  // 4. Detección con ZXing (fallback) — con rotación de frame
+  // ----------------------------------------------------------
+  const startZxing = useCallback(async (video: HTMLVideoElement) => {
+    const hints = new Map<DecodeHintType, any>();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93,
+      BarcodeFormat.CODABAR, BarcodeFormat.ITF,
+      BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+      BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.PDF_417, BarcodeFormat.AZTEC,
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.ALSO_INVERTED, true);
+
+    const reader = new BrowserMultiFormatReader(hints as any, {
+      delayBetweenScanAttempts: 50,
+      delayBetweenScanSuccess: 200,
+    });
+
+    // Canvas auxiliar para rotar frames si es necesario
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+
+    const scanLoop = async () => {
+      if (!videoRef.current || !active) return;
+      const v = videoRef.current;
+      if (v.videoWidth === 0) { rafRef.current = requestAnimationFrame(scanLoop); return; }
+
+      try {
+        // Si hay rotación, dibujamos el frame rotado en el canvas
+        if (rotation !== 0) {
+          const w = v.videoWidth, h = v.videoHeight;
+          canvas.width = rotation === 90 || rotation === 270 ? h : w;
+          canvas.height = rotation === 90 || rotation === 270 ? w : h;
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((rotation * Math.PI) / 180);
+          ctx.drawImage(v, -w / 2, -h / 2, w, h);
+          ctx.restore();
+          const result = await reader.decodeFromCanvas(canvas);
+          if (result) {
+            const code = result.getText();
+            const now = Date.now();
+            if (!(lastScanRef.current.code === code && now - lastScanRef.current.at < 1500)) {
+              lastScanRef.current = { code, at: now };
+              setFlash(true); setUltimoCodigo(code);
+              setTimeout(() => setFlash(false), 220);
+              onScan(code);
+            }
+          }
+        } else {
+          // Sin rotación: decodeFromVideoElement
+          const result = await reader.decodeFromVideoElement(v);
+          if (result) {
+            const code = result.getText();
+            const now = Date.now();
+            if (!(lastScanRef.current.code === code && now - lastScanRef.current.at < 1500)) {
+              lastScanRef.current = { code, at: now };
+              setFlash(true); setUltimoCodigo(code);
+              setTimeout(() => setFlash(false), 220);
+              onScan(code);
+            }
+          }
+        }
+      } catch {}
+      rafRef.current = requestAnimationFrame(scanLoop);
+    };
+    scanLoop();
+  }, [active, rotation, onScan]);
+
+  // ----------------------------------------------------------
+  // 5. Arrancar (elige modo nativo o ZXing)
   // ----------------------------------------------------------
   const start = useCallback(async () => {
     if (!videoRef.current) return;
     setError('');
 
     try {
-      // ---- HINTS: habilitar TODOS los formatos 1D + 2D ----
-      const hints = new Map<DecodeHintType, any>();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-        // 1D — códigos impresos (CODE128 es el que usa la app)
-        BarcodeFormat.CODE_128,
-        BarcodeFormat.CODE_39,
-        BarcodeFormat.CODE_93,
-        BarcodeFormat.CODABAR,
-        BarcodeFormat.ITF,
-        BarcodeFormat.EAN_13,
-        BarcodeFormat.EAN_8,
-        BarcodeFormat.UPC_A,
-        BarcodeFormat.UPC_E,
-        // 2D — por si acaso
-        BarcodeFormat.QR_CODE,
-        BarcodeFormat.DATA_MATRIX,
-        BarcodeFormat.PDF_417,
-        BarcodeFormat.AZTEC,
-      ]);
-      hints.set(DecodeHintType.TRY_HARDER, true);
-      hints.set(DecodeHintType.ALSO_INVERTED, true);
-
-      const reader = new BrowserMultiFormatReader(hints as any, {
-        delayBetweenScanAttempts: 50,
-        delayBetweenScanSuccess: 200,
-      });
-      controlsRef.current = { stop: () => {} };
-
-      // ---- CONSTRAINTS: 1080p + autofoco continuo ----
       const constraints: MediaStreamConstraints = {
         audio: false,
         video: {
@@ -116,72 +198,56 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
         } as MediaTrackConstraints,
       };
 
-      const controls = await reader.decodeFromConstraints(
-        constraints,
-        videoRef.current,
-        (result) => {
-          if (!result) return;
-          const code = result.getText();
-          const now = Date.now();
+      // Pedimos el stream manualmente
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
 
-          // Anti-duplicado del mismo código (1.5s)
-          if (
-            lastScanRef.current.code === code &&
-            now - lastScanRef.current.at < 1500
-          ) {
-            return;
-          }
-          lastScanRef.current = { code, at: now };
-
-          setFlash(true);
-          setUltimoCodigo(code);
-          setTimeout(() => setFlash(false), 220);
-
-          onScan(code);
-        }
-      );
-
-      controlsRef.current = controls;
-      setActive(true);
-
-      // ---- Detectar linterna y zoom ----
-      const stream = videoRef.current.srcObject as MediaStream | null;
-      const track = stream?.getVideoTracks()[0];
-      const caps = (track?.getCapabilities?.() ?? {}) as any;
+      // Detectar linterna y zoom
+      const track = stream.getVideoTracks()[0];
+      const caps = (track.getCapabilities?.() ?? {}) as any;
       setTorchAvailable(!!caps.torch);
-      if (caps.zoom) {
-        setZoomRange({ min: caps.zoom.min, max: caps.zoom.max });
-        setZoom(caps.zoom.min);
+      if (caps.zoom) { setZoomRange({ min: caps.zoom.min, max: caps.zoom.max }); setZoom(caps.zoom.min); }
+      else setZoomRange(null);
+
+      // Elegir modo
+      const hasNative = 'BarcodeDetector' in window;
+      setModo(hasNative ? 'native' : 'zxing');
+
+      setActive(true);
+      if (hasNative) {
+        await startNative(videoRef.current);
       } else {
-        setZoomRange(null);
+        await startZxing(videoRef.current);
       }
     } catch (e: any) {
       console.error('[Scanner] Error al iniciar:', e);
       setError('No se pudo acceder a la cámara: ' + (e?.message ?? ''));
       setActive(false);
     }
-  }, [deviceId, onScan]);
+  }, [deviceId, startNative, startZxing]);
+
+  // Reiniciar modo ZXing cuando cambia la rotación
+  useEffect(() => {
+    if (modo === 'zxing' && active && videoRef.current) {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      startZxing(videoRef.current);
+    }
+  }, [rotation, modo, active, startZxing]);
 
   // ----------------------------------------------------------
-  // 4. Linterna
+  // 6. Linterna
   // ----------------------------------------------------------
   const toggleTorch = async () => {
     const stream = videoRef.current?.srcObject as MediaStream | null;
     const track = stream?.getVideoTracks()[0];
     if (!track) return;
     try {
-      await track.applyConstraints({
-        advanced: [{ torch: !torchOn }],
-      } as any);
+      await track.applyConstraints({ advanced: [{ torch: !torchOn }] } as any);
       setTorchOn((v) => !v);
-    } catch (e) {
-      console.warn('[Scanner] Torch no disponible', e);
-    }
+    } catch (e) { console.warn('[Scanner] Torch no disponible', e); }
   };
 
-  // ----------------------------------------------------------
-  // 5. Zoom
-  // ----------------------------------------------------------
   const aplicarZoom = async (v: number) => {
     const stream = videoRef.current?.srcObject as MediaStream | null;
     const track = stream?.getVideoTracks()[0];
@@ -192,9 +258,6 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
     } catch {}
   };
 
-  // ----------------------------------------------------------
-  // 6. Limpieza al desmontar
-  // ----------------------------------------------------------
   useEffect(() => () => stop(), [stop]);
 
   return (
@@ -220,12 +283,10 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
 
             <div className="absolute top-3 left-3 bg-airbus-red text-white text-xs font-medium px-2 py-1 rounded flex items-center gap-1">
               <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-              EN DIRECTO
+              EN DIRECTO {modo === 'native' ? '(nativo)' : '(zxing)'}
             </div>
 
-            {flash && (
-              <div className="absolute inset-0 bg-airbus-green/40 pointer-events-none" />
-            )}
+            {flash && <div className="absolute inset-0 bg-airbus-green/40 pointer-events-none" />}
 
             {ultimoCodigo && (
               <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg text-white text-xs">
@@ -250,36 +311,36 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
         )}
       </div>
 
-      {/* Controles */}
       <div className="flex flex-wrap gap-2">
         <button
           onClick={active ? stop : start}
-          className={
-            active
-              ? 'btn-ghost flex-1 flex items-center justify-center gap-2 border border-gray-300'
-              : 'btn-primary flex-1 flex items-center justify-center gap-2'
-          }
+          className={active
+            ? 'btn-ghost flex-1 flex items-center justify-center gap-2 border border-gray-300'
+            : 'btn-primary flex-1 flex items-center justify-center gap-2'}
         >
           {active ? (
-            <>
-              <CameraOff className="w-4 h-4" />
-              Detener escáner
-            </>
+            <><CameraOff className="w-4 h-4" />Detener escáner</>
           ) : (
-            <>
-              <Camera className="w-4 h-4" />
-              Iniciar escáner
-            </>
+            <><Camera className="w-4 h-4" />Iniciar escáner</>
           )}
         </button>
+
+        {active && (
+          <button
+            onClick={() => setRotation((r) => (r + 90) % 360)}
+            className="btn-ghost border border-gray-300 flex items-center gap-2"
+            title="Rotar frame (útil para códigos 1D)"
+          >
+            <RotateCw className="w-4 h-4" />
+            {rotation}°
+          </button>
+        )}
 
         {torchAvailable && active && (
           <button
             onClick={toggleTorch}
             className={`btn-ghost border flex items-center gap-2 ${
-              torchOn
-                ? 'border-airbus-yellow text-airbus-yellow bg-airbus-yellow/10'
-                : 'border-gray-300'
+              torchOn ? 'border-airbus-yellow text-airbus-yellow bg-airbus-yellow/10' : 'border-gray-300'
             }`}
             title="Linterna"
           >
@@ -289,10 +350,7 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
 
         {active && (
           <button
-            onClick={() => {
-              stop();
-              setTimeout(() => start(), 250);
-            }}
+            onClick={() => { stop(); setTimeout(() => start(), 250); }}
             className="btn-ghost border border-gray-300 flex items-center gap-2"
             title="Reiniciar cámara"
           >
@@ -301,17 +359,13 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
         )}
       </div>
 
-      {/* Selector de cámara */}
       {devices.length > 1 && (
         <select
           value={deviceId ?? ''}
           onChange={(e) => {
             const id = e.target.value;
             setDeviceId(id);
-            if (active) {
-              stop();
-              setTimeout(() => start(), 250);
-            }
+            if (active) { stop(); setTimeout(() => start(), 250); }
           }}
           className="input text-xs w-full"
           title="Cambiar cámara"
@@ -324,29 +378,22 @@ export function BarcodeScanner({ onScan }: { onScan: (code: string) => void }) {
         </select>
       )}
 
-      {/* Zoom */}
       {zoomRange && active && (
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gray-500 uppercase tracking-wider">Zoom</span>
           <input
-            type="range"
-            min={zoomRange.min}
-            max={zoomRange.max}
-            step={0.1}
-            value={zoom}
-            onChange={(e) => aplicarZoom(Number(e.target.value))}
+            type="range" min={zoomRange.min} max={zoomRange.max} step={0.1}
+            value={zoom} onChange={(e) => aplicarZoom(Number(e.target.value))}
             className="flex-1"
           />
-          <span className="text-[11px] text-gray-500 w-8 text-right">
-            {zoom.toFixed(1)}×
-          </span>
+          <span className="text-[11px] text-gray-500 w-8 text-right">{zoom.toFixed(1)}×</span>
         </div>
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed">
         💡 Consejos:
+        <br />· Si el código es <strong>1D</strong> (barras) y no lee, prueba a pulsar el botón de <strong>rotar</strong>.
         <br />· Acerca el código hasta que ocupe 1/3 del ancho de cámara.
-        <br />· Mantén el móvil paralelo a la etiqueta.
         <br />· Con poca luz, activa la <strong>linterna</strong>.
       </p>
     </div>
