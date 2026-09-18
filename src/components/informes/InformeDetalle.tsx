@@ -41,8 +41,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          /* 👇 CLAVE: margin 0 elimina las cabeceras/pies que añade el navegador */
-          @page { size: A4; margin: 0; }
+          /* 👇 CLAVE: A4 horizontal y sin márgenes de navegador */
+          @page { size: A4 landscape; margin: 0; }
           * { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
           body {
@@ -51,8 +51,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             font-size: 10px;
             line-height: 1.4;
             background: white;
-            /* 👇 El margen que antes daba @page ahora lo aporta el padding del body */
-            padding: 12mm;
+            /* El margen lo aporta el padding del body */
+            padding: 10mm 14mm;
           }
 
           .step-block,
@@ -126,6 +126,9 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
           .grid-4 { grid-template-columns: repeat(4, 1fr); }
+          /* 👇 Nuevo: para aprovechar el ancho en horizontal */
+          .grid-5 { grid-template-columns: repeat(5, 1fr); }
+          .grid-6 { grid-template-columns: repeat(6, 1fr); }
 
           .box {
             border: 1px solid #ccc;
@@ -450,6 +453,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
               </div>
 
               <div className="section-title">Aeronave / Componente</div>
+              {/* 👇 En horizontal caben 4 columnas cómodamente (antes eran 4 en vertical apretadas) */}
               <div className="grid grid-4">
                 <Box label="Matrícula (A/C)" value={informe.matricula || '—'} mono />
                 <Box label="Modelo" value={informe.modelo_aeronave || '—'} />
@@ -503,7 +507,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        <div className="step-row">
+                        {/* 👇 En horizontal: 3 columnas en lugar de 2 para la fila fecha/inspector */}
+                        <div className="step-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
                           <div className="field">
                             <div className="f-label">Fecha de realización</div>
                             <div className="f-value big">{fmtFecha(s.fecha)}</div>
