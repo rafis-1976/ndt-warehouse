@@ -52,44 +52,43 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
       <head>
         <title>Informe ${informe.numero_informe}</title>
         <style>
-          /* 👇 CLAVE 1: el margin de @page SÍ se aplica en CADA página.
-             Antes usábamos margin: 0 + padding en body, y ese padding
-             solo se aplicaba al inicio/fin del documento, no en cada salto. */
+          /* =========================================================
+             A4 APAISADA (297 × 210 mm)
+             Márgenes aplicados EN CADA PÁGINA por @page:
+               - sup 8mm · inf 10mm · izq 10mm · der 10mm
+             → Área útil: 277 × 192 mm  (~1047 × 726 px @96dpi)
+             ========================================================= */
           @page {
             size: A4 landscape;
-            margin: 10mm 12mm 12mm 12mm;
+            margin: 8mm 10mm 10mm 10mm;
           }
           * { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #111;
-            font-size: 9px;
-            line-height: 1.35;
+            font-size: 8.5px;
+            line-height: 1.3;
             background: white;
-            /* 👇 Sin padding: el margen lo pone @page en cada página */
             padding: 0;
           }
 
-          /* 👇 CLAVE 2: evitar cortes dentro de bloques y filas.
-             - break-inside: avoid → el bloque no se parte
-             - orphans/widows → evita que un texto deje 1-2 líneas huérfanas */
+          /* --- CONTROL DE SALTOS DE PÁGINA --- */
           .step-block,
-          .barcode-box,
-          .box,
-          .texto-largo,
-          .findings-block,
           .step-row,
           .step-body,
           .chips,
           .chip,
-          .head,
+          .box,
+          .findings-block,
+          .texto-largo,
           .section-title,
+          .head,
+          .barcode-box,
           .footer {
             break-inside: avoid;
             page-break-inside: avoid;
           }
-          .step-block,
           .section-title,
           .head {
             break-after: avoid;
@@ -99,48 +98,45 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             orphans: 3;
             widows: 3;
           }
-          /* Evita que un section-title quede solo al final de página */
-          .section-title {
-            break-inside: avoid;
-            break-after: avoid;
-          }
 
+          /* --- CABECERA --- */
           .head {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 3px solid #00205B;
-            padding-bottom: 8px;
-            margin-bottom: 10px;
+            border-bottom: 2.5px solid #00205B;
+            padding-bottom: 6px;
+            margin-bottom: 8px;
           }
-          .brand { display: flex; align-items: center; gap: 12px; }
-          .brand-img { height: 44px; width: auto; object-fit: contain; }
+          .brand { display: flex; align-items: center; gap: 10px; }
+          .brand-img { height: 38px; width: auto; object-fit: contain; }
           .doc-title { text-align: right; }
-          .doc-title h2 { margin: 0; font-size: 14px; color: #00205B; font-weight: 800; }
-          .doc-title .sub { font-size: 8px; color: #666; margin-top: 1px; }
+          .doc-title h2 { margin: 0; font-size: 13px; color: #00205B; font-weight: 800; }
+          .doc-title .sub { font-size: 7.5px; color: #666; margin-top: 1px; }
           .doc-title .num {
             font-family: 'Courier New', monospace;
-            font-size: 11px;
+            font-size: 10px;
             color: #00205B;
-            margin-top: 3px;
+            margin-top: 2px;
             font-weight: 700;
             background: #f0f7ff;
-            padding: 2px 8px;
-            border-radius: 4px;
+            padding: 1px 7px;
+            border-radius: 3px;
             display: inline-block;
           }
 
+          /* --- TÍTULOS DE SECCIÓN --- */
           .section-title {
             background: #00205B;
             color: white;
-            font-size: 9px;
+            font-size: 8.5px;
             font-weight: 800;
-            letter-spacing: 0.6px;
+            letter-spacing: 0.5px;
             text-transform: uppercase;
-            padding: 4px 8px;
+            padding: 3px 7px;
             border-radius: 3px;
-            margin-top: 10px;
-            margin-bottom: 6px;
+            margin-top: 8px;
+            margin-bottom: 4px;
             display: flex;
             justify-content: space-between;
             gap: 8px;
@@ -148,37 +144,36 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .section-title .st-en {
             font-weight: 600;
             opacity: 0.85;
-            font-size: 8.5px;
+            font-size: 8px;
             letter-spacing: 0.3px;
           }
 
-          .grid { display: grid; gap: 5px; margin-bottom: 6px; }
+          /* --- GRIDS --- */
+          .grid { display: grid; gap: 4px; margin-bottom: 4px; }
           .grid-2 { grid-template-columns: repeat(2, 1fr); }
           .grid-3 { grid-template-columns: repeat(3, 1fr); }
           .grid-4 { grid-template-columns: repeat(4, 1fr); }
-          .grid-5 { grid-template-columns: repeat(5, 1fr); }
-          .grid-6 { grid-template-columns: repeat(6, 1fr); }
 
           .box {
             border: 1px solid #ccc;
             border-radius: 3px;
-            padding: 5px 8px;
+            padding: 4px 6px;
             background: #fafafa;
           }
           .box .label {
-            font-size: 7.5px;
-            letter-spacing: 0.4px;
+            font-size: 7px;
+            letter-spacing: 0.3px;
             color: #777;
             font-weight: 700;
-            margin-bottom: 2px;
-            line-height: 1.2;
+            margin-bottom: 1px;
+            line-height: 1.15;
           }
           .box .value {
-            font-size: 10px;
+            font-size: 9.5px;
             color: #111;
             font-weight: 600;
             word-break: break-word;
-            line-height: 1.25;
+            line-height: 1.2;
           }
           .box .value.mono { font-family: 'Courier New', monospace; }
 
@@ -190,25 +185,25 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             text-transform: uppercase;
             color: #999;
             font-weight: 600;
-            font-size: 6.8px;
+            font-size: 6.5px;
             letter-spacing: 0.3px;
           }
 
+          /* --- BLOQUE DE PASO --- */
           .step-block {
             border: 1.5px solid #00205B;
-            border-radius: 6px;
-            margin-bottom: 8px;
+            border-radius: 5px;
+            margin-bottom: 6px;
             overflow: hidden;
             background: #fdfdfd;
           }
-
-          .step-body { padding: 8px 10px; }
+          .step-body { padding: 6px 8px; }
 
           .step-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            padding: 5px 0;
+            gap: 8px;
+            padding: 4px 0;
             border-bottom: 1px dashed #e0e0e0;
           }
           .step-row:last-child { border-bottom: none; }
@@ -217,135 +212,142 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
 
           .field { min-width: 0; }
           .field .f-label {
-            font-size: 7.5px;
-            letter-spacing: 0.4px;
+            font-size: 7px;
+            letter-spacing: 0.3px;
             color: #666;
             font-weight: 800;
-            margin-bottom: 2px;
-            line-height: 1.2;
+            margin-bottom: 1px;
+            line-height: 1.15;
           }
           .field .f-value {
-            font-size: 10px;
+            font-size: 9.5px;
             color: #111;
             font-weight: 600;
-            line-height: 1.3;
+            line-height: 1.25;
           }
           .field .f-value.mono { font-family: 'Courier New', monospace; }
           .field .f-value.big {
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 800;
             color: #00205B;
           }
 
-          .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+          /* --- CHIPS (equipos / probetas) --- */
+          .chips { display: flex; flex-wrap: wrap; gap: 3px; }
           .chip {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            padding: 3px 7px;
+            gap: 4px;
+            padding: 2px 6px;
             background: white;
             border: 1.2px solid #00205B;
             border-radius: 4px;
-            font-size: 9px;
+            font-size: 8.5px;
             font-weight: 600;
             color: #111;
-            line-height: 1.15;
+            line-height: 1.1;
+            max-width: 100%;
           }
           .chip .c-id {
             font-family: 'Courier New', monospace;
             font-weight: 800;
             color: #00205B;
             background: #e6efff;
-            padding: 0 5px;
+            padding: 0 4px;
             border-radius: 3px;
-            font-size: 9px;
+            font-size: 8.5px;
+            flex-shrink: 0;
           }
-          .chip .c-name { color: #333; }
+          .chip .c-name {
+            color: #333;
+            max-width: 130px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
           .chip .c-sn {
             font-family: 'Courier New', monospace;
             color: #666;
-            font-size: 8px;
+            font-size: 7.5px;
+            flex-shrink: 0;
           }
           .chip .c-cal {
             color: #FE5000;
             font-weight: 700;
-            font-size: 8px;
+            font-size: 7.5px;
+            flex-shrink: 0;
           }
           .empty-chips {
-            font-size: 9px;
+            font-size: 8.5px;
             font-style: italic;
             color: #999;
           }
 
+          /* --- FINDINGS --- */
           .findings-block {
             border: 1.5px solid #E4002B;
-            border-radius: 5px;
+            border-radius: 4px;
             background: #fff5f5;
-            padding: 7px 10px;
-            margin-top: 6px;
+            padding: 5px 8px;
+            margin-top: 5px;
           }
           .findings-block .f-label {
-            font-size: 8px;
-            letter-spacing: 0.5px;
+            font-size: 7.5px;
+            letter-spacing: 0.4px;
             color: #E4002B;
             font-weight: 800;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
           }
           .findings-block .f-text {
-            font-size: 10px;
+            font-size: 9.5px;
             color: #7a0015;
             font-weight: 500;
-            line-height: 1.4;
+            line-height: 1.35;
             white-space: pre-wrap;
           }
 
+          /* --- TEXTO LARGO --- */
           .texto-largo {
             border: 1px solid #ccc;
             border-radius: 3px;
-            padding: 7px 10px;
+            padding: 6px 8px;
             background: #fafafa;
-            font-size: 10px;
-            line-height: 1.4;
-            min-height: 24px;
+            font-size: 9.5px;
+            line-height: 1.35;
+            min-height: 20px;
             white-space: pre-wrap;
             color: #222;
           }
 
+          /* --- CÓDIGO DE BARRAS --- */
           .barcode-box {
             border: 1px solid #ccc;
-            border-radius: 5px;
-            padding: 8px;
+            border-radius: 4px;
+            padding: 6px;
             background: #fafafa;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            margin-top: 12px;
+            margin-top: 8px;
           }
           .barcode-box .b-num {
             font-family: 'Courier New', monospace;
-            font-size: 9px;
+            font-size: 8.5px;
             color: #333;
-            margin-top: 3px;
+            margin-top: 2px;
             font-weight: 700;
           }
 
+          /* --- PIE --- */
           .footer {
-            margin-top: 8px;
-            padding-top: 6px;
+            margin-top: 6px;
+            padding-top: 4px;
             border-top: 1px solid #ccc;
-            font-size: 7.5px;
+            font-size: 7px;
             color: #888;
             text-align: center;
           }
-
-          /* 👇 CLAVE 3: si un step-block no cabe completo en lo que resta de
-             página, el navegador lo baja entero a la siguiente. Pero si es
-             MÁS ALTO que una página entera, no queda otra que partirlo.
-             Con esto al menos aseguramos que las filas internas (.step-row)
-             no se rompan por la mitad. */
-          .step-block { break-inside: avoid; page-break-inside: avoid; }
-          .step-row  { break-inside: avoid; page-break-inside: avoid; }
         </style>
       </head>
       <body>${content.replace(/src="\/iberia-mantenimiento\.png"/g, `src="${logoAbs}"`)}</body>
@@ -546,9 +548,9 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                               className="f-value"
                               style={{
                                 display: 'inline-block',
-                                padding: '2px 9px',
+                                padding: '2px 8px',
                                 borderRadius: 9,
-                                fontSize: 9,
+                                fontSize: 8.5,
                                 fontWeight: 800,
                                 textTransform: 'uppercase',
                                 letterSpacing: 0.4,
@@ -579,49 +581,43 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                           </div>
                         </div>
 
-                        {/* Fila 3: Equipos */}
-                        <div className="step-row full">
+                        {/* Fila 3: Equipos | Probetas (lado a lado) */}
+                        <div className="step-row">
                           <div className="field">
                             <div className="f-label">
                               <L es={`Equipos utilizados (${s.equipos.length})`} en={`Equipment used (${s.equipos.length})`} />
                             </div>
                             {s.equipos.length === 0 ? (
-                              <div className="empty-chips">Sin equipos asignados · No equipment assigned</div>
+                              <div className="empty-chips">Sin equipos · No equipment</div>
                             ) : (
                               <div className="chips">
                                 {s.equipos.map((eq: any, idx: number) => (
                                   <span key={idx} className="chip">
                                     <span className="c-id">{eq.id_equipo ?? '—'}</span>
-                                    <span className="c-name">{eq.nombre}</span>
+                                    <span className="c-name" title={eq.nombre}>{eq.nombre}</span>
                                     {eq.numero_serie && (
                                       <span className="c-sn">S/N {eq.numero_serie}</span>
                                     )}
                                     {eq.proxima_calibracion && (
-                                      <span className="c-cal">
-                                        📅 Calib: {fmtFecha(eq.proxima_calibracion)}
-                                      </span>
+                                      <span className="c-cal">📅 {fmtFecha(eq.proxima_calibracion)}</span>
                                     )}
                                   </span>
                                 ))}
                               </div>
                             )}
                           </div>
-                        </div>
-
-                        {/* Fila 4: Probetas */}
-                        <div className="step-row full">
                           <div className="field">
                             <div className="f-label">
-                              <L es={`Probetas utilizadas (${s.probetas.length})`} en={`Reference blocks used (${s.probetas.length})`} />
+                              <L es={`Probetas utilizadas (${s.probetas.length})`} en={`Ref. blocks used (${s.probetas.length})`} />
                             </div>
                             {s.probetas.length === 0 ? (
-                              <div className="empty-chips">Sin probetas asignadas · No reference blocks assigned</div>
+                              <div className="empty-chips">Sin probetas · No ref. blocks</div>
                             ) : (
                               <div className="chips">
                                 {s.probetas.map((pb: any, idx: number) => (
                                   <span key={idx} className="chip">
                                     <span className="c-id">{pb.pn ?? '—'}</span>
-                                    <span className="c-name">{pb.nombre}</span>
+                                    <span className="c-name" title={pb.nombre}>{pb.nombre}</span>
                                     {pb.numero_serie && (
                                       <span className="c-sn">S/N {pb.numero_serie}</span>
                                     )}
@@ -662,8 +658,8 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                     value={informe.numero_informe}
                     format="CODE128"
                     displayValue={false}
-                    height={36}
-                    width={1.3}
+                    height={34}
+                    width={1.2}
                     margin={0}
                     lineColor="#00205B"
                   />
