@@ -3,10 +3,11 @@ import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Package, RefreshCw, Printer, X, Filter,
   AlertTriangle, Calendar, CheckCircle2, AlertCircle, Bell, Wrench,
-  Truck, Building2, Warehouse, Users,
+  Truck, Building2, Warehouse, Users, ScanBarcode,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 import Barcode from 'react-barcode';
 import {
   estadoCalibracion,
@@ -64,6 +65,10 @@ export function Equipos() {
   const [avisoVencidasCerrado, setAvisoVencidasCerrado] = useState(false);
   const [avisoProximasCerrado, setAvisoProximasCerrado] = useState(false);
   const [avisoFueraCerrado, setAvisoFueraCerrado] = useState(false);
+
+  // Escáner
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [ultimoEscaneo, setUltimoEscaneo] = useState<string | null>(null);
 
   const { fueraMap } = usePrestamosExternos();
 
@@ -178,6 +183,7 @@ export function Equipos() {
     setFiltroCalibracion('todas');
     setQ('');
     setSoloFuera(false);
+    setUltimoEscaneo(null);
   };
 
   const openNew = () => { setEditingId(null); setModalOpen(true); };
@@ -188,6 +194,26 @@ export function Equipos() {
     setToast(editingId ? 'Equipo actualizado correctamente' : 'Equipo creado correctamente');
     setTimeout(() => setToast(null), 3000);
     load();
+  };
+
+  // ============================================================
+  // Escáner: al leer un código, lo usamos como término de búsqueda
+  // ============================================================
+  const handleScan = (code: string) => {
+    const limpio = code.trim();
+    setQ(limpio);
+    setUltimoEscaneo(limpio);
+    setScannerOpen(false);
+
+    // Auto-abrir el equipo si hay match exacto en codigo_barras o id_equipo
+    const match = equipos.find(
+      (e) =>
+        e.codigo_barras?.toLowerCase() === limpio.toLowerCase() ||
+        e.id_equipo?.toLowerCase() === limpio.toLowerCase()
+    );
+    if (match) {
+      setTimeout(() => openEdit(match.id), 150);
+    }
   };
 
   const imprimirEtiqueta = (equipo: any) => {
@@ -437,11 +463,19 @@ export function Equipos() {
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              className="input pl-10"
+              className="input pl-10 pr-10"
               placeholder="Buscar por ID, nombre, código, serie, marca..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            <button
+              type="button"
+              onClick={() => setScannerOpen(true)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-airbus-sky hover:text-airbus-blue hover:bg-airbus-sky/10 rounded transition"
+              title="Escanear código de barras"
+            >
+              <ScanBarcode className="w-4 h-4" />
+            </button>
           </div>
           {hayFiltrosActivos && (
             <button
@@ -454,6 +488,24 @@ export function Equipos() {
             </button>
           )}
         </div>
+
+        {/* Aviso de último escaneo */}
+        {ultimoEscaneo && (
+          <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
+            <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Código escaneado:{' '}
+              <span className="font-mono font-bold">{ultimoEscaneo}</span>
+            </span>
+            <button
+              onClick={() => { setUltimoEscaneo(null); setQ(''); }}
+              className="ml-auto text-airbus-sky hover:text-airbus-blue"
+              title="Quitar"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {/* Filtro rápido "fuera del almacén" */}
         {equiposFuera.length > 0 && (
@@ -871,6 +923,21 @@ export function Equipos() {
           onSuccess={handleSuccess}
           onCancel={() => setModalOpen(false)}
         />
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        title="Escanear código de barras"
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara al código de barras del equipo. El código se usará como término de búsqueda y, si coincide con un equipo, se abrirá automáticamente.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
