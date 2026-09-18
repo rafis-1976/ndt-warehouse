@@ -4,13 +4,14 @@ import {
   Plus, RefreshCw, Package, Search, Edit3, Trash2, ChevronDown,
   ChevronRight, Wrench, AlertTriangle, Layers, Grid3x3,
   FileCheck2, X, Highlighter, Barcode,
-  Truck, Building2, Warehouse, Users,
+  Truck, Building2, Warehouse, Users, ScanBarcode,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
 import { Modal } from '../components/ui/Modal';
 import { CarroForm } from '../components/carros/CarroForm';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
 import { ProbetaDetalle } from '../components/carros/ProbetaDetalle';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
 
 const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
@@ -40,6 +41,10 @@ export function Carros() {
   const [detalleProbeta, setDetalleProbeta] = useState<any | null>(null);
   const [detalleCarro, setDetalleCarro] = useState<any | null>(null);
   const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
+
+  // Escáner
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [ultimoEscaneo, setUltimoEscaneo] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState<string | null>(null);
@@ -301,6 +306,40 @@ export function Carros() {
     );
   };
 
+  // ============================================================
+  // Escáner: al leer un código, lo usamos como término de búsqueda
+  // ============================================================
+  const handleScan = (code: string) => {
+    const limpio = code.trim();
+    setQ(limpio);
+    setUltimoEscaneo(limpio);
+    setScannerOpen(false);
+
+    // Auto-apertura según el tipo de código:
+    // 1) Si coincide con una probeta → abrir su detalle
+    // 2) Si coincide con un carro → expandirlo
+    const probetaMatch = probetas.find(
+      (p) =>
+        p.codigo_barras?.toLowerCase() === limpio.toLowerCase() ||
+        p.pn?.toLowerCase() === limpio.toLowerCase()
+    );
+    if (probetaMatch) {
+      // Aseguramos que el carro esté expandido
+      if (probetaMatch.carro_id) {
+        setExpandidos((prev) => new Set(prev).add(probetaMatch.carro_id));
+      }
+      setTimeout(() => abrirDetalleProbeta(probetaMatch, probetaMatch.carro_id ? carros.find((c) => c.id === probetaMatch.carro_id) ?? null : null), 150);
+      return;
+    }
+
+    const carroMatch = carros.find(
+      (c) => c.codigo?.toLowerCase() === limpio.toLowerCase()
+    );
+    if (carroMatch) {
+      setExpandidos((prev) => new Set(prev).add(carroMatch.id));
+    }
+  };
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -414,7 +453,7 @@ export function Carros() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {q && (
+          {q ? (
             <button
               type="button"
               onClick={() => setQ('')}
@@ -423,8 +462,35 @@ export function Carros() {
             >
               <X className="w-3.5 h-3.5 text-gray-400" />
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setScannerOpen(true)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-airbus-sky hover:text-airbus-blue hover:bg-airbus-sky/10 rounded transition"
+              title="Escanear código de barras"
+            >
+              <ScanBarcode className="w-4 h-4" />
+            </button>
           )}
         </div>
+
+        {/* Aviso de último escaneo */}
+        {ultimoEscaneo && (
+          <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
+            <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Código escaneado:{' '}
+              <span className="font-mono font-bold">{ultimoEscaneo}</span>
+            </span>
+            <button
+              onClick={() => { setUltimoEscaneo(null); setQ(''); }}
+              className="ml-auto text-airbus-sky hover:text-airbus-blue"
+              title="Quitar"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {probetasFuera.length > 0 && (
           <div>
@@ -469,7 +535,7 @@ export function Carros() {
               </span>
             </div>
             <button
-              onClick={() => { setQ(''); setSoloFuera(false); }}
+              onClick={() => { setQ(''); setSoloFuera(false); setUltimoEscaneo(null); }}
               className="text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
             >
               <X className="w-3 h-3" />
@@ -498,7 +564,7 @@ export function Carros() {
               : 'Prueba con el código de carro, el P/N de una probeta, un código de barras o un código NTM'}
           </p>
           <button
-            onClick={() => { setQ(''); setSoloFuera(false); }}
+            onClick={() => { setQ(''); setSoloFuera(false); setUltimoEscaneo(null); }}
             className="btn-ghost border border-gray-300 inline-flex items-center gap-2"
           >
             <X className="w-4 h-4" />
@@ -1020,6 +1086,21 @@ export function Carros() {
             <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
           </div>
         )}
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        title="Escanear código de barras"
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara a un código de barras. Si coincide con una probeta se abrirá su detalle; si coincide con un carro se expandirá automáticamente.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
