@@ -57,15 +57,12 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
              A4 APAISADA (297 × 210 mm)
              Márgenes por página:
                sup 8mm · inf 16mm · izq 10mm · der 10mm
-             El inferior de 16mm reserva espacio para el pie de página
-             (nº de página) que dibuja @bottom-center.
              Área útil: 277 × 186 mm
              ========================================================= */
           @page {
             size: A4 landscape;
             margin: 8mm 10mm 16mm 10mm;
 
-            /* 👇 PIE DE PÁGINA REPETIDO EN CADA HOJA */
             @bottom-left {
               content: "NDT Warehouse";
               font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -110,7 +107,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
           .texto-largo,
           .section-title,
           .head,
-          .barcode-box,
           .footer {
             break-inside: avoid;
             page-break-inside: avoid;
@@ -130,13 +126,14 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 14px;
             border-bottom: 2.5px solid #00205B;
             padding-bottom: 6px;
             margin-bottom: 8px;
           }
-          .brand { display: flex; align-items: center; gap: 10px; }
+          .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
           .brand-img { height: 36px; width: auto; object-fit: contain; }
-          .doc-title { text-align: right; }
+          .doc-title { text-align: right; flex: 1; min-width: 0; }
           .doc-title h2 { margin: 0; font-size: 13px; color: #00205B; font-weight: 800; }
           .doc-title .sub { font-size: 7.5px; color: #666; margin-top: 1px; }
           .doc-title .num {
@@ -149,6 +146,19 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             padding: 1px 7px;
             border-radius: 3px;
             display: inline-block;
+          }
+
+          /* --- CÓDIGO DE BARRAS EN CABECERA --- */
+          .head-barcode {
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 6px;
+            background: #fafafa;
+            border: 1px solid #ccc;
+            border-radius: 4px;
           }
 
           /* --- TÍTULOS DE SECCIÓN --- */
@@ -215,9 +225,7 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             letter-spacing: 0.3px;
           }
 
-          /* --- BLOQUE DE PASO ---
-             👇 SIN overflow:hidden → Chrome rompe el salto de página
-             cuando un ancestro tiene overflow != visible. */
+          /* --- BLOQUE DE PASO --- */
           .step-block {
             border: 1.5px solid #00205B;
             border-radius: 5px;
@@ -345,26 +353,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
             min-height: 20px;
             white-space: pre-wrap;
             color: #222;
-          }
-
-          /* --- CÓDIGO DE BARRAS --- */
-          .barcode-box {
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 6px;
-            background: #fafafa;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            margin-top: 8px;
-          }
-          .barcode-box .b-num {
-            font-family: 'Courier New', monospace;
-            font-size: 8.5px;
-            color: #333;
-            margin-top: 2px;
-            font-weight: 700;
           }
 
           /* --- PIE IN-FLOW (solo aparece al final del documento) --- */
@@ -497,6 +485,19 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   <div className="sub">NDT Inspection Report</div>
                   <div className="num">{informe.numero_informe}</div>
                 </div>
+                {informe.numero_informe && (
+                  <div className="head-barcode">
+                    <BarcodeLib
+                      value={informe.numero_informe}
+                      format="CODE128"
+                      displayValue={false}
+                      height={30}
+                      width={1}
+                      margin={0}
+                      lineColor="#00205B"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-2" style={{ marginTop: 0 }}>
@@ -678,21 +679,6 @@ export function InformeDetalle({ informe, onClose }: InformeDetalleProps) {
                   </div>
                   <div className="texto-largo">{informe.observaciones}</div>
                 </>
-              )}
-
-              {informe.numero_informe && (
-                <div className="barcode-box">
-                  <BarcodeLib
-                    value={informe.numero_informe}
-                    format="CODE128"
-                    displayValue={false}
-                    height={34}
-                    width={1.2}
-                    margin={0}
-                    lineColor="#00205B"
-                  />
-                  <div className="b-num">{informe.numero_informe}</div>
-                </div>
               )}
 
               <div className="footer">
