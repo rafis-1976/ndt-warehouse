@@ -4,7 +4,7 @@ import {
   Search, Plus, Package, RefreshCw, Printer, X, Filter,
   AlertTriangle, Calendar, CheckCircle2, AlertCircle, Bell, Wrench,
   Truck, Building2, Warehouse, Users, ScanBarcode,
-  Boxes, ChevronDown, ChevronRight, Edit3, Trash2, Layers,
+  Boxes, ChevronDown, ChevronRight, Edit3, Trash2, Layers, ImageIcon,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { EquipoForm } from '../components/equipos/EquipoForm';
@@ -1051,6 +1051,7 @@ function KitsTab({ onCambio }: { onCambio: () => void }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [kitEditando, setKitEditando] = useState<any | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [fotoAbierta, setFotoAbierta] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1195,9 +1196,14 @@ function KitsTab({ onCambio }: { onCambio: () => void }) {
                     )}
                   </div>
 
-                  {/* FOTO o icono por defecto */}
+                  {/* FOTO (clicable → abre en grande) o icono por defecto */}
                   {k.foto_url ? (
-                    <div className="w-12 h-12 rounded-xl border border-gray-200 overflow-hidden shrink-0 bg-gray-50">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setFotoAbierta(k.foto_url); }}
+                      className="w-12 h-12 rounded-xl border border-gray-200 overflow-hidden shrink-0 bg-gray-50 hover:border-airbus-sky hover:shadow-md transition relative group/foto"
+                      title="Ver foto en grande"
+                    >
                       <img
                         src={k.foto_url}
                         alt={k.nombre}
@@ -1206,7 +1212,10 @@ function KitsTab({ onCambio }: { onCambio: () => void }) {
                           (ev.target as HTMLImageElement).style.display = 'none';
                         }}
                       />
-                    </div>
+                      <div className="absolute inset-0 bg-black/0 group-hover/foto:bg-black/20 transition flex items-center justify-center">
+                        <ImageIcon className="w-4 h-4 text-white opacity-0 group-hover/foto:opacity-100 transition drop-shadow-lg" />
+                      </div>
+                    </button>
                   ) : (
                     <div className="w-12 h-12 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl flex items-center justify-center shrink-0">
                       <Boxes className="w-6 h-6 text-airbus-light" />
@@ -1318,6 +1327,24 @@ function KitsTab({ onCambio }: { onCambio: () => void }) {
           onSuccess={handleSuccess}
           onCancel={() => { setModalOpen(false); setKitEditando(null); }}
         />
+      </Modal>
+
+      {/* Modal foto ampliada */}
+      <Modal
+        open={!!fotoAbierta}
+        onClose={() => setFotoAbierta(null)}
+        title="Foto del kit"
+        size="lg"
+      >
+        {fotoAbierta && (
+          <div className="flex items-center justify-center p-2">
+            <img
+              src={fotoAbierta}
+              alt="Foto del kit"
+              className="max-w-full max-h-[75vh] object-contain rounded-lg"
+            />
+          </div>
+        )}
       </Modal>
     </div>
   );
