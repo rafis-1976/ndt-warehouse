@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   X, Plus, Search, Package, Hash, Loader2, CheckCircle2, AlertTriangle,
+  Upload, Trash2, ImageIcon,
 } from 'lucide-react';
 
 interface KitFormProps {
@@ -16,9 +17,13 @@ interface LineaEquipo {
   notas: string;
 }
 
+// 👇 Ajusta al bucket que uses para las fotos de equipos
+const BUCKET_FOTOS = 'equipos';
+
 export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [loading, setLoading] = useState(!!kitId);
   const [saving, setSaving] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [codigo, setCodigo] = useState('');
@@ -26,6 +31,9 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [descripcion, setDescripcion] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [activo, setActivo] = useState(true);
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [equipos, setEquipos] = useState<any[]>([]);
   const [lineas, setLineas] = useState<LineaEquipo[]>([]);
@@ -48,7 +56,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }, []);
 
   // ============================================================
-  // Cargar kit existente (modo edición)
+  // Cargar kit existente
   // ============================================================
   useEffect(() => {
     if (!kitId) return;
@@ -69,6 +77,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         setDescripcion(k.descripcion ?? '');
         setUbicacion(k.ubicacion ?? '');
         setActivo(k.activo ?? true);
+        setFotoUrl(k.foto_url ?? null);
       }
       setLineas(
         (lineasRes.data ?? []).map((l: any) => ({
@@ -81,9 +90,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
     })();
   }, [kitId]);
 
-  // ============================================================
   // Cerrar picker al hacer clic fuera
-  // ============================================================
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -95,7 +102,46 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }, []);
 
   // ============================================================
-  // Resultados del picker
+  // Subir foto
+  // ============================================================
+  const subirFoto = async (file: File) => {
+    setError(null);
+    if (!file.type.startsWith('image/')) {
+      setError('El archivo debe ser una imagen');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('La imagen no puede superar los 5 MB');
+      return;
+    }
+
+    setSubiendo(true);
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `kits/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET_FOTOS)
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+      if (upErr) throw upErr;
+
+      const { data } = supabase.storage.from(BUCKET_FOTOS).getPublicUrl(path);
+      setFotoUrl(data.publicUrl);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message ?? 'Error al subir la imagen');
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  const quitarFoto = async () => {
+    if (!fotoUrl) return;
+    if (!confirm('¿Quitar la foto del kit?')) return;
+    setFotoUrl(null);
+  };
+
+  // ============================================================
+  // Picker de equipos
   // ============================================================
   const idsYaEnKit = useMemo(() => new Set(lineas.map((l) => l.equipo_id)), [lineas]);
 
@@ -127,10 +173,6 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
     );
   };
 
-  const setNota = (id: string, notas: string) => {
-    setLineas((prev) => prev.map((l) => (l.equipo_id === id ? { ...l, notas } : l)));
-  };
-
   const getEquipo = (id: string) => equipos.find((e) => e.id === id);
 
   // ============================================================
@@ -149,6 +191,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         descripcion: descripcion.trim() || null,
         ubicacion: ubicacion.trim() || null,
         activo,
+        foto_url: fotoUrl,
       };
 
       let finalKitId = kitId;
@@ -156,7 +199,6 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
       if (kitId) {
         const { error: upErr } = await supabase.from('kits').update(payload).eq('id', kitId);
         if (upErr) throw upErr;
-        // Borramos y reinsertamos las líneas (es más simple que diff)
         const { error: delErr } = await supabase.from('kit_equipos').delete().eq('kit_id', kitId);
         if (delErr) throw delErr;
       } else {
@@ -207,67 +249,136 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         </div>
       )}
 
-      {/* DATOS BÁSICOS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
+      {/* FOTO + DATOS BÁSICOS */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {/* FOTO */}
+        <div className="shrink-0">
           <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-            Código *
+            Foto del kit
           </label>
+          <div className="w-32 h-32 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden relative group">
+            {fotoUrl ? (
+              <>
+                <img
+                  src={fotoUrl}
+                  alt="Kit"
+                  className="w-full h-full object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={quitarFoto}
+                  className="absolute top-1 right-1 p-1 bg-white/90 rounded-lg text-gray-500 hover:text-airbus-red hover:bg-airbus-red/10 transition shadow-sm opacity-0 group-hover:opacity-100"
+                  title="Quitar foto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={subiendo}
+                className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-airbus-sky hover:bg-airbus-sky/5 transition"
+              >
+                {subiendo ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  <ImageIcon className="w-6 h-6" />
+                )}
+                <span className="text-[10px] font-medium">
+                  {subiendo ? 'Subiendo...' : 'Añadir foto'}
+                </span>
+              </button>
+            )}
+          </div>
+          {fotoUrl && (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={subiendo}
+              className="mt-1 text-[10px] text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
+            >
+              <Upload className="w-3 h-3" />
+              Cambiar foto
+            </button>
+          )}
           <input
-            className="input font-mono"
-            value={codigo}
-            onChange={(e) => setCodigo(e.target.value)}
-            placeholder="KIT-UT-01"
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) subirFoto(f);
+              e.target.value = '';
+            }}
           />
         </div>
-        <div>
-          <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-            Nombre *
-          </label>
-          <input
-            className="input"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            placeholder="Kit de ultrasonidos"
-          />
-        </div>
-      </div>
 
-      <div>
-        <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-          Descripción
-        </label>
-        <textarea
-          className="input"
-          rows={2}
-          value={descripcion}
-          onChange={(e) => setDescripcion(e.target.value)}
-          placeholder="Descripción del kit, uso previsto, contenido..."
-        />
-      </div>
+        {/* CAMPOS */}
+        <div className="flex-1 space-y-3 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                Código *
+              </label>
+              <input
+                className="input font-mono"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+                placeholder="KIT-UT-01"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                Nombre *
+              </label>
+              <input
+                className="input"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Kit de ultrasonidos"
+              />
+            </div>
+          </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-            Ubicación
-          </label>
-          <input
-            className="input"
-            value={ubicacion}
-            onChange={(e) => setUbicacion(e.target.value)}
-            placeholder="Almacén principal · Estantería B2"
-          />
-        </div>
-        <div className="flex items-end">
-          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="w-4 h-4"
-              checked={activo}
-              onChange={(e) => setActivo(e.target.checked)}
+          <div>
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+              Descripción
+            </label>
+            <textarea
+              className="input"
+              rows={2}
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Descripción del kit, uso previsto, contenido..."
             />
-            <span className="text-sm text-gray-700">Kit activo</span>
-          </label>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
+                Ubicación
+              </label>
+              <input
+                className="input"
+                value={ubicacion}
+                onChange={(e) => setUbicacion(e.target.value)}
+                placeholder="Almacén principal · Estantería B2"
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4"
+                  checked={activo}
+                  onChange={(e) => setActivo(e.target.checked)}
+                />
+                <span className="text-sm text-gray-700">Kit activo</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -387,7 +498,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         <button onClick={onCancel} className="btn-ghost border border-gray-300" disabled={saving}>
           Cancelar
         </button>
-        <button onClick={guardar} className="btn-primary flex items-center gap-2" disabled={saving}>
+        <button onClick={guardar} className="btn-primary flex items-center gap-2" disabled={saving || subiendo}>
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
           {kitId ? 'Guardar cambios' : 'Crear kit'}
         </button>
