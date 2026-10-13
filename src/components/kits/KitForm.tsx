@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import Cropper from 'react-easy-crop';
-import type { Area } from 'react-easy-crop';
 import {
   X, Plus, Search, Package, Loader2, CheckCircle2, AlertTriangle,
-  Upload, Trash2, ImageIcon, Camera, ZoomIn, ZoomOut,
+  Camera, Save, AlertCircle,
 } from 'lucide-react';
-import { Modal } from '../ui/Modal';
+import { CamaraEquipo } from '../equipos/CamaraEquipo';
+import type { FotoEquipo } from '../../lib/storageFotos';
 
 interface KitFormProps {
   kitId?: string;
@@ -20,55 +19,9 @@ interface LineaEquipo {
   notas: string;
 }
 
-// 👇 Ajusta al bucket que uses para las fotos de equipos
-const BUCKET_FOTOS = 'equipos';
-
-// ============================================================
-// Helpers de crop (crear imagen recortada con canvas)
-// ============================================================
-async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = imageSrc;
-  });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('No 2d context');
-
-  ctx.drawImage(
-    image,
-    pixelCrop.x,
-    pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height,
-    0,
-    0,
-    pixelCrop.width,
-    pixelCrop.height
-  );
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Canvas is empty'));
-      },
-      'image/jpeg',
-      0.92
-    );
-  });
-}
-
 export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [loading, setLoading] = useState(!!kitId);
   const [saving, setSaving] = useState(false);
-  const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [codigo, setCodigo] = useState('');
@@ -76,18 +29,10 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [descripcion, setDescripcion] = useState('');
   const [ubicacion, setUbicacion] = useState('');
   const [activo, setActivo] = useState(true);
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
 
-  // Inputs de archivo
-  const fileRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
-
-  // Estado del editor de recorte
-  const [cropSrc, setCropSrc] = useState<string | null>(null);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [cropOpen, setCropOpen] = useState(false);
+  // Fotos del kit (mismo patrón que EquipoForm)
+  const [fotos, setFotos] = useState<FotoEquipo[]>([]);
+  const [uploadKey, setUploadKey] = useState<string>('');
 
   const [equipos, setEquipos] = useState<any[]>([]);
   const [lineas, setLineas] = useState<LineaEquipo[]>([]);
@@ -110,10 +55,15 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }, []);
 
   // ============================================================
-  // Cargar kit existente
+  // Cargar kit existente (o preparar uploadKey para uno nuevo)
   // ============================================================
   useEffect(() => {
-    if (!kitId) return;
+    if (!kitId) {
+      setUploadKey(`tmp-kit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      return;
+    }
+    setUploadKey(kitId);
+
     (async () => {
       setLoading(true);
       const [kitRes, lineasRes] = await Promise.all([
@@ -123,6 +73,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
           .select('equipo_id, cantidad, notas')
           .eq('kit_id', kitId),
       ]);
+
       if (kitRes.error) setError(kitRes.error.message);
       const k = kitRes.data;
       if (k) {
@@ -131,8 +82,16 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         setDescripcion(k.descripcion ?? '');
         setUbicacion(k.ubicacion ?? '');
         setActivo(k.activo ?? true);
-        setFotoUrl(k.foto_url ?? null);
+
+        // Cargar fotos (con soporte para formato nuevo y antiguo)
+        const fts: FotoEquipo[] = Array.isArray(k.fotos_urls) ? k.fotos_urls : [];
+        if (fts.length === 0 && k.foto_url) {
+          // Fallback: migración automática del formato antiguo (solo string)
+          fts.push({ url: k.foto_url, nombre: 'foto.jpg' });
+        }
+        setFotos(fts);
       }
+
       setLineas(
         (lineasRes.data ?? []).map((l: any) => ({
           equipo_id: l.equipo_id,
@@ -154,80 +113,6 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
-
-  // ============================================================
-  // Flujo foto: input → editor crop → subida a Supabase
-  // ============================================================
-  const handleFileSelected = (file: File) => {
-    setError(null);
-    if (!file.type.startsWith('image/')) {
-      setError('El archivo debe ser una imagen');
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setError('La imagen no puede superar los 10 MB');
-      return;
-    }
-
-    // Leer como data URL y abrir el editor
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCropSrc(reader.result as string);
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-      setCroppedAreaPixels(null);
-      setCropOpen(true);
-    };
-    reader.onerror = () => setError('No se pudo leer la imagen');
-    reader.readAsDataURL(file);
-  };
-
-  const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
-    setCroppedAreaPixels(croppedPixels);
-  }, []);
-
-  const aplicarRecorteYSubir = async () => {
-    if (!cropSrc || !croppedAreaPixels) return;
-    setSubiendo(true);
-    setCropOpen(false);
-
-    try {
-      const blob = await getCroppedImg(cropSrc, croppedAreaPixels);
-
-      const path = `kits/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET_FOTOS)
-        .upload(path, blob, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: 'image/jpeg',
-        });
-      if (upErr) throw upErr;
-
-      const { data } = supabase.storage.from(BUCKET_FOTOS).getPublicUrl(path);
-      setFotoUrl(data.publicUrl);
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message ?? 'Error al subir la imagen');
-    } finally {
-      setSubiendo(false);
-      // Limpiar
-      setCropSrc(null);
-      setCroppedAreaPixels(null);
-    }
-  };
-
-  const cancelarCrop = () => {
-    setCropOpen(false);
-    setCropSrc(null);
-    setCroppedAreaPixels(null);
-  };
-
-  const quitarFoto = async () => {
-    if (!fotoUrl) return;
-    if (!confirm('¿Quitar la foto del kit?')) return;
-    setFotoUrl(null);
-  };
 
   // ============================================================
   // Picker de equipos
@@ -280,7 +165,8 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
         descripcion: descripcion.trim() || null,
         ubicacion: ubicacion.trim() || null,
         activo,
-        foto_url: fotoUrl,
+        fotos_urls: fotos,
+        foto_url: fotos[0]?.url ?? null,   // la primera foto sirve de portada
       };
 
       let finalKitId = kitId;
@@ -314,7 +200,9 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
       onSuccess();
     } catch (e: any) {
       console.error(e);
-      setError(e?.message ?? 'Error al guardar');
+      const msg = e?.message ?? 'Error al guardar';
+      if (msg.includes('kits_codigo_key')) setError('Ya existe un kit con ese código');
+      else setError(msg);
     } finally {
       setSaving(false);
     }
@@ -330,185 +218,87 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {error && (
-        <div className="bg-airbus-red/10 border border-airbus-red/30 text-airbus-red text-xs p-2.5 rounded-lg flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           {error}
         </div>
       )}
 
-      {/* FOTO + DATOS BÁSICOS */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        {/* FOTO */}
-        <div className="shrink-0">
-          <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-            Foto del kit
-          </label>
+      {/* FOTOS DEL KIT (mismo componente que equipos: recorte, cámara, IA...) */}
+      <Section title="Fotos del kit">
+        <div className="flex items-start gap-2 mb-3 bg-airbus-sky/5 border border-airbus-sky/20 rounded-lg p-3">
+          <Camera className="w-4 h-4 text-airbus-sky shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-600">
+            Haz una foto o sube imágenes. Puedes recortar manualmente o quitar el fondo con IA.
+          </p>
+        </div>
+        <CamaraEquipo
+          equipoId={uploadKey}
+          fotos={fotos}
+          onChange={setFotos}
+        />
+      </Section>
 
-          <div className="w-40 h-40 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden relative group">
-            {fotoUrl ? (
-              <>
-                <img src={fotoUrl} alt="Kit" className="w-full h-full object-contain" />
-                <button
-                  type="button"
-                  onClick={quitarFoto}
-                  className="absolute top-1 right-1 p-1 bg-white/90 rounded-lg text-gray-500 hover:text-airbus-red hover:bg-airbus-red/10 transition shadow-sm opacity-0 group-hover:opacity-100"
-                  title="Quitar foto"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400">
-                {subiendo ? (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin text-airbus-sky" />
-                    <span className="text-[10px] font-medium text-airbus-sky">Subiendo...</span>
-                  </>
-                ) : (
-                  <>
-                    <ImageIcon className="w-7 h-7" />
-                    <span className="text-[10px] font-medium">Sin foto</span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Botones: cámara + galería */}
-          <div className="flex gap-1.5 mt-2 w-40">
-            <button
-              type="button"
-              onClick={() => cameraRef.current?.click()}
-              disabled={subiendo}
-              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-airbus-blue text-white rounded-lg text-[10px] font-semibold hover:bg-airbus-navy transition disabled:opacity-60"
-              title="Hacer foto con la cámara"
-            >
-              <Camera className="w-3.5 h-3.5" />
-              Cámara
-            </button>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={subiendo}
-              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-[10px] font-semibold hover:bg-gray-50 transition disabled:opacity-60"
-              title="Elegir imagen"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Galería
-            </button>
-          </div>
-
-          {fotoUrl && !subiendo && (
-            <p className="mt-1 text-[10px] text-gray-400 text-center w-40">
-              Usa los botones para cambiar la foto
-            </p>
-          )}
-
-          {/* Input cámara (abre la cámara trasera en móvil) */}
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFileSelected(f);
-              e.target.value = '';
-            }}
-          />
-
-          {/* Input archivo / galería */}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFileSelected(f);
-              e.target.value = '';
-            }}
-          />
+      {/* DATOS BÁSICOS */}
+      <Section title="Datos del kit">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Código *">
+            <input
+              className="input font-mono"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              placeholder="KIT-UT-01"
+            />
+          </Field>
+          <Field label="Nombre *">
+            <input
+              className="input"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Kit de ultrasonidos"
+            />
+          </Field>
         </div>
 
-        {/* CAMPOS */}
-        <div className="flex-1 space-y-3 min-w-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-                Código *
-              </label>
-              <input
-                className="input font-mono"
-                value={codigo}
-                onChange={(e) => setCodigo(e.target.value)}
-                placeholder="KIT-UT-01"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-                Nombre *
-              </label>
-              <input
-                className="input"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Kit de ultrasonidos"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-              Descripción
-            </label>
+        <div className="mt-4">
+          <Field label="Descripción">
             <textarea
-              className="input"
+              className="input resize-y"
               rows={2}
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
               placeholder="Descripción del kit, uso previsto, contenido..."
             />
-          </div>
+          </Field>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
-                Ubicación
-              </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <Field label="Ubicación">
+            <input
+              className="input"
+              value={ubicacion}
+              onChange={(e) => setUbicacion(e.target.value)}
+              placeholder="Almacén principal · Estantería B2"
+            />
+          </Field>
+          <div className="flex items-end">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
               <input
-                className="input"
-                value={ubicacion}
-                onChange={(e) => setUbicacion(e.target.value)}
-                placeholder="Almacén principal · Estantería B2"
+                type="checkbox"
+                className="w-4 h-4"
+                checked={activo}
+                onChange={(e) => setActivo(e.target.checked)}
               />
-            </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4"
-                  checked={activo}
-                  onChange={(e) => setActivo(e.target.checked)}
-                />
-                <span className="text-sm text-gray-700">Kit activo</span>
-              </label>
-            </div>
+              <span className="text-sm text-gray-700">Kit activo</span>
+            </label>
           </div>
         </div>
-      </div>
+      </Section>
 
-      {/* LÍNEAS DE EQUIPOS */}
-      <div className="border-t border-gray-100 pt-4">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            Equipos del kit ({lineas.length})
-          </label>
-        </div>
-
+      {/* EQUIPOS DEL KIT */}
+      <Section title={`Equipos del kit (${lineas.length})`}>
         {/* Picker */}
         <div className="relative mb-3" ref={pickerRef}>
           <div className="relative">
@@ -608,92 +398,43 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             })}
           </div>
         )}
-      </div>
+      </Section>
 
       {/* ACCIONES */}
-      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-        <button onClick={onCancel} className="btn-ghost border border-gray-300" disabled={saving}>
+      <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+        <button type="button" onClick={onCancel} className="btn-ghost border border-gray-300">
           Cancelar
         </button>
-        <button onClick={guardar} className="btn-primary flex items-center gap-2" disabled={saving || subiendo}>
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+        <button
+          type="button"
+          onClick={guardar}
+          disabled={saving}
+          className="btn-primary flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {kitId ? 'Guardar cambios' : 'Crear kit'}
         </button>
       </div>
+    </div>
+  );
+}
 
-      {/* MODAL DE RECORTE */}
-      <Modal
-        open={cropOpen}
-        onClose={cancelarCrop}
-        title="Recortar foto"
-        size="lg"
-      >
-        {cropSrc && (
-          <div className="space-y-4">
-            {/* Zona de recorte */}
-            <div className="relative w-full h-80 bg-gray-900 rounded-lg overflow-hidden">
-              <Cropper
-                image={cropSrc}
-                crop={crop}
-                zoom={zoom}
-                aspect={1}
-                onCropChange={setCrop}
-                onZoomChange={setZoom}
-                onCropComplete={onCropComplete}
-                showGrid
-              />
-            </div>
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-airbus-blue uppercase tracking-wider mb-3">
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
 
-            {/* Zoom */}
-            <div className="flex items-center gap-3">
-              <ZoomOut className="w-4 h-4 text-gray-400 shrink-0" />
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.01}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="flex-1"
-              />
-              <ZoomIn className="w-4 h-4 text-gray-400 shrink-0" />
-              <span className="text-xs text-gray-500 w-10 text-right">
-                {zoom.toFixed(1)}×
-              </span>
-            </div>
-
-            {/* Acciones */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={cancelarCrop}
-                className="btn-ghost border border-gray-300"
-                disabled={subiendo}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={aplicarRecorteYSubir}
-                className="btn-primary flex items-center gap-2"
-                disabled={subiendo || !croppedAreaPixels}
-              >
-                {subiendo ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Subiendo...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Recortar y guardar
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {children}
     </div>
   );
 }
