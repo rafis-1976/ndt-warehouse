@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   X, Plus, Search, Package, Hash, Loader2, CheckCircle2, AlertTriangle,
-  Upload, Trash2, ImageIcon,
+  Upload, Trash2, ImageIcon, Camera,
 } from 'lucide-react';
 
 interface KitFormProps {
@@ -33,7 +33,10 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [activo, setActivo] = useState(true);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
 
+  // Input para subir desde archivo/galería
   const fileRef = useRef<HTMLInputElement>(null);
+  // Input para hacer foto directamente con la cámara (móviles)
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const [equipos, setEquipos] = useState<any[]>([]);
   const [lineas, setLineas] = useState<LineaEquipo[]>([]);
@@ -102,7 +105,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }, []);
 
   // ============================================================
-  // Subir foto
+  // Subir foto (sirve para cámara y para archivo)
   // ============================================================
   const subirFoto = async (file: File) => {
     setError(null);
@@ -256,7 +259,9 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
           <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">
             Foto del kit
           </label>
-          <div className="w-32 h-32 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden relative group">
+
+          {/* Preview */}
+          <div className="w-40 h-40 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden relative group">
             {fotoUrl ? (
               <>
                 <img
@@ -274,34 +279,67 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={subiendo}
-                className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-airbus-sky hover:bg-airbus-sky/5 transition"
-              >
+              <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400">
                 {subiendo ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin text-airbus-sky" />
+                    <span className="text-[10px] font-medium text-airbus-sky">Subiendo...</span>
+                  </>
                 ) : (
-                  <ImageIcon className="w-6 h-6" />
+                  <>
+                    <ImageIcon className="w-7 h-7" />
+                    <span className="text-[10px] font-medium">Sin foto</span>
+                  </>
                 )}
-                <span className="text-[10px] font-medium">
-                  {subiendo ? 'Subiendo...' : 'Añadir foto'}
-                </span>
-              </button>
+              </div>
             )}
           </div>
-          {fotoUrl && (
+
+          {/* Botones: cámara + galería */}
+          <div className="flex gap-1.5 mt-2 w-40">
+            <button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              disabled={subiendo}
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-airbus-blue text-white rounded-lg text-[10px] font-semibold hover:bg-airbus-navy transition disabled:opacity-60"
+              title="Hacer foto con la cámara"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              Cámara
+            </button>
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={subiendo}
-              className="mt-1 text-[10px] text-airbus-sky hover:text-airbus-blue font-medium flex items-center gap-1"
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-[10px] font-semibold hover:bg-gray-50 transition disabled:opacity-60"
+              title="Elegir imagen de la galería o archivo"
             >
-              <Upload className="w-3 h-3" />
-              Cambiar foto
+              <Upload className="w-3.5 h-3.5" />
+              Galería
             </button>
+          </div>
+
+          {fotoUrl && !subiendo && (
+            <p className="mt-1 text-[10px] text-gray-400 text-center w-40">
+              Usa los botones para cambiar la foto
+            </p>
           )}
+
+          {/* Input cámara (abre directamente la cámara trasera en móvil) */}
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) subirFoto(f);
+              e.target.value = '';
+            }}
+          />
+
+          {/* Input archivo / galería */}
           <input
             ref={fileRef}
             type="file"
