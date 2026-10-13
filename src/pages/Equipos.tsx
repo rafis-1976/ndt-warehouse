@@ -1195,9 +1195,23 @@ function KitsTab({ onCambio }: { onCambio: () => void }) {
                     )}
                   </div>
 
-                  <div className="w-12 h-12 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl flex items-center justify-center shrink-0">
-                    <Boxes className="w-6 h-6 text-airbus-light" />
-                  </div>
+                  {/* FOTO o icono por defecto */}
+                  {k.foto_url ? (
+                    <div className="w-12 h-12 rounded-xl border border-gray-200 overflow-hidden shrink-0 bg-gray-50">
+                      <img
+                        src={k.foto_url}
+                        alt={k.nombre}
+                        className="w-full h-full object-contain"
+                        onError={(ev) => {
+                          (ev.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 bg-gradient-to-br from-airbus-blue to-airbus-navy rounded-xl flex items-center justify-center shrink-0">
+                      <Boxes className="w-6 h-6 text-airbus-light" />
+                    </div>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
