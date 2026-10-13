@@ -22,12 +22,15 @@ const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
   otro: { label: 'Otro', icon: Building2 },
 };
 
+const SIN_BANDEJA = '__sin_bandeja__';
+
 export function Carros() {
   const [carros, setCarros] = useState<any[]>([]);
   const [probetas, setProbetas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const [bandejasExpandidas, setBandejasExpandidas] = useState<Set<string>>(new Set());
   const [soloFuera, setSoloFuera] = useState(false);
 
   const [modalCarroOpen, setModalCarroOpen] = useState(false);
@@ -85,6 +88,19 @@ export function Carros() {
     });
   };
 
+  /** Clave única para identificar una bandeja dentro de un carro */
+  const bandejaKey = (carroId: string, numBandeja: number | null | undefined) =>
+    `${carroId}::${numBandeja ?? SIN_BANDEJA}`;
+
+  const toggleBandeja = (key: string) => {
+    setBandejasExpandidas((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const probetasPorCarro = useMemo(() => {
     const map: Record<string, any[]> = {};
     probetas.forEach((p) => {
@@ -105,6 +121,21 @@ export function Carros() {
     });
     return map;
   }, [probetas]);
+
+  /** Agrupa las probetas de un carro por número de bandeja */
+  const probetasPorBandejaDeCarro = useCallback(
+    (carroId: string) => {
+      const lista = probetasPorCarro[carroId] ?? [];
+      const map: Record<string, any[]> = {};
+      lista.forEach((p) => {
+        const key = p.num_bandeja != null ? String(p.num_bandeja) : SIN_BANDEJA;
+        if (!map[key]) map[key] = [];
+        map[key].push(p);
+      });
+      return map;
+    },
+    [probetasPorCarro]
+  );
 
   const qLower = q.trim().toLowerCase();
 
@@ -258,10 +289,13 @@ export function Carros() {
     setModalCarroOpen(true);
   };
 
-  const abrirNuevaProbeta = (carroId?: string) => {
+  const abrirNuevaProbeta = (carroId?: string, numBandeja?: number | null) => {
     setProbetaEditando(null);
     setCarroDestino(carroId ?? null);
     setModalProbetaOpen(true);
+    // Si se pulsa "+" en una bandeja concreta, se podría precargar el nº bandeja
+    // (queda como TODO si ProbetaForm lo soporta en el futuro)
+    void numBandeja;
   };
 
   const abrirEditarProbeta = (probeta: any) => {
@@ -307,7 +341,7 @@ export function Carros() {
   };
 
   // ============================================================
-  // Escáner: al leer un código, lo usamos como término de búsqueda
+  // Escáner
   // ============================================================
   const handleScan = (code: string) => {
     const limpio = code.trim();
@@ -315,20 +349,28 @@ export function Carros() {
     setUltimoEscaneo(limpio);
     setScannerOpen(false);
 
-    // Auto-apertura según el tipo de código:
-    // 1) Si coincide con una probeta → abrir su detalle
-    // 2) Si coincide con un carro → expandirlo
     const probetaMatch = probetas.find(
       (p) =>
         p.codigo_barras?.toLowerCase() === limpio.toLowerCase() ||
         p.pn?.toLowerCase() === limpio.toLowerCase()
     );
     if (probetaMatch) {
-      // Aseguramos que el carro esté expandido
       if (probetaMatch.carro_id) {
         setExpandidos((prev) => new Set(prev).add(probetaMatch.carro_id));
+        setBandejasExpandidas((prev) =>
+          new Set(prev).add(bandejaKey(probetaMatch.carro_id, probetaMatch.num_bandeja))
+        );
       }
-      setTimeout(() => abrirDetalleProbeta(probetaMatch, probetaMatch.carro_id ? carros.find((c) => c.id === probetaMatch.carro_id) ?? null : null), 150);
+      setTimeout(
+        () =>
+          abrirDetalleProbeta(
+            probetaMatch,
+            probetaMatch.carro_id
+              ? carros.find((c) => c.id === probetaMatch.carro_id) ?? null
+              : null
+          ),
+        150
+      );
       return;
     }
 
@@ -474,7 +516,6 @@ export function Carros() {
           )}
         </div>
 
-        {/* Aviso de último escaneo */}
         {ultimoEscaneo && (
           <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
             <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
@@ -598,8 +639,24 @@ export function Carros() {
               fueraMap.has(p.id)
             ).length;
 
+            // Agrupar por bandeja
+            const porBandeja = probetasPorBandejaDeCarro(carro.id);
+            const numBandejas = Math.max(0, Number(carro.num_bandejas ?? 0));
+
+            // Bandejas a mostrar: 1..N + la "sin bandeja" si hay probetas sin nº
+            const bandejas: (number | typeof SIN_BANDEJA)[] = [];
+            for (let i = 1; i <= numBandejas; i++) bandejas.push(i);
+            const tieneSinBandeja = (porBandeja[SIN_BANDEJA]?.length ?? 0) > 0;
+            // Bandejas fuera de rango (por si acaso hay probetas con num_bandeja > num_bandejas)
+            Object.keys(porBandeja).forEach((k) => {
+              if (k === SIN_BANDEJA) return;
+              const n = Number(k);
+              if (!Number.isNaN(n) && n > numBandejas) bandejas.push(n);
+            });
+
             return (
               <div key={carro.id} className="card p-0 overflow-hidden">
+                {/* CABECERA DEL CARRO */}
                 <div
                   className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition"
                   onClick={() => toggleExpandir(carro.id)}
@@ -719,13 +776,14 @@ export function Carros() {
                   </div>
                 </div>
 
+                {/* CUERPO DEL CARRO: BANDEJAS */}
                 {expandido && (
                   <div className="border-t border-gray-100 bg-gray-50">
-                    {listaProbetas.length === 0 ? (
+                    {listaProbetas.length === 0 && numBandejas === 0 ? (
                       <div className="p-6 text-center">
                         <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                         <p className="text-sm text-gray-500 mb-3">
-                          Este carro no tiene probetas asignadas
+                          Este carro no tiene bandejas ni probetas asignadas
                         </p>
                         <button
                           onClick={() => abrirNuevaProbeta(carro.id)}
@@ -737,161 +795,315 @@ export function Carros() {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {listaProbetas.map((probeta) => {
-                          const esMatch = probetasMatch.has(probeta.id);
-                          const ntms = parseNtms(probeta);
-                          const fueraInfo = fueraMap.get(probeta.id);
-                          const estaFuera = !!fueraInfo;
-                          const destinoConf = fueraInfo?.prestamo.destino_tipo
-                            ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
-                            : null;
-                          const DestIcon = destinoConf?.icon ?? Truck;
+                        {bandejas.map((b) => {
+                          const key = b === SIN_BANDEJA ? SIN_BANDEJA : String(b);
+                          const lista = porBandeja[key] ?? [];
+                          const bKey = bandejaKey(carro.id, b === SIN_BANDEJA ? null : (b as number));
+
+                          // Auto-expandir si hay búsqueda activa y esta bandeja tiene matches
+                          const tieneMatches =
+                            (hayBusquedaActiva || soloFuera) &&
+                            lista.some((p) => probetasMatch.has(p.id));
+                          const bExpandida = bandejasExpandidas.has(bKey) || tieneMatches;
+
+                          const matchesEnBandeja = lista.filter((p) =>
+                            probetasMatch.has(p.id)
+                          ).length;
+                          const fueraEnBandeja = lista.filter((p) =>
+                            fueraMap.has(p.id)
+                          ).length;
+                          const esSinBandeja = b === SIN_BANDEJA;
+                          const capacidadBandeja = Number(carro.posiciones_por_bandeja ?? 0);
+                          const pctBandeja =
+                            capacidadBandeja > 0
+                              ? Math.min(100, Math.round((lista.length / capacidadBandeja) * 100))
+                              : null;
 
                           return (
                             <div
-                              key={probeta.id}
-                              className={`flex items-center gap-3 px-4 py-3 hover:bg-white transition group cursor-pointer relative ${
-                                estaFuera ? 'bg-airbus-orange/5' :
-                                esMatch ? 'bg-airbus-yellow/10' : ''
-                              }`}
-                              onClick={() => abrirDetalleProbeta(probeta, carro)}
+                              key={bKey}
+                              className={esSinBandeja ? 'bg-airbus-orange/3' : 'bg-white'}
                             >
-                              {estaFuera && (
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-orange" />
-                              )}
-                              {!estaFuera && esMatch && (
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
-                              )}
-
-                              {probeta.foto_url ? (
-                                <div className={`w-14 h-14 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ${
-                                  estaFuera ? 'border-airbus-orange' :
-                                  esMatch ? 'border-airbus-yellow' : 'border-gray-200'
-                                }`}>
-                                  <img
-                                    src={probeta.foto_url}
-                                    alt={probeta.nombre}
-                                    className="w-full h-full object-contain"
-                                    onError={(ev) => {
-                                      (ev.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
+                              {/* CABECERA DE LA BANDEJA */}
+                              <div
+                                className={`flex items-center gap-3 px-4 py-3 pl-12 cursor-pointer transition ${
+                                  esSinBandeja
+                                    ? 'hover:bg-airbus-orange/5'
+                                    : 'hover:bg-airbus-sky/5'
+                                } ${tieneMatches ? 'bg-airbus-yellow/10' : ''}`}
+                                onClick={() => toggleBandeja(bKey)}
+                              >
+                                <div className="w-6 h-6 flex items-center justify-center shrink-0">
+                                  {bExpandida ? (
+                                    <ChevronDown className={`w-4 h-4 ${esSinBandeja ? 'text-airbus-orange' : 'text-airbus-sky'}`} />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  )}
                                 </div>
-                              ) : (
-                                <div className={`w-14 h-14 bg-white border rounded-lg flex items-center justify-center shrink-0 ${
-                                  estaFuera ? 'border-airbus-orange' :
-                                  esMatch ? 'border-airbus-yellow' : 'border-gray-200'
-                                }`}>
-                                  <Package className={`w-5 h-5 ${estaFuera ? 'text-airbus-orange' : 'text-airbus-sky'}`} />
+
+                                <div
+                                  className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                    esSinBandeja
+                                      ? 'bg-airbus-orange/15'
+                                      : 'bg-airbus-sky/10'
+                                  }`}
+                                >
+                                  {esSinBandeja ? (
+                                    <AlertTriangle className="w-4 h-4 text-airbus-orange" />
+                                  ) : (
+                                    <Layers className="w-4 h-4 text-airbus-sky" />
+                                  )}
                                 </div>
-                              )}
 
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono font-bold text-airbus-blue text-xs">
-                                    {resaltar(probeta.pn)}
-                                  </span>
-                                  <span className="text-sm text-gray-800 truncate">
-                                    {resaltar(probeta.nombre)}
-                                  </span>
-                                  {probeta.tecnicas_ndt && (
-                                    <span className="badge badge-blue">
-                                      {probeta.tecnicas_ndt.codigo}
-                                    </span>
-                                  )}
-                                  {probeta.num_bandeja && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[10px] font-bold">
-                                      <Layers className="w-3 h-3" />
-                                      B{probeta.num_bandeja}
-                                      {probeta.num_posicion ? ` · P${probeta.num_posicion}` : ''}
-                                    </span>
-                                  )}
-                                  {!probeta.activa && (
-                                    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-semibold rounded-full uppercase">
-                                      Inactiva
-                                    </span>
-                                  )}
-
-                                  {estaFuera && (
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 max-w-full"
-                                      title={`${destinoConf?.label}: ${fueraInfo?.prestamo.destino_nombre}${fueraInfo?.prestamo.destino_contacto ? ` (${fueraInfo.prestamo.destino_contacto})` : ''}${fueraInfo?.retrasado ? ' · RETRASADO' : ''}`}
+                                      className={`font-semibold text-sm ${
+                                        esSinBandeja ? 'text-airbus-orange' : 'text-airbus-blue'
+                                      }`}
                                     >
-                                      <DestIcon className="w-3 h-3 shrink-0" />
-                                      <span className="truncate">
-                                        {fueraInfo?.prestamo.destino_nombre ?? 'Fuera'}
-                                      </span>
-                                      {fueraInfo?.retrasado && (
-                                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                                      {esSinBandeja
+                                        ? 'Sin bandeja asignada'
+                                        : `Bandeja ${b}`}
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        lista.length === 0
+                                          ? 'bg-gray-100 text-gray-400'
+                                          : esSinBandeja
+                                            ? 'bg-airbus-orange/15 text-airbus-orange'
+                                            : 'bg-airbus-sky/15 text-airbus-sky'
+                                      }`}
+                                    >
+                                      {lista.length} probeta{lista.length !== 1 ? 's' : ''}
+                                      {capacidadBandeja > 0 && !esSinBandeja && (
+                                        <span className="opacity-70 font-normal">
+                                          / {capacidadBandeja}
+                                        </span>
                                       )}
                                     </span>
+
+                                    {fueraEnBandeja > 0 && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 rounded-full text-[10px] font-bold">
+                                        <Truck className="w-3 h-3" />
+                                        {fueraEnBandeja} fuera
+                                      </span>
+                                    )}
+
+                                    {tieneMatches && matchesEnBandeja > 0 && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-yellow text-gray-900 rounded-full text-[10px] font-bold">
+                                        <FileCheck2 className="w-3 h-3" />
+                                        {matchesEnBandeja} coinciden
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {pctBandeja !== null && !esSinBandeja && lista.length > 0 && (
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full ${
+                                            pctBandeja >= 90
+                                              ? 'bg-airbus-red'
+                                              : pctBandeja >= 70
+                                                ? 'bg-airbus-orange'
+                                                : 'bg-airbus-green'
+                                          }`}
+                                          style={{ width: `${pctBandeja}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[9px] font-bold text-gray-500">
+                                        {pctBandeja}%
+                                      </span>
+                                    </div>
                                   )}
                                 </div>
 
-                                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400 flex-wrap">
-                                  {probeta.material && <span>{resaltar(probeta.material)}</span>}
-                                  {probeta.dimensiones && <span>{probeta.dimensiones}</span>}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    abrirNuevaProbeta(
+                                      carro.id,
+                                      esSinBandeja ? null : (b as number)
+                                    );
+                                  }}
+                                  className="p-1.5 text-airbus-green hover:bg-airbus-green/10 rounded-lg transition shrink-0"
+                                  title={`Añadir probeta a ${esSinBandeja ? 'sin bandeja' : `bandeja ${b}`}`}
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* CONTENIDO DE LA BANDEJA */}
+                              {bExpandida && (
+                                <div className="bg-gray-50/50">
+                                  {lista.length === 0 ? (
+                                    <div className="px-4 py-4 pl-20 text-xs text-gray-400 italic">
+                                      Bandeja vacía · pulsa <Plus className="w-3 h-3 inline" /> para añadir probetas
+                                    </div>
+                                  ) : (
+                                    <div className="divide-y divide-gray-100">
+                                      {lista.map((probeta) => {
+                                        const esMatch = probetasMatch.has(probeta.id);
+                                        const ntms = parseNtms(probeta);
+                                        const fueraInfo = fueraMap.get(probeta.id);
+                                        const estaFuera = !!fueraInfo;
+                                        const destinoConf = fueraInfo?.prestamo.destino_tipo
+                                          ? tipoDestinoConfig[fueraInfo.prestamo.destino_tipo]
+                                          : null;
+                                        const DestIcon = destinoConf?.icon ?? Truck;
+
+                                        return (
+                                          <div
+                                            key={probeta.id}
+                                            className={`flex items-center gap-3 px-4 py-3 pl-20 hover:bg-white transition group cursor-pointer relative ${
+                                              estaFuera ? 'bg-airbus-orange/5' :
+                                              esMatch ? 'bg-airbus-yellow/10' : ''
+                                            }`}
+                                            onClick={() => abrirDetalleProbeta(probeta, carro)}
+                                          >
+                                            {estaFuera && (
+                                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-orange" />
+                                            )}
+                                            {!estaFuera && esMatch && (
+                                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-airbus-yellow" />
+                                            )}
+
+                                            {probeta.foto_url ? (
+                                              <div className={`w-14 h-14 rounded-lg border shrink-0 bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden ${
+                                                estaFuera ? 'border-airbus-orange' :
+                                                esMatch ? 'border-airbus-yellow' : 'border-gray-200'
+                                              }`}>
+                                                <img
+                                                  src={probeta.foto_url}
+                                                  alt={probeta.nombre}
+                                                  className="w-full h-full object-contain"
+                                                  onError={(ev) => {
+                                                    (ev.target as HTMLImageElement).style.display = 'none';
+                                                  }}
+                                                />
+                                              </div>
+                                            ) : (
+                                              <div className={`w-14 h-14 bg-white border rounded-lg flex items-center justify-center shrink-0 ${
+                                                estaFuera ? 'border-airbus-orange' :
+                                                esMatch ? 'border-airbus-yellow' : 'border-gray-200'
+                                              }`}>
+                                                <Package className={`w-5 h-5 ${estaFuera ? 'text-airbus-orange' : 'text-airbus-sky'}`} />
+                                              </div>
+                                            )}
+
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-mono font-bold text-airbus-blue text-xs">
+                                                  {resaltar(probeta.pn)}
+                                                </span>
+                                                <span className="text-sm text-gray-800 truncate">
+                                                  {resaltar(probeta.nombre)}
+                                                </span>
+                                                {probeta.tecnicas_ndt && (
+                                                  <span className="badge badge-blue">
+                                                    {probeta.tecnicas_ndt.codigo}
+                                                  </span>
+                                                )}
+                                                {probeta.num_posicion && (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-airbus-sky/15 text-airbus-sky rounded-full text-[10px] font-bold">
+                                                    <Grid3x3 className="w-3 h-3" />
+                                                    P{probeta.num_posicion}
+                                                  </span>
+                                                )}
+                                                {!probeta.activa && (
+                                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-semibold rounded-full uppercase">
+                                                    Inactiva
+                                                  </span>
+                                                )}
+
+                                                {estaFuera && (
+                                                  <span
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-airbus-orange/15 text-airbus-orange border border-airbus-orange/40 max-w-full"
+                                                    title={`${destinoConf?.label}: ${fueraInfo?.prestamo.destino_nombre}${fueraInfo?.prestamo.destino_contacto ? ` (${fueraInfo.prestamo.destino_contacto})` : ''}${fueraInfo?.retrasado ? ' · RETRASADO' : ''}`}
+                                                  >
+                                                    <DestIcon className="w-3 h-3 shrink-0" />
+                                                    <span className="truncate">
+                                                      {fueraInfo?.prestamo.destino_nombre ?? 'Fuera'}
+                                                    </span>
+                                                    {fueraInfo?.retrasado && (
+                                                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                                                    )}
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-400 flex-wrap">
+                                                {probeta.material && <span>{resaltar(probeta.material)}</span>}
+                                                {probeta.dimensiones && <span>{probeta.dimensiones}</span>}
+                                              </div>
+
+                                              {probeta.codigo_barras && (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(probeta.codigo_barras); }}
+                                                  className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-airbus-sky/10 transition"
+                                                  title="Ver código de barras ampliado"
+                                                >
+                                                  <Barcode className="w-3 h-3 text-airbus-sky" />
+                                                  <BarcodeLib
+                                                    value={probeta.codigo_barras}
+                                                    format="CODE128"
+                                                    displayValue={false}
+                                                    height={20}
+                                                    width={1}
+                                                    margin={0}
+                                                    lineColor="#00205B"
+                                                  />
+                                                </button>
+                                              )}
+
+                                              {ntms.length > 0 && (
+                                                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                                  <FileCheck2 className="w-3 h-3 text-airbus-sky shrink-0" />
+                                                  {ntms.map((ntm) => {
+                                                    const ntmEsMatch = hayBusquedaActiva &&
+                                                      ntm.toLowerCase().includes(qLower);
+                                                    return (
+                                                      <span
+                                                        key={ntm}
+                                                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                                                          ntmEsMatch
+                                                            ? 'bg-airbus-yellow text-gray-900 shadow-sm'
+                                                            : 'bg-airbus-sky/10 text-airbus-sky'
+                                                        }`}
+                                                      >
+                                                        {ntm}
+                                                      </span>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
+                                                className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
+                                                title="Editar"
+                                              >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                              </button>
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); eliminarProbeta(probeta); }}
+                                                className="p-1.5 text-gray-400 hover:text-airbus-red hover:bg-airbus-red/10 rounded transition"
+                                                title="Eliminar"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
-
-                                {probeta.codigo_barras && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(probeta.codigo_barras); }}
-                                    className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-airbus-sky/10 transition"
-                                    title="Ver código de barras ampliado"
-                                  >
-                                    <Barcode className="w-3 h-3 text-airbus-sky" />
-                                    <BarcodeLib
-                                      value={probeta.codigo_barras}
-                                      format="CODE128"
-                                      displayValue={false}
-                                      height={20}
-                                      width={1}
-                                      margin={0}
-                                      lineColor="#00205B"
-                                    />
-                                  </button>
-                                )}
-
-                                {ntms.length > 0 && (
-                                  <div className="flex items-center gap-1 mt-1 flex-wrap">
-                                    <FileCheck2 className="w-3 h-3 text-airbus-sky shrink-0" />
-                                    {ntms.map((ntm) => {
-                                      const ntmEsMatch = hayBusquedaActiva &&
-                                        ntm.toLowerCase().includes(qLower);
-                                      return (
-                                        <span
-                                          key={ntm}
-                                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-                                            ntmEsMatch
-                                              ? 'bg-airbus-yellow text-gray-900 shadow-sm'
-                                              : 'bg-airbus-sky/10 text-airbus-sky'
-                                          }`}
-                                        >
-                                          {ntm}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); abrirEditarProbeta(probeta); }}
-                                  className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
-                                  title="Editar"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); eliminarProbeta(probeta); }}
-                                  className="p-1.5 text-gray-400 hover:text-airbus-red hover:bg-airbus-red/10 rounded transition"
-                                  title="Eliminar"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              )}
                             </div>
                           );
                         })}
@@ -903,6 +1115,7 @@ export function Carros() {
             );
           })}
 
+          {/* PROBETAS SIN CARRO */}
           {(!hayBusquedaActiva && !soloFuera ? (probetasPorCarro['__sin_carro__'] ?? []) : probetasSinCarroVisibles).length > 0 && (
             <div className="card p-0 overflow-hidden border-2 border-dashed border-airbus-orange/40">
               <div className="flex items-center gap-3 p-4 bg-airbus-orange/5">
