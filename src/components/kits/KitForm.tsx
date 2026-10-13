@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import Cropper from 'react-easy-crop';
+import type { Area } from 'react-easy-crop';
 import {
-  X, Plus, Search, Package, Hash, Loader2, CheckCircle2, AlertTriangle,
-  Upload, Trash2, ImageIcon, Camera,
+  X, Plus, Search, Package, Loader2, CheckCircle2, AlertTriangle,
+  Upload, Trash2, ImageIcon, Camera, ZoomIn, ZoomOut,
 } from 'lucide-react';
+import { Modal } from '../ui/Modal';
 
 interface KitFormProps {
   kitId?: string;
@@ -20,6 +23,48 @@ interface LineaEquipo {
 // 👇 Ajusta al bucket que uses para las fotos de equipos
 const BUCKET_FOTOS = 'equipos';
 
+// ============================================================
+// Helpers de crop (crear imagen recortada con canvas)
+// ============================================================
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = imageSrc;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No 2d context');
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas is empty'));
+      },
+      'image/jpeg',
+      0.92
+    );
+  });
+}
+
 export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [loading, setLoading] = useState(!!kitId);
   const [saving, setSaving] = useState(false);
@@ -33,10 +78,16 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   const [activo, setActivo] = useState(true);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
 
-  // Input para subir desde archivo/galería
+  // Inputs de archivo
   const fileRef = useRef<HTMLInputElement>(null);
-  // Input para hacer foto directamente con la cámara (móviles)
   const cameraRef = useRef<HTMLInputElement>(null);
+
+  // Estado del editor de recorte
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
 
   const [equipos, setEquipos] = useState<any[]>([]);
   const [lineas, setLineas] = useState<LineaEquipo[]>([]);
@@ -105,26 +156,52 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
   }, []);
 
   // ============================================================
-  // Subir foto (sirve para cámara y para archivo)
+  // Flujo foto: input → editor crop → subida a Supabase
   // ============================================================
-  const subirFoto = async (file: File) => {
+  const handleFileSelected = (file: File) => {
     setError(null);
     if (!file.type.startsWith('image/')) {
       setError('El archivo debe ser una imagen');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('La imagen no puede superar los 5 MB');
+    if (file.size > 10 * 1024 * 1024) {
+      setError('La imagen no puede superar los 10 MB');
       return;
     }
 
+    // Leer como data URL y abrir el editor
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropSrc(reader.result as string);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+      setCroppedAreaPixels(null);
+      setCropOpen(true);
+    };
+    reader.onerror = () => setError('No se pudo leer la imagen');
+    reader.readAsDataURL(file);
+  };
+
+  const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
+    setCroppedAreaPixels(croppedPixels);
+  }, []);
+
+  const aplicarRecorteYSubir = async () => {
+    if (!cropSrc || !croppedAreaPixels) return;
     setSubiendo(true);
+    setCropOpen(false);
+
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `kits/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const blob = await getCroppedImg(cropSrc, croppedAreaPixels);
+
+      const path = `kits/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
       const { error: upErr } = await supabase.storage
         .from(BUCKET_FOTOS)
-        .upload(path, file, { cacheControl: '3600', upsert: false });
+        .upload(path, blob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: 'image/jpeg',
+        });
       if (upErr) throw upErr;
 
       const { data } = supabase.storage.from(BUCKET_FOTOS).getPublicUrl(path);
@@ -134,7 +211,16 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
       setError(e?.message ?? 'Error al subir la imagen');
     } finally {
       setSubiendo(false);
+      // Limpiar
+      setCropSrc(null);
+      setCroppedAreaPixels(null);
     }
+  };
+
+  const cancelarCrop = () => {
+    setCropOpen(false);
+    setCropSrc(null);
+    setCroppedAreaPixels(null);
   };
 
   const quitarFoto = async () => {
@@ -260,15 +346,10 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             Foto del kit
           </label>
 
-          {/* Preview */}
           <div className="w-40 h-40 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden relative group">
             {fotoUrl ? (
               <>
-                <img
-                  src={fotoUrl}
-                  alt="Kit"
-                  className="w-full h-full object-contain"
-                />
+                <img src={fotoUrl} alt="Kit" className="w-full h-full object-contain" />
                 <button
                   type="button"
                   onClick={quitarFoto}
@@ -312,7 +393,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
               onClick={() => fileRef.current?.click()}
               disabled={subiendo}
               className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-[10px] font-semibold hover:bg-gray-50 transition disabled:opacity-60"
-              title="Elegir imagen de la galería o archivo"
+              title="Elegir imagen"
             >
               <Upload className="w-3.5 h-3.5" />
               Galería
@@ -325,7 +406,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             </p>
           )}
 
-          {/* Input cámara (abre directamente la cámara trasera en móvil) */}
+          {/* Input cámara (abre la cámara trasera en móvil) */}
           <input
             ref={cameraRef}
             type="file"
@@ -334,7 +415,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) subirFoto(f);
+              if (f) handleFileSelected(f);
               e.target.value = '';
             }}
           />
@@ -347,7 +428,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) subirFoto(f);
+              if (f) handleFileSelected(f);
               e.target.value = '';
             }}
           />
@@ -445,9 +526,7 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
             <div className="absolute z-20 left-0 right-0 mt-1 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
               {resultados.length === 0 ? (
                 <p className="px-3 py-4 text-xs text-gray-400 italic text-center">
-                  {busqueda
-                    ? 'Sin resultados'
-                    : 'Todos los equipos ya están en el kit'}
+                  {busqueda ? 'Sin resultados' : 'Todos los equipos ya están en el kit'}
                 </p>
               ) : (
                 resultados.map((e) => (
@@ -541,6 +620,80 @@ export function KitForm({ kitId, onSuccess, onCancel }: KitFormProps) {
           {kitId ? 'Guardar cambios' : 'Crear kit'}
         </button>
       </div>
+
+      {/* MODAL DE RECORTE */}
+      <Modal
+        open={cropOpen}
+        onClose={cancelarCrop}
+        title="Recortar foto"
+        size="lg"
+      >
+        {cropSrc && (
+          <div className="space-y-4">
+            {/* Zona de recorte */}
+            <div className="relative w-full h-80 bg-gray-900 rounded-lg overflow-hidden">
+              <Cropper
+                image={cropSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+                showGrid
+              />
+            </div>
+
+            {/* Zoom */}
+            <div className="flex items-center gap-3">
+              <ZoomOut className="w-4 h-4 text-gray-400 shrink-0" />
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="flex-1"
+              />
+              <ZoomIn className="w-4 h-4 text-gray-400 shrink-0" />
+              <span className="text-xs text-gray-500 w-10 text-right">
+                {zoom.toFixed(1)}×
+              </span>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={cancelarCrop}
+                className="btn-ghost border border-gray-300"
+                disabled={subiendo}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={aplicarRecorteYSubir}
+                className="btn-primary flex items-center gap-2"
+                disabled={subiendo || !croppedAreaPixels}
+              >
+                {subiendo ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Subiendo...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Recortar y guardar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
