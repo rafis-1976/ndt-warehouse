@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Grid Mapping · Lectura por voz</title>
+<style>
+  :root{--ink:#0f172a;--muted:#64748b;--line:#cbd5e1;--bg:#eef2f7;--blue:#2563eb;--red:#dc2626}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:90px}
+
+  header{background:#0f172a;color:#fff;padding:12px 14px 14px}
+  header h1{margin:0 0 10px;font-size:15px;letter-spacing:.6px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline}
+  header h1 span{font-size:10px;font-weight:500;opacity:.55;letter-spacing:0}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .meta label{display:block;font-size:10px;letter-spacing:.8px;text-transform:uppercase;opacity:.65;margin-bottom:3px}
+  .meta input{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:14px;font-family:inherit}
+
+  .panel{padding:12px 14px 0}
+  .mic{width:100%;border:0;border-radius:14px;padding:18px;font-size:17px;font-weight:700;color:#fff;background:var(--blue);
+       box-shadow:0 6px 16px rgba(37,99,235,.30);display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit}
+  .mic:active{transform:scale(.99)}
+  .mic.on{background:var(--red);box-shadow:0 6px 16px rgba(220,38,38,.35);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.72}}
+
+  .status{font-size:12px;color:var(--muted);margin:9px 2px;min-height:16px;line-height:1.35}
+  .heard{font-size:13px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-height:40px;color:#334155}
+  .heard i{color:#94a3b8;font-style:italic}
+
+  .row{display:flex;gap:8px;margin-top:10px}
+  .row input[type=text]{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--line);font-size:15px;background:#fff;font-family:inherit}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;color:#334155;font-family:inherit}
+  .btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}
+  select.btn{padding:11px 8px;flex:1}
+
+  .gridwrap{overflow-x:auto;margin:12px 14px 0;background:#fff;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{border:1px solid #e2e8f0;text-align:center;padding:0}
+  thead th{background:#0f172a;color:#fff;font-size:12px;font-weight:600;height:34px;min-width:36px}
+  tbody th{background:#f1f5f9;color:#475569;font-size:12px;font-weight:700;width:34px;height:40px}
+  td{height:40px;min-width:36px;position:relative}
+  td input{width:100%;height:100%;border:0;background:transparent;text-align:center;font-size:15px;font-family:inherit;color:inherit;padding:0;font-variant-numeric:tabular-nums}
+  td input:focus{outline:2px solid var(--blue);outline-offset:-2px;background:#eff6ff}
+  td.filled{background:#dcfce7}
+  td.filled input{font-weight:600}
+  td.hit{animation:hit .8s}
+  @keyframes hit{0%{background:#fde68a}100%{}}
+
+  .legend{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding:8px 16px 0}
+  .foot{display:flex;gap:8px;padding:14px}
+  .foot .btn{flex:1}
+
+  @media print{
+    body{background:#fff;padding:0}
+    header{background:#fff;color:#000;padding:0 0 8px}
+    header h1{color:#000}
+    .meta input{border:0;background:#fff;color:#000;padding:2px 0;font-size:12px}
+    .panel,.foot,.legend,.status{display:none!important}
+    .gridwrap{border:1px solid #000;margin:0;border-radius:0}
+    thead th{background:#e5e7eb;color:#000}
+    td.filled{background:#fff}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>INFORME DE GRID MAPPING <span>voz → cuadrícula</span></h1>
+  <div class="meta">
+    <div><label>Matrícula</label><input id="matricula" value="EC-NAV" autocomplete="off"></div>
+    <div><label>WO / SAP</label><input id="wo" value="6567863537" autocomplete="off"></div>
+    <div><label>FR</label><input id="fr" value="248" autocomplete="off"></div>
+    <div><label>Fecha</label><input id="fecha" type="date"></div>
+  </div>
+</header>
+
+<div class="panel">
+  <button class="mic" id="mic">🎤 Iniciar lectura por voz</button>
+  <div class="status" id="status">Dicta coordenada y valor: <b>«A uno doce coma cinco»</b> · o toca una celda y dicta solo el número.</div>
+  <div class="heard" id="heard"><i>Aquí aparecerá lo que se reconoce…</i></div>
+
+  <div class="row">
+    <input type="text" id="manual" placeholder="Escribir: A1 12.5, B2 13.2 …" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="btn primary" id="apply">Aplicar</button>
+  </div>
+
+  <div class="row">
+    <select id="dir" class="btn">
+      <option value="right">Avance → (fila)</option>
+      <option value="down">Avance ↓ (columna)</option>
+    </select>
+    <button class="btn" id="clear">Borrar todo</button>
+  </div>
+</div>
+
+<div class="gridwrap"><table id="grid"></table></div>
+<div class="legend"><span>Verde = celda leída</span><span id="count">0 / 100</span></div>
+
+<div class="foot">
+  <button class="btn" id="csv">Exportar CSV</button>
+  <button class="btn" id="print">Imprimir / PDF</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const COLS = 'ABCDEFGHIJ'.split('');
+  const NROWS = 10;
+  const LS_KEY = 'gridmapping_v1';
+
+  let data = {};        // { "A1": "12.5" }
+  let selected = null;  // celda activa para dictar solo el número
+  let rec = null;
+  let wantListen = false;
+
+  const $ = id => document.getElementById(id);
+  const val = id => $(id).value.trim();
+
+  /* ---------------- Normalización del dictado ---------------- */
+  const NUM = {
+    cero:0, un:1, uno:1, una:1, dos:2, tres:3, cuatro:4, cinco:5, seis:6, siete:7, ocho:8, nueve:9,
+    diez:10, once:11, doce:12, trece:13, catorce:14, quince:15, dieciseis:16, diecisiete:17,
+    dieciocho:18, diecinueve:19, veinte:20, veintiuno:21, veintidos:22, veintitres:23,
+    veinticuatro:24, veinticinco:25, veintiseis:26, veintisiete:27, veintiocho:28, veintinueve:29,
+    treinta:30, cuarenta:40, cincuenta:50, sesenta:60, setenta:70, ochenta:80, noventa:90, cien:100
+  };
+
+  function normalize(t){
+    let s = (t || '').toLowerCase();
+    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');   // quita acentos
+    s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
+    s = s.split(/\s+/).map(function(w){
+      const c = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
+      return NUM[c] !== undefined ? ' ' + NUM[c] + ' ' : w;
+    }).join(' ');
+    s = s.replace(/\bcoma\b|\bpunto\b/g, '.');
+    s = s.replace(/\s*\.\s*/g, '.');
+    s = s.replace(/(\d),(\d)/g, '$1.$2');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  /* ---------------- Cuadrícula ---------------- */
+  function buildGrid(){
+    let html = '<thead><tr><th></th>';
+    COLS.forEach(c => html += '<th>' + c + '</th>');
+    html += '</tr></thead><tbody>';
+    for (let r = 1; r <= NROWS; r++){
+      html += '<tr><th>' + r + '</th>';
+      for (const c of COLS){
+        const k = c + r;
+        const v = data[k] || '';
+        html += '<td' + (v ? ' class="filled"' : '') + '>' +
+                '<input data-k="' + k + '" value="' + v + '" inputmode="decimal" ' +
+                'autocomplete="off" autocorrect="off" spellcheck="false"></td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+    $('grid').innerHTML = html;
+  }
+
+  function setCell(key, value){
+    value = String(value).replace(',', '.').trim();
+    if (value) data[key] = value; else delete data[key];
+    const inp = document.querySelector('#grid input[data-k="' + key + '"]');
+    if (inp){
+      inp.value = data[key] || '';
+      inp.parentElement.classList.toggle('filled', !!data[key]);
+    }
+    updateCount(); save();
+  }
+
+  function flash(key){
+    const inp = document.querySelector('#grid input[data-k="' + key + '"]');
+    if (!inp) return;
+    const td = inp.parentElement;
+    td.classList.remove('hit');
+    void td.offsetWidth;
+    td.classList.add('hit');
+    setTimeout(() => td.classList.remove('hit'), 800);
+  }
+
+  function updateCount(){
+    const n = Object.keys(data).filter(k => data[k]).length;
+    $('count').textContent = n + ' / ' + (COLS.length * NROWS);
+  }
+
+  /* ---------------- Interpretación ---------------- */
+  function applyCoordinates(s){
+    const re = /(^|[^a-z0-9])([a-j])\s*(\d{1,2})\s*[:=]?\s*(\d+(?:\.\d+)?)/g;
+    let m, n = 0;
+    while ((m = re.exec(s)) !== null){
+      const row = parseInt(m[3], 10);
+      if (row < 1 || row > NROWS) continue;
+      const key = m[2].toUpperCase() + row;
+      setCell(key, m[4]);
+      flash(key);
+      setStatus('✔ ' + key + ' = ' + m[4]);
+      n++;
+    }
+    return n;
+  }
+
+  function handleText(text, isFinal){
+    const s = normalize(text);
+    if (!s) return;
+
+    if (applyCoordinates(s) > 0) return;
+
+    if (!isFinal) return;
+
+    // número suelto -> rellena la celda activa y avanza
+    if (/^\d+(\.\d+)?$/.test(s) && selected){
+      setCell(selected, s);
+      flash(selected);
+      setStatus('✔ ' + selected + ' = ' + s);
+      advance();
+      return;
+    }
+    // comandos
+    if (/^(borra|borrar|limpia|limpiar|quita)/.test(s) && selected){
+      setCell(selected, '');
+      flash(selected);
+      setStatus('🗑 ' + selected + ' borrada');
+    }
+  }
+
+  function advance(){
+    if (!selected) return;
+    const col = selected[0];
+    const row = parseInt(selected.slice(1), 10);
+    let ci = COLS.indexOf(col), ri = row;
+
+    if ($('dir').value === 'right'){
+      ci++; if (ci >= COLS.length){ ci = 0; ri++; }
+    } else {
+      ri++; if (ri > NROWS){ ri = 1; ci++; }
+    }
+    if (ri > NROWS || ci >= COLS.length){ selected = null; return; }
+
+    selected = COLS[ci] + ri;
+    const inp = document.querySelector('#grid input[data-k="' + selected + '"]');
+    if (inp){
+      inp.parentElement.style.outline = '2px solid #f59e0b';
+      inp.parentElement.style.outlineOffset = '-2px';
+      setTimeout(() => { inp.parentElement.style.outline = ''; }, 900);
+    }
+    setStatus('Celda activa: ' + selected);
+  }
+
+  function setStatus(msg){ $('status').textContent = msg; }
+  function showHeard(t, interim){
+    $('heard').innerHTML = (interim ? '<i>' : '') + escapeHtml(t) + (interim ? '</i>' : '');
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  /* ---------------- Reconocimiento de voz ---------------- */
+  function startRec(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR){
+      setStatus('❌ Este navegador no soporta voz. Usa Chrome/Edge en Android, o escribe las lecturas en el campo de texto.');
+      return;
+    }
+    wantListen = true;
+    rec = new SR();
+    rec.lang = 'es-ES';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+
+    rec.onstart = function(){
+      $('mic').classList.add('on');
+      $('mic').textContent = '⏹ Detener (escuchando…)';
+      setStatus('Escuchando… dicta «A uno doce coma cinco».');
+    };
+
+    rec.onresult = function(e){
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++){
+        const r = e.results[i];
+        if (r.isFinal) final += r[0].transcript + ' ';
+        else interim += r[0].transcript + ' ';
+      }
+      if (interim){ showHeard(interim, true);  handleText(interim, false); }
+      if (final)  { showHeard(final, false);   handleText(final, true);   }
+    };
+
+    rec.onerror = function(e){
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+        wantListen = false;
+        setStatus('❌ Permiso de micrófono denegado. Actívalo en el navegador (la página debe ir por HTTPS).');
+        stopUI();
+      } else if (e.error === 'no-speech'){
+        // silencio: ignorar
+      } else if (e.error !== 'aborted'){
+        setStatus('⚠️ Error de voz: ' + e.error);
+      }
+    };
+
+    rec.onend = function(){
+      if (wantListen){ setTimeout(function(){ try { rec.start(); } catch(_){} }, 300); }
+      else stopUI();
+    };
+
+    try { rec.start(); }
+    catch(err){ setStatus('⚠️ No se pudo iniciar el micrófono: ' + err.message); }
+  }
+
+  function stopUI(){
+    $('mic').classList.remove('on');
+    $('mic').textContent = '🎤 Iniciar lectura por voz';
+  }
+
+  /* ---------------- Persistencia ---------------- */
+  function save(){
+    try{
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        data: data,
+        matricula: val('matricula'),
+        wo: val('wo'),
+        fr: val('fr'),
+        fecha: val('fecha'),
+        dir: $('dir').value
+      }));
+    }catch(_){}
+  }
+
+  function load(){
+    try{
+      const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (s){
+        data = s.data || {};
+        if (s.matricula) $('matricula').value = s.matricula;
+        if (s.wo)        $('wo').value = s.wo;
+        if (s.fr)        $('fr').value = s.fr;
+        if (s.fecha)     $('fecha').value = s.fecha;
+        if (s.dir)       $('dir').value = s.dir;
+      }
+    }catch(_){}
+    if (!$('fecha').value){
+      const d = new Date();
+      $('fecha').value = d.getFullYear() + '-' +
+        String(d.getMonth()+1).padStart(2,'0') + '-' +
+        String(d.getDate()).padStart(2,'0');
+    }
+  }
+
+  /* ---------------- Exportar ---------------- */
+  function fechaFmt(){
+    const f = val('fecha');
+    if (!f) return '';
+    const p = f.split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : f;
+  }
+
+  function exportCSV(){
+    const sep = ';';
+    const rows = [];
+    rows.push(['INFORME DE GRID MAPPING']);
+    rows.push(['MATRICULA: ' + val('matricula') + '   WO/SAP: ' + val('wo') +
+               '   FR: ' + val('fr') + '   FECHA: ' + fechaFmt()]);
+    rows.push([]);
+    rows.push([''].concat(COLS));
+    for (let r = 1; r <= NROWS; r++){
+      rows.push([r].concat(COLS.map(c => data[c + r] || '')));
+    }
+    const csv = '\uFEFF' + rows.map(r =>
+      r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(sep)
+    ).join('\r\n');
+
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'GRID_' + (val('matricula') || 'EC-NAV') + '_FR' + (val('fr') || '') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  /* ---------------- Eventos ---------------- */
+  $('mic').addEventListener('click', function(){
+    if (wantListen){
+      wantListen = false;
+      if (rec) { try { rec.stop(); } catch(_){} }
+      stopUI();
+      setStatus('Detenido.');
+    } else {
+      startRec();
+    }
+  });
+
+  $('grid').addEventListener('input', function(e){
+    const inp = e.target;
+    if (!inp || inp.tagName !== 'INPUT') return;
+    const k = inp.dataset.k;
+    const v = inp.value.replace(',', '.').trim();
+    if (v) data[k] = v; else delete data[k];
+    inp.parentElement.classList.toggle('filled', !!v);
+    updateCount(); save();
+  });
+
+  $('grid').addEventListener('focusin', function(e){
+    if (e.target.dataset && e.target.dataset.k){
+      selected = e.target.dataset.k;
+      setStatus('Celda activa: ' + selected);
+    }
+  });
+
+  $('grid').addEventListener('blur', function(e){
+    const inp = e.target;
+    if (inp && inp.dataset && inp.dataset.k) inp.value = data[inp.dataset.k] || '';
+  }, true);
+
+  function applyManual(){
+    const t = $('manual').value;
+    if (!t.trim()) return;
+    const s = normalize(t);
+    if (applyCoordinates(s) === 0){
+      if (/^\d+(\.\d+)?$/.test(s) && selected){
+        setCell(selected, s); flash(selected); setStatus('✔ ' + selected + ' = ' + s); advance();
+      } else {
+        setStatus('⚠️ No se reconoció ninguna coordenada en el texto.');
+      }
+    }
+    $('manual').value = '';
+  }
+
+  $('apply').addEventListener('click', applyManual);
+  $('manual').addEventListener('keydown', function(e){ if (e.key === 'Enter') applyManual(); });
+
+  $('clear').addEventListener('click', function(){
+    if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
+    data = {}; selected = null;
+    buildGrid(); updateCount(); save();
+    setStatus('Cuadrícula vacía.');
+  });
+
+  $('csv').addEventListener('click', exportCSV);
+  $('print').addEventListener('click', function(){ window.print(); });
+
+  ['matricula','wo','fr','fecha','dir'].forEach(function(id){
+    $(id).addEventListener('change', save);
+  });
+
+  /* ---------------- Arranque ---------------- */
+  load();
+  buildGrid();
+  updateCount();
+})();
+</script>
+</body>
+</html>
