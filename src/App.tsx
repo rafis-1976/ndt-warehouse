@@ -16,6 +16,7 @@ import { UsuarioNuevo } from './pages/UsuarioNuevo';
 import { Carros } from './pages/Carros';
 import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
+import { GridMappingPage } from './pages/GridMapping';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -51,6 +52,9 @@ export default function App() {
         } />
         <Route path="/informes" element={
           <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
+        } />
+        <Route path="/grid-mapping" element={
+          <ProtectedRoute><Layout><GridMappingPage /></Layout></ProtectedRoute>
         } />
         <Route path="/prestamos" element={
           <ProtectedRoute><Layout><Prestamos /></Layout></ProtectedRoute>
