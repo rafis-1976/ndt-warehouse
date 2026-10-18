@@ -37,33 +37,33 @@ interface HistoryRow {
 
 /* ------------------------- Utilidades numéricas ---------------------- */
 
-/** Formatea un número a 2 decimales ("12" → "12.00", "12.5" → "12.50"). */
+/** Formatea a 2 decimales SIEMPRE. "12"→"12.00", "12.5"→"12.50", "0.005"→"0.01". */
 function format2(v: string | number): string {
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
-  if (isNaN(n)) return String(v);
-  return n.toFixed(2);
+  const raw = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+  if (isNaN(raw) || !isFinite(raw)) return String(v);
+  return raw.toFixed(2);
 }
 
-/** Comprueba si un string es un número válido (parcial o completo). */
+/** ¿Es un número válido completo? */
 function isNumeric(v: string): boolean {
   if (!v) return false;
-  const n = Number(v.replace(',', '.'));
+  const s = String(v).trim().replace(',', '.');
+  if (!s) return false;
+  const n = Number(s);
   return !isNaN(n) && isFinite(n);
 }
 
-/** Interpola color verde → amarillo → rojo según t ∈ [0..1]. */
+/** Interpola verde → amarillo → rojo para t ∈ [0..1]. */
 function colorForValue(v: number, min: number, max: number): string {
-  if (max === min) return 'rgb(253, 224, 71)'; // amarillo si todos iguales
+  if (max === min) return 'rgb(253, 224, 71)';
   const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
   if (t <= 0.5) {
-    // green-300 (134,239,172) → yellow-300 (253,224,71)
     const k = t * 2;
     const r = Math.round(134 + (253 - 134) * k);
     const g = Math.round(239 + (224 - 239) * k);
     const b = Math.round(172 + (71 - 172) * k);
     return `rgb(${r}, ${g}, ${b})`;
   }
-  // yellow-300 (253,224,71) → red-300 (252,165,165)
   const k = (t - 0.5) * 2;
   const r = Math.round(253 + (252 - 253) * k);
   const g = Math.round(224 + (165 - 224) * k);
@@ -143,6 +143,7 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  /* ---- Tamaño ---- */
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
   const rowsRef = useRef(rows);
@@ -150,6 +151,7 @@ export function GridMappingPage() {
   useEffect(() => { rowsRef.current = rows; }, [rows]);
   useEffect(() => { colsRef.current = cols; }, [cols]);
 
+  /* ---- Modo fila ---- */
   const [rowMode, setRowModeState] = useState<RowMode>({ active: false, row: 0, colIdx: 0 });
   const rowModeRef = useRef<RowMode>(rowMode);
   const updateRowMode = useCallback((next: RowMode) => {
@@ -157,14 +159,20 @@ export function GridMappingPage() {
     setRowModeState(next);
   }, []);
 
+  /* ---- Celda enfocada (para no formatear mientras se escribe) ---- */
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+
+  /* ---- Voz de retorno ---- */
   const [voiceFeedback, setVoiceFeedback] = useState(true);
   const voiceFeedbackRef = useRef(true);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
+  /* ---- Resaltado ---- */
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
+  /* ---- Reconocimiento ---- */
   const recRef = useRef<any>(null);
   const wantListenRef = useRef(false);
 
@@ -174,11 +182,32 @@ export function GridMappingPage() {
   const valueStats = useMemo(() => {
     const nums: number[] = [];
     Object.values(grid).forEach((v) => {
-      if (isNumeric(v)) nums.push(parseFloat(v));
+      if (isNumeric(v)) nums.push(parseFloat(String(v).replace(',', '.')));
     });
     if (nums.length === 0) return { min: 0, max: 0, hasData: false };
     return { min: Math.min(...nums), max: Math.max(...nums), hasData: true };
   }, [grid]);
+
+  /* --------------------- Normalizar valores antiguos ----------------- */
+  // Se ejecuta al cargar registros viejos con valores sin formatear.
+  // No toca la celda enfocada para no interferir mientras se escribe.
+  useEffect(() => {
+    let needsUpdate = false;
+    const next: GridData = { ...grid };
+    Object.keys(next).forEach((k) => {
+      if (k === focusedKey) return;
+      const v = next[k];
+      if (v && isNumeric(v)) {
+        const f = format2(v);
+        if (f !== v) {
+          next[k] = f;
+          needsUpdate = true;
+        }
+      }
+    });
+    if (needsUpdate) setGrid(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, focusedKey]);
 
   /* --------------------- Sincronizar refs ---------------------- */
   useEffect(() => { voiceFeedbackRef.current = voiceFeedback; }, [voiceFeedback]);
@@ -215,7 +244,7 @@ export function GridMappingPage() {
   }, []);
   const cancelSpeech = useCallback(() => synthRef.current?.cancel(), []);
 
-  /* --------------------- Resaltado de celda ------------------ */
+  /* --------------------- Resaltado ------------------ */
   const flashCell = useCallback((key: string) => {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
     setFlashKey(key);
@@ -223,7 +252,7 @@ export function GridMappingPage() {
   }, []);
 
   /* --------------------- Helpers de grid --------------------- */
-  /** Aplica un valor formateado a 2 decimales (usar en voz, manual, blur). */
+  /** Guarda el valor YA FORMATEADO a 2 decimales. */
   const setCell = useCallback((key: string, value: string) => {
     let v = String(value).replace(',', '.').trim();
     if (v && isNumeric(v)) v = format2(v);
@@ -234,7 +263,7 @@ export function GridMappingPage() {
     });
   }, []);
 
-  /** Guarda el valor en crudo (mientras el usuario escribe en el input). */
+  /** Guarda el valor EN CRUDO (mientras el usuario escribe). */
   const setCellRaw = useCallback((key: string, value: string) => {
     const v = String(value).replace(',', '.').trim();
     setGrid((prev) => {
@@ -319,11 +348,12 @@ export function GridMappingPage() {
         const key = col + row;
         setCell(key, value);
         flashCell(key);
-        speak(`${col} ${row}, ${spokenValue(format2(value))}`);
+        const formatted = format2(value);
+        speak(`${col} ${row}, ${spokenValue(formatted)}`);
         const nextColIdx = colIdx + 1;
         updateRowMode({ active: true, row, colIdx: nextColIdx });
         if (nextColIdx >= colsN) setStatus(`Fila ${row} completa · di FIN`);
-        else setStatus(`✔ ${key} = ${format2(value)}`);
+        else setStatus(`✔ ${key} = ${formatted}`);
       } else {
         setStatus('No se reconoció ningún número · di la lectura de nuevo');
       }
@@ -490,7 +520,13 @@ export function GridMappingPage() {
     if (error || !data) { setStatus('❌ ' + (error?.message ?? 'No encontrado')); return; }
     const row = data as GridMappingRow;
     setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha });
-    setGrid(row.grid_data ?? {});
+    // Normalizar valores numéricos que vengan del backend
+    const normalized: GridData = {};
+    Object.keys(row.grid_data ?? {}).forEach((k) => {
+      const v = (row.grid_data ?? {})[k];
+      normalized[k] = v && isNumeric(v) ? format2(v) : v;
+    });
+    setGrid(normalized);
     setRecordId(row.id);
     setStatus(`✔ Cargado: ${row.matricula} · FR ${row.fr ?? '—'}`);
   };
@@ -500,13 +536,19 @@ export function GridMappingPage() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      // Guardar todo formateado
+      const cleanGrid: GridData = {};
+      Object.keys(grid).forEach((k) => {
+        const v = grid[k];
+        if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
+      });
       const payload = {
         user_id: user?.id ?? null,
         matricula: meta.matricula.trim(),
         wo_sap: meta.wo_sap.trim() || null,
         fr: meta.fr.trim() || null,
         fecha: meta.fecha,
-        grid_data: grid,
+        grid_data: cleanGrid,
       };
       if (recordId) {
         const { error } = await supabase.from('grid_mappings').update(payload).eq('id', recordId);
@@ -535,7 +577,7 @@ export function GridMappingPage() {
     for (let r = 1; r <= rows; r++) {
       data.push([r, ...Array.from({ length: cols }, (_, ci) => {
         const v = grid[`${colName(ci)}${r}`] ?? '';
-        return v ? format2(v) : '';
+        return v ? (isNumeric(v) ? format2(v) : v) : '';
       })]);
     }
     const csv = '\uFEFF' + data.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(sep)).join('\r\n');
@@ -550,6 +592,17 @@ export function GridMappingPage() {
   /* ------------------------------ Render ----------------------------- */
 
   const nextCellLabel = rowMode.active && rowMode.colIdx < cols ? `${colName(rowMode.colIdx)}${rowMode.row}` : null;
+
+  /**
+   * Valor a pintar en el input:
+   *  - Si la celda está ENFOCADA → se muestra tal cual (para escribir).
+   *  - Si NO está enfocada y es numérico → 2 decimales SIEMPRE.
+   */
+  const displayValue = (key: string, raw: string): string => {
+    if (focusedKey === key) return raw;
+    if (raw && isNumeric(raw)) return format2(raw);
+    return raw;
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-full mx-auto space-y-4">
@@ -664,7 +717,7 @@ export function GridMappingPage() {
             <tr>
               <th className="bg-airbus-navy text-white w-9 h-9 border border-gray-200" />
               {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
-                <th key={c} className="bg-airbus-navy text-white font-semibold h-9 border border-gray-200 min-w-[36px] whitespace-nowrap">{c}</th>
+                <th key={c} className="bg-airbus-navy text-white font-semibold h-9 border border-gray-200 min-w-[44px] whitespace-nowrap">{c}</th>
               ))}
             </tr>
           </thead>
@@ -677,14 +730,14 @@ export function GridMappingPage() {
                   {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c, ci) => {
                     const key = `${c}${r}`;
                     const v = grid[key] ?? '';
+                    const display = displayValue(key, v);
                     const active = selected === key;
                     const flashing = flashKey === key;
                     const isNext = isCurrentRow && rowMode.colIdx === ci;
 
-                    // 🎨 Escala de color según valor numérico
                     const numeric = isNumeric(v);
                     const bg = numeric && valueStats.hasData
-                      ? colorForValue(parseFloat(v), valueStats.min, valueStats.max)
+                      ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
                       : undefined;
 
                     return (
@@ -697,16 +750,23 @@ export function GridMappingPage() {
                         }}
                       >
                         <input
-                          className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums"
+                          className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
                           inputMode="decimal"
-                          value={v}
+                          value={display}
                           onChange={(e) => setCellRaw(key, e.target.value)}
+                          onFocus={() => { setFocusedKey(key); setSelected(key); }}
                           onBlur={(e) => {
+                            setFocusedKey(null);
                             const val = e.target.value.trim();
                             if (val && isNumeric(val)) setCell(key, val);
                             else if (val) setCellRaw(key, val);
                           }}
-                          onFocus={() => setSelected(key)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              (e.currentTarget as HTMLInputElement).blur();
+                            }
+                          }}
                         />
                       </td>
                     );
@@ -718,7 +778,7 @@ export function GridMappingPage() {
         </table>
       </div>
 
-      {/* 🎨 Leyenda de la escala */}
+      {/* 🎨 Leyenda */}
       <div className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Escala de color</div>
@@ -735,7 +795,7 @@ export function GridMappingPage() {
           )}
         </div>
         <p className="text-[11px] text-gray-400 mt-2">
-          Verde = mínimo · Amarillo = medio · Rojo = máximo. Se recalcula automáticamente al añadir o modificar valores.
+          Verde = mínimo · Amarillo = medio · Rojo = máximo. Se recalcula automáticamente.
         </p>
       </div>
 
