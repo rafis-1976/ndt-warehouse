@@ -37,14 +37,12 @@ interface HistoryRow {
 
 /* ------------------------- Utilidades numéricas ---------------------- */
 
-/** Formatea a 2 decimales SIEMPRE. "12"→"12.00", "12.5"→"12.50", "0.005"→"0.01". */
 function format2(v: string | number): string {
   const raw = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
   if (isNaN(raw) || !isFinite(raw)) return String(v);
   return raw.toFixed(2);
 }
 
-/** ¿Es un número válido completo? */
 function isNumeric(v: string): boolean {
   if (!v) return false;
   const s = String(v).trim().replace(',', '.');
@@ -53,7 +51,6 @@ function isNumeric(v: string): boolean {
   return !isNaN(n) && isFinite(n);
 }
 
-/** Interpola verde → amarillo → rojo para t ∈ [0..1]. */
 function colorForValue(v: number, min: number, max: number): string {
   if (max === min) return 'rgb(253, 224, 71)';
   const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
@@ -88,18 +85,60 @@ const ORDINALS: Record<string, number> = {
   novena: 9, noveno: 9, decima: 10, decimo: 10,
 };
 
+/**
+ * Normaliza el texto dictado:
+ *   "dos coma cero dos" → "2.02"
+ *   "doce coma cinco"   → "12.5"
+ *   "a prima uno doce coma cinco" → "a'1 12.5"
+ *   "2.02, 2.05"        → "2.02 , 2.05" (dos valores separados)
+ */
 function normalizeVoice(text: string): string {
   let s = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
+
+  // 1) Convierte números-palabra a dígitos
   s = s.split(/\s+/).map((w) => {
     const clean = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
     return NUM_WORDS[clean] !== undefined ? ` ${NUM_WORDS[clean]} ` : w;
   }).join(' ');
-  s = s.replace(/\bdoble\s+prima\b/g, "''").replace(/\bprima\b/g, "'").replace(/\bprimas\b/g, "'");
-  s = s.replace(/\bcoma\b|\bpunto\b/g, '.')
-       .replace(/\s*\.\s*/g, '.')
+
+  // 2) Marca "coma" y "punto" como separador decimal
+  s = s.replace(/\bcoma\b|\bpunto\b/g, ' DEC ');
+
+  // 3) Reconstrúye: tras DEC, une dígitos sueltos como parte decimal
+  const tokens = s.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  let state: 'normal' | 'waitDec' | 'inDec' = 'normal';
+
+  for (const tok of tokens) {
+    if (tok === 'DEC') { state = 'waitDec'; continue; }
+
+    if (state === 'waitDec') {
+      if (/^\d+$/.test(tok) && out.length > 0 && /\d$/.test(out[out.length - 1])) {
+        out[out.length - 1] += '.' + tok;
+        state = /^\d$/.test(tok) ? 'inDec' : 'normal';
+        continue;
+      }
+      state = 'normal';
+    }
+
+    if (state === 'inDec' && /^\d$/.test(tok)) {
+      out[out.length - 1] += tok;
+      continue;
+    }
+
+    state = 'normal';
+    out.push(tok);
+  }
+  s = out.join(' ');
+
+  // 4) Primes y limpieza
+  s = s.replace(/\bdoble\s+prima\b/g, "''")
+       .replace(/\bprima\b/g, "'")
+       .replace(/\bprimas\b/g, "'")
        .replace(/(\d),(\d)/g, '$1.$2')
-       .replace(/\s+/g, ' ').trim();
+       .replace(/\s+/g, ' ')
+       .trim();
   return s;
 }
 
@@ -123,7 +162,23 @@ function fmtFecha(iso: string): string {
   const [y, m, d] = iso.split('-');
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
-function spokenValue(v: string): string { return v.replace(/\./g, ' coma '); }
+
+/** Dado un key ("B3"), devuelve la siguiente coordenada según direction. */
+function nextKey(key: string, direction: Direction, colsN: number, rowsN: number): string | null {
+  const m = key.match(/^([A-Z])('*)(\d+)$/);
+  if (!m) return null;
+  let ci = colIndex(m[1] + m[2]);
+  let ri = parseInt(m[3], 10);
+  if (direction === 'right') {
+    ci += 1;
+    if (ci >= colsN) { ci = 0; ri += 1; }
+  } else {
+    ri += 1;
+    if (ri > rowsN) { ri = 1; ci += 1; }
+  }
+  if (ri > rowsN || ci >= colsN) return null;
+  return colName(ci) + ri;
+}
 
 /* ----------------------------- Componente ----------------------------- */
 
@@ -143,7 +198,6 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  /* ---- Tamaño ---- */
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
   const rowsRef = useRef(rows);
@@ -151,7 +205,6 @@ export function GridMappingPage() {
   useEffect(() => { rowsRef.current = rows; }, [rows]);
   useEffect(() => { colsRef.current = cols; }, [cols]);
 
-  /* ---- Modo fila ---- */
   const [rowMode, setRowModeState] = useState<RowMode>({ active: false, row: 0, colIdx: 0 });
   const rowModeRef = useRef<RowMode>(rowMode);
   const updateRowMode = useCallback((next: RowMode) => {
@@ -159,20 +212,20 @@ export function GridMappingPage() {
     setRowModeState(next);
   }, []);
 
-  /* ---- Celda enfocada (para no formatear mientras se escribe) ---- */
+  // grid ref para consultar "primera celda libre" sin re-suscribir callbacks
+  const gridRef = useRef(grid);
+  useEffect(() => { gridRef.current = grid; }, [grid]);
+
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
-  /* ---- Voz de retorno ---- */
   const [voiceFeedback, setVoiceFeedback] = useState(true);
   const voiceFeedbackRef = useRef(true);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
-  /* ---- Resaltado ---- */
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
-  /* ---- Reconocimiento ---- */
   const recRef = useRef<any>(null);
   const wantListenRef = useRef(false);
 
@@ -189,8 +242,6 @@ export function GridMappingPage() {
   }, [grid]);
 
   /* --------------------- Normalizar valores antiguos ----------------- */
-  // Se ejecuta al cargar registros viejos con valores sin formatear.
-  // No toca la celda enfocada para no interferir mientras se escribe.
   useEffect(() => {
     let needsUpdate = false;
     const next: GridData = { ...grid };
@@ -199,20 +250,15 @@ export function GridMappingPage() {
       const v = next[k];
       if (v && isNumeric(v)) {
         const f = format2(v);
-        if (f !== v) {
-          next[k] = f;
-          needsUpdate = true;
-        }
+        if (f !== v) { next[k] = f; needsUpdate = true; }
       }
     });
     if (needsUpdate) setGrid(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, focusedKey]);
 
-  /* --------------------- Sincronizar refs ---------------------- */
   useEffect(() => { voiceFeedbackRef.current = voiceFeedback; }, [voiceFeedback]);
 
-  /* --------------------- Inicializar TTS --------------------- */
   useEffect(() => {
     if (!speechSupported) return;
     synthRef.current = window.speechSynthesis;
@@ -231,28 +277,25 @@ export function GridMappingPage() {
     const synth = synthRef.current;
     if (!synth) return;
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'es-ES'; utter.rate = 1.1; utter.pitch = 1.0; utter.volume = 0.95;
+    utter.lang = 'es-ES'; utter.rate = 1.15; utter.pitch = 1.0; utter.volume = 0.95;
     const voices = synth.getVoices();
     const esVoice = voices.find((v) => v.lang === 'es-ES') || voices.find((v) => v.lang.startsWith('es'));
     if (esVoice) utter.voice = esVoice;
     if (interrupt) {
       synth.cancel();
-      setTimeout(() => synth.speak(utter), 80);
+      setTimeout(() => synth.speak(utter), 60);
     } else {
       synth.speak(utter);
     }
   }, []);
   const cancelSpeech = useCallback(() => synthRef.current?.cancel(), []);
 
-  /* --------------------- Resaltado ------------------ */
   const flashCell = useCallback((key: string) => {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
     setFlashKey(key);
     flashTimerRef.current = window.setTimeout(() => setFlashKey(null), 700);
   }, []);
 
-  /* --------------------- Helpers de grid --------------------- */
-  /** Guarda el valor YA FORMATEADO a 2 decimales. */
   const setCell = useCallback((key: string, value: string) => {
     let v = String(value).replace(',', '.').trim();
     if (v && isNumeric(v)) v = format2(v);
@@ -263,7 +306,6 @@ export function GridMappingPage() {
     });
   }, []);
 
-  /** Guarda el valor EN CRUDO (mientras el usuario escribe). */
   const setCellRaw = useCallback((key: string, value: string) => {
     const v = String(value).replace(',', '.').trim();
     setGrid((prev) => {
@@ -275,15 +317,8 @@ export function GridMappingPage() {
 
   const advance = useCallback(() => {
     if (!selected) return;
-    const m = selected.match(/^([A-Z])('*)(\d+)$/);
-    if (!m) return;
-    let ci = colIndex(m[1] + m[2]);
-    let ri = parseInt(m[3], 10);
-    const colsN = colsRef.current, rowsN = rowsRef.current;
-    if (direction === 'right') { ci += 1; if (ci >= colsN) { ci = 0; ri += 1; } }
-    else { ri += 1; if (ri > rowsN) { ri = 1; ci += 1; } }
-    if (ri > rowsN || ci >= colsN) { setSelected(null); return; }
-    setSelected(colName(ci) + ri);
+    const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
+    setSelected(nk);
   }, [selected, direction]);
 
   /* ------------------ Detección de comandos ------------------ */
@@ -299,79 +334,108 @@ export function GridMappingPage() {
   const isSiguienteFila = (s: string) =>
     /\b(siguiente|otra|proxima)\s+fila\b/.test(s) || /\bfila\s+(siguiente|proxima)\b/.test(s);
 
+  /* --------------- Primera celda libre en una fila ------------------ */
+  const firstEmptyCol = (rowNum: number): number => {
+    const g = gridRef.current;
+    for (let i = 0; i < colsRef.current; i++) {
+      if (!g[colName(i) + rowNum]) return i;
+    }
+    return colsRef.current;
+  };
+
   /* ------------------ Procesado de voz ----------------------- */
   const handleVoiceFinal = useCallback((text: string) => {
     const s = normalizeVoice(text);
     if (!s) return;
 
+    // 1) "siguiente fila"
     if (isSiguienteFila(s)) {
       const currentRow = rowModeRef.current.active ? rowModeRef.current.row : 0;
       const nextRow = Math.min(rowsRef.current, currentRow + 1);
       if (nextRow >= 1) {
-        updateRowMode({ active: true, row: nextRow, colIdx: 0 });
-        setStatus(`Fila ${nextRow} activa · di lecturas o FIN`);
-        speak(`Fila ${nextRow}, lecturas`, true);
+        const startCol = firstEmptyCol(nextRow);
+        updateRowMode({ active: true, row: nextRow, colIdx: startCol });
+        setStatus(`Fila ${nextRow} activa · siguiente: ${colName(startCol)}${nextRow}`);
+        speak(`Fila ${nextRow}, adelante`, true);
         return;
       }
     }
 
+    // 2) "fila N"
     const targetRow = detectRow(s);
     if (targetRow >= 1 && targetRow <= MAX_ROWS) {
       if (targetRow > rowsRef.current) { setRows(targetRow); rowsRef.current = targetRow; }
-      updateRowMode({ active: true, row: targetRow, colIdx: 0 });
-      setStatus(`Fila ${targetRow} activa · di lecturas o FIN`);
+      const startCol = firstEmptyCol(targetRow);
+      updateRowMode({ active: true, row: targetRow, colIdx: startCol });
+      setStatus(`Fila ${targetRow} activa · siguiente: ${colName(startCol)}${targetRow}`);
       setHeard(`Fila ${targetRow}`);
-      speak(`Fila ${targetRow}, lecturas`, true);
+      speak(`Fila ${targetRow}, adelante`, true);
       return;
     }
 
+    // 3) "FIN"
     if (isFin(s)) {
       if (rowModeRef.current.active) {
         const r = rowModeRef.current.row;
         updateRowMode({ active: false, row: 0, colIdx: 0 });
         setStatus(`Fila ${r} terminada · di «fila N» para continuar`);
-        speak(`Fin fila ${r}`, true);
+        speak(`Fila ${r} terminada`, true);
       } else {
         setStatus('No hay fila activa · di «fila N» primero');
       }
       return;
     }
 
+    // 4) En modo fila: extrae TODOS los números de la frase y rellena celdas
     if (rowModeRef.current.active) {
-      const numMatch = s.match(/(\d+(?:\.\d+)?)/);
-      if (numMatch) {
-        const value = numMatch[1];
-        const { row, colIdx } = rowModeRef.current;
-        const colsN = colsRef.current;
-        if (colIdx >= colsN) { setStatus(`Fila ${row} completa · di FIN`); speak('Fila completa', true); return; }
-        const col = colName(colIdx);
-        const key = col + row;
-        setCell(key, value);
-        flashCell(key);
-        const formatted = format2(value);
-        speak(`${col} ${row}, ${spokenValue(formatted)}`);
-        const nextColIdx = colIdx + 1;
-        updateRowMode({ active: true, row, colIdx: nextColIdx });
-        if (nextColIdx >= colsN) setStatus(`Fila ${row} completa · di FIN`);
-        else setStatus(`✔ ${key} = ${formatted}`);
-      } else {
+      const values = [...s.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
+      if (values.length === 0) {
         setStatus('No se reconoció ningún número · di la lectura de nuevo');
+        return;
+      }
+
+      const { row } = rowModeRef.current;
+      const colsN = colsRef.current;
+      let currentColIdx = rowModeRef.current.colIdx;
+
+      for (const value of values) {
+        if (currentColIdx >= colsN) break;
+        const col = colName(currentColIdx);
+        setCell(col + row, value);
+        flashCell(col + row);
+        currentColIdx++;
+      }
+
+      if (currentColIdx >= colsN) {
+        updateRowMode({ active: true, row, colIdx: currentColIdx });
+        setStatus(`Fila ${row} completa · di FIN`);
+        speak('Di fin', true);
+      } else {
+        const nextCol = colName(currentColIdx);
+        updateRowMode({ active: true, row, colIdx: currentColIdx });
+        setStatus(`✔ Fila ${row} · siguiente: ${nextCol}${row}`);
+        speak(`${nextCol} ${row}`, true);
       }
       return;
     }
 
+    // 5) Fallback: coordenada completa "A1 2.02" (sin modo fila activo)
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
     if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
+      const lastKey = coords[coords.length - 1].key;
+      const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}`);
+      if (nk) speak(nk, true);
       return;
     }
 
+    // 6) Número suelto sin fila activa
     if (/^\d+(\.\d+)?$/.test(s)) {
       setStatus('Di «fila N» primero para empezar.');
       speak('Di fila, y el número', true);
     }
-  }, [setCell, flashCell, speak, updateRowMode]);
+  }, [setCell, flashCell, speak, updateRowMode, direction]);
 
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
@@ -417,7 +481,6 @@ export function GridMappingPage() {
     try { rec.start(); } catch (err: any) { setStatus('⚠️ ' + err.message); }
   }, [listening, cancelSpeech]);
 
-  /* ----------------------- Limpieza ------------------------ */
   useEffect(() => () => {
     wantListenRef.current = false;
     recRef.current?.stop?.();
@@ -478,17 +541,22 @@ export function GridMappingPage() {
     if (coords.length === 0) {
       if (/^\d+(\.\d+)?$/.test(s) && selected) {
         setCell(selected, s); flashCell(selected);
+        const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
         setStatus(`✔ ${selected} = ${format2(s)}`);
         advance();
+        if (nk) speak(nk, true);
       } else {
         setStatus('⚠️ No se reconoció ninguna coordenada.');
       }
     } else {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
+      const lastKey = coords[coords.length - 1].key;
+      const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}`);
+      if (nk) speak(nk, true);
     }
     setManual('');
-  }, [manual, selected, setCell, advance, flashCell]);
+  }, [manual, selected, setCell, advance, flashCell, direction, speak]);
 
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
@@ -520,7 +588,6 @@ export function GridMappingPage() {
     if (error || !data) { setStatus('❌ ' + (error?.message ?? 'No encontrado')); return; }
     const row = data as GridMappingRow;
     setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha });
-    // Normalizar valores numéricos que vengan del backend
     const normalized: GridData = {};
     Object.keys(row.grid_data ?? {}).forEach((k) => {
       const v = (row.grid_data ?? {})[k];
@@ -536,7 +603,6 @@ export function GridMappingPage() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      // Guardar todo formateado
       const cleanGrid: GridData = {};
       Object.keys(grid).forEach((k) => {
         const v = grid[k];
@@ -593,11 +659,6 @@ export function GridMappingPage() {
 
   const nextCellLabel = rowMode.active && rowMode.colIdx < cols ? `${colName(rowMode.colIdx)}${rowMode.row}` : null;
 
-  /**
-   * Valor a pintar en el input:
-   *  - Si la celda está ENFOCADA → se muestra tal cual (para escribir).
-   *  - Si NO está enfocada y es numérico → 2 decimales SIEMPRE.
-   */
   const displayValue = (key: string, raw: string): string => {
     if (focusedKey === key) return raw;
     if (raw && isNumeric(raw)) return format2(raw);
@@ -667,7 +728,8 @@ export function GridMappingPage() {
         </div>
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
-          🗣️ Di <b>«fila 1»</b> · lecturas seguidas · <b>«FIN»</b> al terminar. Para columnas con prima: <b>«a prima uno 12 coma 5»</b>.
+          🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas (<i>dos coma cero dos, dos coma cero cinco</i>) · <b>«FIN»</b> al terminar.
+          Tras cada valor te dirá la <b>coordenada siguiente</b> (ej. «B 1»).
         </p>
 
         {/* Controles de tamaño */}
