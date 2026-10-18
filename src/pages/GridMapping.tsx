@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // ⚠️ Ajusta esta ruta al cliente Supabase real de tu proyecto
-// (p. ej. '../lib/supabase', '../lib/supabaseClient', '../supabase' …)
 import { supabase } from '../lib/supabase';
 
 /* ------------------------- Constantes y tipos ------------------------- */
@@ -82,6 +81,14 @@ function fmtFecha(iso: string): string {
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
 
+/** Formatea "A1" + "12.5" → "A 1, 12 coma 5" para que el TTS lo lea bien en español. */
+function formatForSpeech(key: string, value: string): string {
+  const col = key[0];
+  const row = key.slice(1);
+  const valor = value.replace(/\./g, ' coma ');
+  return `${col} ${row}, ${valor}`;
+}
+
 /* ----------------------------- Componente ----------------------------- */
 
 export function GridMappingPage() {
@@ -103,12 +110,84 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // ---- Repetición por voz ----
+  const [voiceFeedback, setVoiceFeedback] = useState(true);
+  const voiceFeedbackRef = useRef(true);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const speechSupported =
+    typeof window !== 'undefined' && 'speechSynthesis' in window;
+
+  // ---- Resaltado de la última celda tocada ----
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+
+  // ---- Reconocimiento ----
   const recRef = useRef<any>(null);
   const wantListenRef = useRef(false);
 
   const filled = useMemo(() => Object.values(grid).filter(Boolean).length, [grid]);
 
-  /* --------------------------- Grid helpers --------------------------- */
+  /* --------------------- Sincronizar ref de voz ---------------------- */
+
+  useEffect(() => {
+    voiceFeedbackRef.current = voiceFeedback;
+  }, [voiceFeedback]);
+
+  /* --------------------- Inicializar speechSynthesis ----------------- */
+
+  useEffect(() => {
+    if (!speechSupported) return;
+    synthRef.current = window.speechSynthesis;
+    // Algunos navegadores cargan las voces de forma asíncrona
+    window.speechSynthesis.getVoices();
+    const onVoices = () => window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = onVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+      window.speechSynthesis.cancel();
+    };
+  }, [speechSupported]);
+
+  /* --------------------------- Voz: hablar --------------------------- */
+
+  const speak = useCallback((text: string) => {
+    if (!voiceFeedbackRef.current) return;
+    const synth = synthRef.current;
+    if (!synth) return;
+
+    // Cancela lo anterior para no acumular cola si dictas rápido
+    synth.cancel();
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'es-ES';
+    utter.rate = 1.05;
+    utter.pitch = 1.0;
+    utter.volume = 0.95;
+
+    const voices = synth.getVoices();
+    const esVoice =
+      voices.find((v) => v.lang === 'es-ES') ||
+      voices.find((v) => v.lang.startsWith('es'));
+    if (esVoice) utter.voice = esVoice;
+
+    synth.speak(utter);
+  }, []);
+
+  /* -------------------------- Voz: silenciar ------------------------- */
+
+  const cancelSpeech = useCallback(() => {
+    synthRef.current?.cancel();
+  }, []);
+
+  /* ---------------------- Resaltado de celda ------------------------ */
+
+  const flashCell = useCallback((key: string) => {
+    if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    setFlashKey(key);
+    flashTimerRef.current = window.setTimeout(() => setFlashKey(null), 1000);
+  }, []);
+
+  /* --------------------------- Grid helpers -------------------------- */
 
   const setCell = useCallback((key: string, value: string) => {
     const v = String(value).replace(',', '.').trim();
@@ -145,44 +224,72 @@ export function GridMappingPage() {
     setSelected(COLS[ci] + ri);
   }, [selected, direction]);
 
-  /* ------------------------------ Voz ------------------------------- */
+  /* --------------------------- Interpretación ------------------------ */
 
   const handleText = useCallback(
     (text: string, isFinal: boolean) => {
       const s = normalizeVoice(text);
       if (!s) return;
 
+      // 1) Coordenada completa (letra + fila + valor) → rellena YA en tiempo real
       const coords = parseCoordinates(s);
       if (coords.length > 0) {
         coords.forEach(({ key, value }) => setCell(key, value));
+        flashCell(coords[coords.length - 1].key);
         setStatus(`✔ ${coords.map((c) => `${c.key}=${c.value}`).join('  ')}`);
+
+        // Solo hablamos al confirmar (final) para no spamear con intermedios
+        if (isFinal) {
+          speak(coords.map((c) => formatForSpeech(c.key, c.value)).join('. '));
+        }
         return;
       }
-      if (!isFinal) return;
 
+      // 2) Número suelto sobre la celda activa
       if (/^\d+(\.\d+)?$/.test(s) && selected) {
         setCell(selected, s);
+        flashCell(selected);
         setStatus(`✔ ${selected} = ${s}`);
-        advance();
+
+        // Actualiza la tabla en tiempo real (interim), avanza solo al final
+        if (isFinal) {
+          speak(formatForSpeech(selected, s));
+          advance();
+        }
         return;
       }
-      if (/^(borra|borrar|limpia|limpiar|quita)\b/.test(s) && selected) {
+
+      // 3) Comandos solo en final (evita coincidencias parciales)
+      if (
+        isFinal &&
+        /^(borra|borrar|limpia|limpiar|quita)\b/.test(s) &&
+        selected
+      ) {
         setCell(selected, '');
+        flashCell(selected);
         setStatus(`🗑 ${selected} borrada`);
+        speak('borrado');
       }
     },
-    [selected, setCell, advance],
+    [selected, setCell, advance, speak, flashCell],
   );
 
+  /* --------------------------- Micrófono ---------------------------- */
+
   const toggleListen = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
     if (!SR) {
       setStatus('❌ Este navegador no soporta voz. Usa Chrome/Edge en Android, o el campo manual.');
       return;
     }
+
     if (listening) {
       wantListenRef.current = false;
       recRef.current?.stop?.();
+      cancelSpeech();
       setListening(false);
       return;
     }
@@ -198,6 +305,7 @@ export function GridMappingPage() {
       setListening(true);
       setStatus('Escuchando… dicta «A uno doce coma cinco».');
     };
+
     rec.onresult = (e: any) => {
       let interim = '';
       let final = '';
@@ -208,13 +316,14 @@ export function GridMappingPage() {
       }
       if (interim) {
         setHeard(interim);
-        handleText(interim, false);
+        handleText(interim, false); // ← actualiza tabla en tiempo real
       }
       if (final) {
         setHeard(final);
-        handleText(final, true);
+        handleText(final, true); // ← aplica + repite por voz
       }
     };
+
     rec.onerror = (e: any) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         wantListenRef.current = false;
@@ -224,6 +333,7 @@ export function GridMappingPage() {
         setStatus('⚠️ Error de voz: ' + e.error);
       }
     };
+
     rec.onend = () => {
       if (wantListenRef.current) {
         setTimeout(() => {
@@ -237,18 +347,23 @@ export function GridMappingPage() {
         setListening(false);
       }
     };
+
     recRef.current = rec;
     try {
       rec.start();
     } catch (err: any) {
       setStatus('⚠️ ' + err.message);
     }
-  }, [listening, handleText]);
+  }, [listening, handleText, cancelSpeech]);
+
+  /* ----------------------- Limpieza al desmontar -------------------- */
 
   useEffect(
     () => () => {
       wantListenRef.current = false;
       recRef.current?.stop?.();
+      synthRef.current?.cancel();
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
     },
     [],
   );
@@ -259,20 +374,25 @@ export function GridMappingPage() {
     if (!manual.trim()) return;
     const s = normalizeVoice(manual);
     const coords = parseCoordinates(s);
+
     if (coords.length === 0) {
       if (/^\d+(\.\d+)?$/.test(s) && selected) {
         setCell(selected, s);
+        flashCell(selected);
         setStatus(`✔ ${selected} = ${s}`);
+        speak(formatForSpeech(selected, s));
         advance();
       } else {
         setStatus('⚠️ No se reconoció ninguna coordenada.');
       }
     } else {
       coords.forEach(({ key, value }) => setCell(key, value));
+      flashCell(coords[coords.length - 1].key);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${c.value}`).join('  ')}`);
+      speak(coords.map((c) => formatForSpeech(c.key, c.value)).join('. '));
     }
     setManual('');
-  }, [manual, selected, setCell, advance]);
+  }, [manual, selected, setCell, advance, speak, flashCell]);
 
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
@@ -474,16 +594,45 @@ export function GridMappingPage() {
 
       {/* Voz */}
       <div className="card space-y-3">
-        <button
-          onClick={toggleListen}
-          className={`w-full py-3 rounded-lg font-semibold text-white transition ${
-            listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'
-          }`}
-        >
-          {listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz'}
-        </button>
+        <div className="flex gap-2 items-stretch">
+          <button
+            onClick={toggleListen}
+            className={`flex-1 py-3 rounded-lg font-semibold text-white transition ${
+              listening
+                ? 'bg-airbus-red animate-pulse'
+                : 'bg-airbus-blue hover:bg-airbus-navy'
+            }`}
+          >
+            {listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz'}
+          </button>
 
-        <p className="text-xs text-gray-500 min-h-[16px]">{status}</p>
+          {speechSupported && (
+            <button
+              onClick={() => setVoiceFeedback((v) => !v)}
+              className={`px-4 py-3 rounded-lg font-semibold border-2 transition ${
+                voiceFeedback
+                  ? 'bg-airbus-green text-white border-airbus-green'
+                  : 'bg-white text-gray-400 border-gray-300'
+              }`}
+              title={
+                voiceFeedback
+                  ? 'Silenciar repetición por voz'
+                  : 'Activar repetición por voz'
+              }
+            >
+              {voiceFeedback ? '🔊' : '🔇'}
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
+          <span className="min-h-[16px]">{status}</span>
+          {speechSupported && (
+            <span className={voiceFeedback ? 'text-airbus-green' : 'text-gray-400'}>
+              Repetir: {voiceFeedback ? 'ON' : 'OFF'}
+            </span>
+          )}
+        </div>
 
         <div className="min-h-[38px] text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700">
           {heard || <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>}
@@ -557,11 +706,16 @@ export function GridMappingPage() {
                   const key = `${c}${r}`;
                   const v = grid[key] ?? '';
                   const active = selected === key;
+                  const flashing = flashKey === key;
                   return (
                     <td
                       key={key}
-                      className={`border border-gray-200 h-10 p-0 ${
-                        v ? 'bg-airbus-green/10' : 'bg-white'
+                      className={`border border-gray-200 h-10 p-0 transition-colors duration-150 ${
+                        flashing
+                          ? 'bg-yellow-200'
+                          : v
+                          ? 'bg-airbus-green/10'
+                          : 'bg-white'
                       } ${active ? 'outline outline-2 outline-airbus-sky' : ''}`}
                     >
                       <input
