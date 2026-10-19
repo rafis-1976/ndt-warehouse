@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
-
+ 
 function colName(idx: number): string {
   if (idx < 0) return '';
   const letter = String.fromCharCode(65 + (idx % 26));
