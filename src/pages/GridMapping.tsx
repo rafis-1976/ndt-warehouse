@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { WhisperTranscriber } from 'whisper-web-transcriber';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
 
@@ -193,16 +194,10 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
-  /* ---- Patrón de la sesión (nº de decimales esperado) ---- */
-  const sessionDecimalsRef = useRef<number | null>(null);
-  /* ---- Control de beeps: última vez que llegó audio ---- */
-  const lastResultTimeRef = useRef<number>(0);
-  /* ---- Debounce de fragmentos finales ---- */
-  const finalDebounceRef = useRef<number | null>(null);
-  const pendingFinalRef = useRef<string>('');
+  const [modelLoading, setModelLoading] = useState(false);
+  const [modelProgress, setModelProgress] = useState(0);
 
-  const recRef = useRef<any>(null);
-  const wantListenRef = useRef(false);
+  const whisperRef = useRef<WhisperTranscriber | null>(null);
 
   const filled = useMemo(
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
@@ -239,7 +234,6 @@ export function GridMappingPage() {
       }
     });
     if (needsUpdate) setGrid(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, focusedKey]);
 
   const flashCell = useCallback((key: string) => {
@@ -290,22 +284,7 @@ export function GridMappingPage() {
     return colsRef.current;
   };
 
-  /* ------------------ Validación por patrón de sesión ------------------ */
-  function validateReading(raw: string, inRowMode: boolean): { ok: true; value: string } | { ok: false; reason: string } {
-    const values = extractReadings(raw, inRowMode);
-    if (values.length === 0) return { ok: false, reason: 'sin números' };
-    if (inRowMode && values.length > 1) return { ok: false, reason: 'varias lecturas' };
-
-    const v = values[0];
-    const decimals = (v.split('.')[1] || '').length;
-
-    // Si la sesión ya está en X.XX y llega X.X → rechazar como incompleta
-    if (sessionDecimalsRef.current === 2 && v.includes('.') && decimals < 2) {
-      return { ok: false, reason: `"${v}" incompleto` };
-    }
-    return { ok: true, value: v };
-  }
-
+  /* ------------------ Procesamiento de texto ------------------ */
   const handleVoiceFinal = useCallback((text: string) => {
     const s = normalizeVoice(text);
     setLastNormalized(s);
@@ -344,33 +323,36 @@ export function GridMappingPage() {
     }
 
     if (rowModeRef.current.active) {
-      const check = validateReading(s, true);
-      setLastReadings(check.ok ? [check.value] : []);
-      if (!check.ok) {
-        setStatus(`⚠️ Lectura incompleta (${check.reason}) · repite`);
+      const values = extractReadings(s, true);
+      setLastReadings(values);
+      if (values.length === 0) {
+        setStatus('No se reconoció ningún número · di la lectura de nuevo');
         return;
-      }
-      const v = check.value;
-      // Actualizar patrón de sesión con la primera lectura válida
-      if (sessionDecimalsRef.current === null) {
-        sessionDecimalsRef.current = (v.split('.')[1] || '').length;
       }
 
       const { row } = rowModeRef.current;
       const colsN = colsRef.current;
-      const col = colName(rowModeRef.current.colIdx);
-      setCell(col + row, v);
-      flashCell(col + row);
+      let currentColIdx = rowModeRef.current.colIdx;
 
-      const nextColIdx = rowModeRef.current.colIdx + 1;
-      updateRowMode({ active: true, row, colIdx: nextColIdx });
+      for (const value of values) {
+        if (currentColIdx >= colsN) break;
+        const col = colName(currentColIdx);
+        setCell(col + row, value);
+        flashCell(col + row);
+        currentColIdx++;
+      }
 
-      if (nextColIdx >= colsN) setStatus(`Fila ${row} completa · di FIN`);
-      else setStatus(`✔ ${col}${row} = ${format2(v)} · siguiente: ${colName(nextColIdx)}${row}`);
+      if (currentColIdx >= colsN) {
+        updateRowMode({ active: true, row, colIdx: currentColIdx });
+        setStatus(`Fila ${row} completa · di FIN`);
+      } else {
+        const nextCol = colName(currentColIdx);
+        updateRowMode({ active: true, row, colIdx: currentColIdx });
+        setStatus(`✔ Fila ${row} · siguiente: ${nextCol}${row}`);
+      }
       return;
     }
 
-    // Modo fallback: coordenada completa "A1 2.02"
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
     if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
@@ -386,106 +368,46 @@ export function GridMappingPage() {
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
 
-  /* --------------------------- Micrófono --------------------- */
-  const toggleListen = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { setStatus('❌ Este navegador no soporta voz. Usa Chrome/Edge en Android, o el campo manual.'); return; }
+  /* --------------------------- Micrófono / Whisper --------------------- */
+  const toggleListen = useCallback(async () => {
     if (listening) {
-      wantListenRef.current = false;
-      if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
-      pendingFinalRef.current = '';
-      recRef.current?.stop?.();
+      whisperRef.current?.stopRecording();
       setListening(false);
       return;
     }
-    wantListenRef.current = true;
-    sessionDecimalsRef.current = null; // reset patrón por sesión
-    lastResultTimeRef.current = Date.now();
 
-    const rec = new SR();
-    rec.lang = 'es-ES';
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 5; // varias hipótesis
+    setModelLoading(true);
+    setStatus('Cargando modelo de Whisper (solo la primera vez)…');
 
-    rec.onstart = () => {
+    try {
+      const transcriber = new WhisperTranscriber({
+        modelSize: 'tiny', // 'tiny' (75MB) es suficiente para español y el más rápido. Alternativa: 'base' (142MB).
+        language: 'es',
+        onProgress: (p) => setModelProgress(p),
+        onStatus: (s) => setStatus(s),
+        onTranscription: (text) => {
+          // La librería puede devolver fragmentos; los pasamos a la lógica de negocio.
+          // Si el texto contiene varias lecturas, handleVoiceFinal las procesará todas.
+          handleVoiceFinalRef.current(text);
+        },
+      });
+
+      await transcriber.loadModel();
+      whisperRef.current = transcriber;
+      await transcriber.startRecording();
       setListening(true);
-      setStatus('Escuchando… di «fila N» para empezar.');
-    };
-
-    rec.onresult = (e: any) => {
-      lastResultTimeRef.current = Date.now();
-
-      // Interim → solo mostrar
-      let interim = '';
-      const result = e.results[e.resultIndex];
-      if (!result.isFinal) {
-        for (let i = 0; i < result.length; i++) interim += result[i].transcript + ' ';
-        setHeard(interim);
-        return;
-      }
-
-      // Final → elegir mejor alternativa según patrón de sesión
-      let best = { transcript: result[0].transcript, score: -Infinity };
-      for (let i = 0; i < result.length; i++) {
-        const alt = result[i];
-        const norm = normalizeVoice(alt.transcript);
-        const readings = extractReadings(norm, rowModeRef.current.active);
-        let score = (alt.confidence ?? 0) * 10;
-
-        if (rowModeRef.current.active && readings.length === 1) {
-          const v = readings[0];
-          const d = (v.split('.')[1] || '').length;
-          if (sessionDecimalsRef.current === 2) {
-            if (d === 2) score += 8;        // X.XX perfecto
-            else if (v.includes('.')) score -= 3; // X.X sospechoso
-          } else if (d > 0) score += 2;
-        }
-        if (score > best.score) best = { transcript: alt.transcript, score };
-      }
-
-      // Debounce: acumular fragmentos que lleguen en <500 ms
-      pendingFinalRef.current += best.transcript + ' ';
-      if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
-      finalDebounceRef.current = window.setTimeout(() => {
-        const text = pendingFinalRef.current.trim();
-        pendingFinalRef.current = '';
-        if (!text) return;
-        setHeard(text);
-        handleVoiceFinalRef.current(text);
-      }, 500);
-    };
-
-    rec.onerror = (e: any) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        wantListenRef.current = false; setListening(false);
-        setStatus('❌ Permiso de micrófono denegado (necesita HTTPS).');
-      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        setStatus('⚠️ Error de voz: ' + e.error);
-      }
-    };
-
-    rec.onend = () => {
-      if (!wantListenRef.current) { setListening(false); return; }
-      // Solo reiniciar si hubo actividad reciente (evita beeps tras silencio largo)
-      const since = Date.now() - lastResultTimeRef.current;
-      if (since < 5000) {
-        setTimeout(() => { try { rec.start(); } catch {} }, 150);
-      } else {
-        wantListenRef.current = false;
-        setListening(false);
-        setStatus('⏸ En pausa · pulsa «Iniciar» para continuar');
-      }
-    };
-
-    recRef.current = rec;
-    try { rec.start(); } catch (err: any) { setStatus('⚠️ ' + err.message); }
+      setStatus('Escuchando con Whisper (es)… di «fila N» para empezar.');
+    } catch (err: any) {
+      console.error(err);
+      setStatus('❌ Error al iniciar Whisper: ' + (err.message ?? 'desconocido'));
+    } finally {
+      setModelLoading(false);
+    }
   }, [listening]);
 
   useEffect(() => () => {
-    wantListenRef.current = false;
-    if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
-    recRef.current?.stop?.();
+    whisperRef.current?.stopRecording();
+    whisperRef.current?.destroy();
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
@@ -539,38 +461,23 @@ export function GridMappingPage() {
     if (!manual.trim()) return;
     const s = normalizeVoice(manual);
     setLastNormalized(s);
-    const check = validateReading(s, rowModeRef.current.active);
-    setLastReadings(check.ok ? [check.value] : []);
-    if (!check.ok && rowModeRef.current.active) {
-      setStatus(`⚠️ Lectura incompleta (${check.reason})`);
-      setManual('');
-      return;
-    }
-    if (rowModeRef.current.active && check.ok) {
-      const v = check.value;
-      if (sessionDecimalsRef.current === null) sessionDecimalsRef.current = (v.split('.')[1] || '').length;
-      const { row } = rowModeRef.current;
-      const col = colName(rowModeRef.current.colIdx);
-      setCell(col + row, v); flashCell(col + row);
-      const nextColIdx = rowModeRef.current.colIdx + 1;
-      updateRowMode({ active: true, row, colIdx: nextColIdx });
-      if (nextColIdx >= colsRef.current) setStatus(`Fila ${row} completa · di FIN`);
-      else setStatus(`✔ ${col}${row} = ${format2(v)} · siguiente: ${colName(nextColIdx)}${row}`);
-      setManual('');
-      return;
-    }
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
-    if (coords.length > 0) {
+    if (coords.length === 0) {
+      const vals = extractReadings(s, true);
+      setLastReadings(vals);
+      if (vals.length > 0 && selected) {
+        setCell(selected, vals[0]); flashCell(selected);
+        const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
+        setStatus(`✔ ${selected} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
+        advance();
+      } else {
+        setStatus('⚠️ No se reconoció ninguna coordenada.');
+      }
+    } else {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
-    } else if (selected && /^\d+(\.\d+)?$/.test(s)) {
-      setCell(selected, s); flashCell(selected);
-      setStatus(`✔ ${selected} = ${format2(s)}`);
-      advance();
-    } else {
-      setStatus('⚠️ No se reconoció ninguna coordenada.');
     }
     setManual('');
   }, [manual, selected, setCell, advance, flashCell, direction]);
@@ -579,14 +486,12 @@ export function GridMappingPage() {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
     setGrid({}); setSelected(null);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
-    sessionDecimalsRef.current = null;
     setStatus('Cuadrícula vacía.');
   };
   const newMapping = () => {
     setRecordId(null); setGrid({}); setSelected(null);
     setNominalThickness('');
     updateRowMode({ active: false, row: 0, colIdx: 0 });
-    sessionDecimalsRef.current = null;
     setMeta((m) => ({ ...m, fecha: todayISO() }));
     setStatus('Nueva cuadrícula lista.');
   };
@@ -729,9 +634,9 @@ export function GridMappingPage() {
       </div>
 
       <div className="card space-y-3">
-        <button onClick={toggleListen}
-          className={`w-full py-3 rounded-lg font-semibold text-white transition ${listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'}`}>
-          {listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz'}
+        <button onClick={toggleListen} disabled={modelLoading}
+          className={`w-full py-3 rounded-lg font-semibold text-white transition ${listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'} disabled:opacity-60`}>
+          {modelLoading ? `Cargando modelo… ${modelProgress}%` : listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz (Whisper)'}
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -760,7 +665,7 @@ export function GridMappingPage() {
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
           🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas · <b>«FIN»</b> al terminar.
-          Si una lectura llega incompleta (p. ej. <i>2.0</i> en vez de <i>2.02</i>), la app la rechaza y te pide repetirla.
+          La app usa Whisper localmente, sin pitidos ni envío de audio a servidores.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
