@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { WhisperTranscriber } from 'whisper-web-transcriber';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
 
@@ -33,6 +32,8 @@ interface HistoryRow {
   id: string; matricula: string; wo_sap: string | null; fr: string | null;
   fecha: string; updated_at: string;
 }
+
+/* ------------------------- Utilidades numéricas ---------------------- */
 
 function format2(v: string | number): string {
   const raw = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
@@ -194,10 +195,10 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
+  /* ---- Whisper (cargado desde CDN) ---- */
   const [modelLoading, setModelLoading] = useState(false);
   const [modelProgress, setModelProgress] = useState(0);
-
-  const whisperRef = useRef<WhisperTranscriber | null>(null);
+  const whisperRef = useRef<any>(null);
 
   const filled = useMemo(
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
@@ -368,26 +369,33 @@ export function GridMappingPage() {
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
 
-  /* --------------------------- Micrófono / Whisper --------------------- */
+  /* --------------------------- Whisper --------------------- */
   const toggleListen = useCallback(async () => {
     if (listening) {
-      whisperRef.current?.stopRecording();
+      try { whisperRef.current?.stopRecording?.(); } catch { /* noop */ }
       setListening(false);
+      setStatus('Detenido.');
       return;
     }
 
     setModelLoading(true);
-    setStatus('Cargando modelo de Whisper (solo la primera vez)…');
+    setModelProgress(0);
+    setStatus('Cargando Whisper desde CDN (solo la primera vez)…');
 
     try {
+      // ⬇️ Import dinámico desde CDN: no requiere npm install
+      const mod = await import(
+        /* @vite-ignore */
+        'https://esm.sh/whisper-web-transcriber@latest'
+      );
+      const WhisperTranscriber = mod.WhisperTranscriber;
+
       const transcriber = new WhisperTranscriber({
-        modelSize: 'tiny', // 'tiny' (75MB) es suficiente para español y el más rápido. Alternativa: 'base' (142MB).
+        modelSize: 'tiny',
         language: 'es',
-        onProgress: (p) => setModelProgress(p),
-        onStatus: (s) => setStatus(s),
-        onTranscription: (text) => {
-          // La librería puede devolver fragmentos; los pasamos a la lógica de negocio.
-          // Si el texto contiene varias lecturas, handleVoiceFinal las procesará todas.
+        onProgress: (p: number) => setModelProgress(p),
+        onStatus: (s: string) => setStatus(s),
+        onTranscription: (text: string) => {
           handleVoiceFinalRef.current(text);
         },
       });
@@ -399,15 +407,15 @@ export function GridMappingPage() {
       setStatus('Escuchando con Whisper (es)… di «fila N» para empezar.');
     } catch (err: any) {
       console.error(err);
-      setStatus('❌ Error al iniciar Whisper: ' + (err.message ?? 'desconocido'));
+      setStatus('❌ Error al iniciar Whisper: ' + (err?.message ?? 'desconocido'));
     } finally {
       setModelLoading(false);
     }
   }, [listening]);
 
   useEffect(() => () => {
-    whisperRef.current?.stopRecording();
-    whisperRef.current?.destroy();
+    try { whisperRef.current?.stopRecording?.(); } catch { /* noop */ }
+    try { whisperRef.current?.destroy?.(); } catch { /* noop */ }
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
