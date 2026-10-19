@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-// ⚠️ Ajusta esta ruta al cliente Supabase real de tu proyecto
 import { supabase } from '../lib/supabase';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
@@ -15,8 +14,6 @@ function colIndex(name: string): number {
   if (!m) return -1;
   return m[1].charCodeAt(0) - 65 + m[2].length * 26;
 }
-
-/* ------------------------- Constantes y tipos ------------------------- */
 
 const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
@@ -36,14 +33,11 @@ interface HistoryRow {
   fecha: string; updated_at: string;
 }
 
-/* ------------------------- Utilidades numéricas ---------------------- */
-
 function format2(v: string | number): string {
   const raw = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
   if (isNaN(raw) || !isFinite(raw)) return String(v);
   return raw.toFixed(2);
 }
-
 function isNumeric(v: string): boolean {
   if (!v) return false;
   const s = String(v).trim().replace(',', '.');
@@ -52,7 +46,6 @@ function isNumeric(v: string): boolean {
   return !isNaN(n) && isFinite(n);
 }
 
-/** Paleta RdYlGn (rojo → verde). t=0 → rojo (valor mínimo), t=1 → verde (valor máximo). */
 const COLOR_STOPS = [
   { t: 0.00, r: 215, g: 48,  b: 39  },
   { t: 0.20, r: 253, g: 174, b: 97  },
@@ -61,13 +54,11 @@ const COLOR_STOPS = [
   { t: 0.80, r: 102, g: 189, b: 99  },
   { t: 1.00, r: 0,   g: 104, b: 55  },
 ];
-
 function colorForValue(v: number, min: number, max: number): string {
   if (max === min) return 'rgb(255, 255, 191)';
   const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
   for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
-    const a = COLOR_STOPS[i];
-    const b = COLOR_STOPS[i + 1];
+    const a = COLOR_STOPS[i], b = COLOR_STOPS[i + 1];
     if (t >= a.t && t <= b.t) {
       const k = (t - a.t) / (b.t - a.t);
       return `rgb(${Math.round(a.r + (b.r - a.r) * k)}, ${Math.round(a.g + (b.g - a.g) * k)}, ${Math.round(a.b + (b.b - a.b) * k)})`;
@@ -75,13 +66,12 @@ function colorForValue(v: number, min: number, max: number): string {
   }
   return 'rgb(255, 255, 191)';
 }
-
 const LEGEND_GRADIENT =
   'linear-gradient(to right, ' +
   COLOR_STOPS.map((s) => `rgb(${s.r},${s.g},${s.b}) ${(s.t * 100).toFixed(0)}%`).join(', ') +
   ')';
 
-/* ------------------------- Utilidades de voz ------------------------- */
+/* ------------------------- Voz ------------------------- */
 
 const NUM_WORDS: Record<string, number> = {
   cero: 0, un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7,
@@ -101,52 +91,32 @@ const ORDINALS: Record<string, number> = {
 function normalizeVoice(text: string): string {
   let s = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
-
   s = s.split(/\s+/).map((w) => {
     const clean = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
     return NUM_WORDS[clean] !== undefined ? ` ${NUM_WORDS[clean]} ` : w;
   }).join(' ');
-
   s = s.replace(/\bcoma\b|\bpunto\b/g, ' . ');
   s = s.replace(/\s*\.\s*/g, '.');
-
   let prev;
-  do {
-    prev = s;
-    s = s.replace(/(\d+)\.(\d)\s+(\d)(?![\d.])/g, '$1.$2$3');
-  } while (s !== prev);
-
+  do { prev = s; s = s.replace(/(\d+)\.(\d)\s+(\d)(?![\d.])/g, '$1.$2$3'); } while (s !== prev);
   s = s.replace(/(\d),(\d)/g, '$1.$2');
-
-  s = s.replace(/\bdoble\s+prima\b/g, "''")
-       .replace(/\bprima\b/g, "'")
-       .replace(/\bprimas\b/g, "'");
-
-  s = s.replace(/\s+/g, ' ').trim();
-  return s;
+  s = s.replace(/\bdoble\s+prima\b/g, "''").replace(/\bprima\b/g, "'").replace(/\bprimas\b/g, "'");
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 function extractReadings(normalized: string, expectSingle: boolean): string[] {
-  let values = [...normalized.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
+  const values = [...normalized.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
   if (!expectSingle) return values;
   if (values.length === 0) return values;
   if (/\./.test(normalized)) return values;
-
   if (values.length === 1) return values;
-
   if (values.length >= 4 && values.length % 2 === 0) {
     const paired: string[] = [];
-    for (let i = 0; i < values.length; i += 2) {
-      paired.push(values[i] + '.' + values[i + 1]);
-    }
+    for (let i = 0; i < values.length; i += 2) paired.push(values[i] + '.' + values[i + 1]);
     return paired;
   }
-
-  const first = values[0];
-  const rest = values.slice(1).join('');
-  if (rest.length <= 2) {
-    return [first + '.' + rest];
-  }
+  const first = values[0], rest = values.slice(1).join('');
+  if (rest.length <= 2) return [first + '.' + rest];
   return values;
 }
 
@@ -164,25 +134,18 @@ function parseCoordinates(s: string, rowsLimit: number, colsLimit: number) {
   }
   return out;
 }
-
 function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 function fmtFecha(iso: string): string {
   const [y, m, d] = iso.split('-');
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
-
 function nextKey(key: string, direction: Direction, colsN: number, rowsN: number): string | null {
   const m = key.match(/^([A-Z])('*)(\d+)$/);
   if (!m) return null;
   let ci = colIndex(m[1] + m[2]);
   let ri = parseInt(m[3], 10);
-  if (direction === 'right') {
-    ci += 1;
-    if (ci >= colsN) { ci = 0; ri += 1; }
-  } else {
-    ri += 1;
-    if (ri > rowsN) { ri = 1; ci += 1; }
-  }
+  if (direction === 'right') { ci += 1; if (ci >= colsN) { ci = 0; ri += 1; } }
+  else { ri += 1; if (ri > rowsN) { ri = 1; ci += 1; } }
   if (ri > rowsN || ci >= colsN) return null;
   return colName(ci) + ri;
 }
@@ -206,7 +169,6 @@ export function GridMappingPage() {
   const [recordId, setRecordId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-
   const [nominalThickness, setNominalThickness] = useState<string>('');
 
   const [rows, setRows] = useState(10);
@@ -231,6 +193,14 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
+  /* ---- Patrón de la sesión (nº de decimales esperado) ---- */
+  const sessionDecimalsRef = useRef<number | null>(null);
+  /* ---- Control de beeps: última vez que llegó audio ---- */
+  const lastResultTimeRef = useRef<number>(0);
+  /* ---- Debounce de fragmentos finales ---- */
+  const finalDebounceRef = useRef<number | null>(null);
+  const pendingFinalRef = useRef<string>('');
+
   const recRef = useRef<any>(null);
   const wantListenRef = useRef(false);
 
@@ -238,7 +208,6 @@ export function GridMappingPage() {
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
     [grid],
   );
-
   const valueStats = useMemo(() => {
     const nums: number[] = [];
     Object.entries(grid).forEach(([k, v]) => {
@@ -248,7 +217,6 @@ export function GridMappingPage() {
     if (nums.length === 0) return { min: 0, max: 0, hasData: false };
     return { min: Math.min(...nums), max: Math.max(...nums), hasData: true };
   }, [grid]);
-
   const nominalPct = useMemo(() => {
     if (!nominalThickness || !isNumeric(nominalThickness)) return null;
     if (!valueStats.hasData) return null;
@@ -301,8 +269,7 @@ export function GridMappingPage() {
 
   const advance = useCallback(() => {
     if (!selected) return;
-    const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
-    setSelected(nk);
+    setSelected(nextKey(selected, direction, colsRef.current, rowsRef.current));
   }, [selected, direction]);
 
   const detectRow = (s: string): number => {
@@ -319,11 +286,25 @@ export function GridMappingPage() {
 
   const firstEmptyCol = (rowNum: number): number => {
     const g = gridRef.current;
-    for (let i = 0; i < colsRef.current; i++) {
-      if (!g[colName(i) + rowNum]) return i;
-    }
+    for (let i = 0; i < colsRef.current; i++) if (!g[colName(i) + rowNum]) return i;
     return colsRef.current;
   };
+
+  /* ------------------ Validación por patrón de sesión ------------------ */
+  function validateReading(raw: string, inRowMode: boolean): { ok: true; value: string } | { ok: false; reason: string } {
+    const values = extractReadings(raw, inRowMode);
+    if (values.length === 0) return { ok: false, reason: 'sin números' };
+    if (inRowMode && values.length > 1) return { ok: false, reason: 'varias lecturas' };
+
+    const v = values[0];
+    const decimals = (v.split('.')[1] || '').length;
+
+    // Si la sesión ya está en X.XX y llega X.X → rechazar como incompleta
+    if (sessionDecimalsRef.current === 2 && v.includes('.') && decimals < 2) {
+      return { ok: false, reason: `"${v}" incompleto` };
+    }
+    return { ok: true, value: v };
+  }
 
   const handleVoiceFinal = useCallback((text: string) => {
     const s = normalizeVoice(text);
@@ -363,97 +344,147 @@ export function GridMappingPage() {
     }
 
     if (rowModeRef.current.active) {
-      const values = extractReadings(s, true);
-      setLastReadings(values);
-      if (values.length === 0) {
-        setStatus('No se reconoció ningún número · di la lectura de nuevo');
+      const check = validateReading(s, true);
+      setLastReadings(check.ok ? [check.value] : []);
+      if (!check.ok) {
+        setStatus(`⚠️ Lectura incompleta (${check.reason}) · repite`);
         return;
+      }
+      const v = check.value;
+      // Actualizar patrón de sesión con la primera lectura válida
+      if (sessionDecimalsRef.current === null) {
+        sessionDecimalsRef.current = (v.split('.')[1] || '').length;
       }
 
       const { row } = rowModeRef.current;
       const colsN = colsRef.current;
-      let currentColIdx = rowModeRef.current.colIdx;
+      const col = colName(rowModeRef.current.colIdx);
+      setCell(col + row, v);
+      flashCell(col + row);
 
-      for (const value of values) {
-        if (currentColIdx >= colsN) break;
-        const col = colName(currentColIdx);
-        setCell(col + row, value);
-        flashCell(col + row);
-        currentColIdx++;
-      }
+      const nextColIdx = rowModeRef.current.colIdx + 1;
+      updateRowMode({ active: true, row, colIdx: nextColIdx });
 
-      if (currentColIdx >= colsN) {
-        updateRowMode({ active: true, row, colIdx: currentColIdx });
-        setStatus(`Fila ${row} completa · di FIN`);
-      } else {
-        const nextCol = colName(currentColIdx);
-        updateRowMode({ active: true, row, colIdx: currentColIdx });
-        setStatus(`✔ Fila ${row} · siguiente: ${nextCol}${row}`);
-      }
+      if (nextColIdx >= colsN) setStatus(`Fila ${row} completa · di FIN`);
+      else setStatus(`✔ ${col}${row} = ${format2(v)} · siguiente: ${colName(nextColIdx)}${row}`);
       return;
     }
 
+    // Modo fallback: coordenada completa "A1 2.02"
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
     if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
-      setStatus(
-        `✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` +
-        (nk ? ` · siguiente: ${nk}` : ''),
-      );
+      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
       return;
     }
 
-    if (/^\d+(\.\d+)?$/.test(s)) {
-      setStatus('Di «fila N» primero para empezar.');
-    }
+    if (/^\d+(\.\d+)?$/.test(s)) setStatus('Di «fila N» primero para empezar.');
   }, [setCell, flashCell, updateRowMode, direction]);
 
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
 
+  /* --------------------------- Micrófono --------------------- */
   const toggleListen = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { setStatus('❌ Este navegador no soporta voz. Usa Chrome/Edge en Android, o el campo manual.'); return; }
     if (listening) {
       wantListenRef.current = false;
+      if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
+      pendingFinalRef.current = '';
       recRef.current?.stop?.();
       setListening(false);
       return;
     }
     wantListenRef.current = true;
+    sessionDecimalsRef.current = null; // reset patrón por sesión
+    lastResultTimeRef.current = Date.now();
+
     const rec = new SR();
-    rec.lang = 'es-ES'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
-    rec.onstart = () => { setListening(true); setStatus('Escuchando… di «fila N» para empezar.'); };
-    rec.onresult = (e: any) => {
-      let interim = '', final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) final += r[0].transcript + ' ';
-        else interim += r[0].transcript + ' ';
-      }
-      if (interim) setHeard(interim);
-      if (final) { setHeard(final); handleVoiceFinalRef.current(final); }
+    rec.lang = 'es-ES';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 5; // varias hipótesis
+
+    rec.onstart = () => {
+      setListening(true);
+      setStatus('Escuchando… di «fila N» para empezar.');
     };
+
+    rec.onresult = (e: any) => {
+      lastResultTimeRef.current = Date.now();
+
+      // Interim → solo mostrar
+      let interim = '';
+      const result = e.results[e.resultIndex];
+      if (!result.isFinal) {
+        for (let i = 0; i < result.length; i++) interim += result[i].transcript + ' ';
+        setHeard(interim);
+        return;
+      }
+
+      // Final → elegir mejor alternativa según patrón de sesión
+      let best = { transcript: result[0].transcript, score: -Infinity };
+      for (let i = 0; i < result.length; i++) {
+        const alt = result[i];
+        const norm = normalizeVoice(alt.transcript);
+        const readings = extractReadings(norm, rowModeRef.current.active);
+        let score = (alt.confidence ?? 0) * 10;
+
+        if (rowModeRef.current.active && readings.length === 1) {
+          const v = readings[0];
+          const d = (v.split('.')[1] || '').length;
+          if (sessionDecimalsRef.current === 2) {
+            if (d === 2) score += 8;        // X.XX perfecto
+            else if (v.includes('.')) score -= 3; // X.X sospechoso
+          } else if (d > 0) score += 2;
+        }
+        if (score > best.score) best = { transcript: alt.transcript, score };
+      }
+
+      // Debounce: acumular fragmentos que lleguen en <500 ms
+      pendingFinalRef.current += best.transcript + ' ';
+      if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
+      finalDebounceRef.current = window.setTimeout(() => {
+        const text = pendingFinalRef.current.trim();
+        pendingFinalRef.current = '';
+        if (!text) return;
+        setHeard(text);
+        handleVoiceFinalRef.current(text);
+      }, 500);
+    };
+
     rec.onerror = (e: any) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         wantListenRef.current = false; setListening(false);
-        setStatus('❌ Permiso de micrófono denegado (necesita HTTPS en Vercel).');
+        setStatus('❌ Permiso de micrófono denegado (necesita HTTPS).');
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
         setStatus('⚠️ Error de voz: ' + e.error);
       }
     };
+
     rec.onend = () => {
-      if (wantListenRef.current) setTimeout(() => { try { rec.start(); } catch { /* noop */ } }, 300);
-      else setListening(false);
+      if (!wantListenRef.current) { setListening(false); return; }
+      // Solo reiniciar si hubo actividad reciente (evita beeps tras silencio largo)
+      const since = Date.now() - lastResultTimeRef.current;
+      if (since < 5000) {
+        setTimeout(() => { try { rec.start(); } catch {} }, 150);
+      } else {
+        wantListenRef.current = false;
+        setListening(false);
+        setStatus('⏸ En pausa · pulsa «Iniciar» para continuar');
+      }
     };
+
     recRef.current = rec;
     try { rec.start(); } catch (err: any) { setStatus('⚠️ ' + err.message); }
   }, [listening]);
 
   useEffect(() => () => {
     wantListenRef.current = false;
+    if (finalDebounceRef.current) window.clearTimeout(finalDebounceRef.current);
     recRef.current?.stop?.();
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
@@ -486,8 +517,7 @@ export function GridMappingPage() {
       const lost = Object.keys(grid).some((k) => {
         if (k.startsWith('_')) return false;
         const m = k.match(/^([A-Z]*)('*)(\d+)$/);
-        if (!m) return false;
-        return colIndex(m[1] + m[2]) >= n;
+        return m && colIndex(m[1] + m[2]) >= n;
       });
       if (lost && !confirm(`¿Eliminar las celdas más allá de la columna ${colName(n - 1)}?`)) return;
       setGrid((prev) => {
@@ -495,8 +525,7 @@ export function GridMappingPage() {
         Object.keys(prev).forEach((k) => {
           if (k.startsWith('_')) { next[k] = prev[k]; return; }
           const m = k.match(/^([A-Z]*)('*)(\d+)$/);
-          if (!m) return;
-          if (colIndex(m[1] + m[2]) < n) next[k] = prev[k];
+          if (m && colIndex(m[1] + m[2]) < n) next[k] = prev[k];
         });
         return next;
       });
@@ -510,26 +539,38 @@ export function GridMappingPage() {
     if (!manual.trim()) return;
     const s = normalizeVoice(manual);
     setLastNormalized(s);
+    const check = validateReading(s, rowModeRef.current.active);
+    setLastReadings(check.ok ? [check.value] : []);
+    if (!check.ok && rowModeRef.current.active) {
+      setStatus(`⚠️ Lectura incompleta (${check.reason})`);
+      setManual('');
+      return;
+    }
+    if (rowModeRef.current.active && check.ok) {
+      const v = check.value;
+      if (sessionDecimalsRef.current === null) sessionDecimalsRef.current = (v.split('.')[1] || '').length;
+      const { row } = rowModeRef.current;
+      const col = colName(rowModeRef.current.colIdx);
+      setCell(col + row, v); flashCell(col + row);
+      const nextColIdx = rowModeRef.current.colIdx + 1;
+      updateRowMode({ active: true, row, colIdx: nextColIdx });
+      if (nextColIdx >= colsRef.current) setStatus(`Fila ${row} completa · di FIN`);
+      else setStatus(`✔ ${col}${row} = ${format2(v)} · siguiente: ${colName(nextColIdx)}${row}`);
+      setManual('');
+      return;
+    }
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
-    if (coords.length === 0) {
-      const vals = extractReadings(s, true);
-      setLastReadings(vals);
-      if (vals.length > 0 && selected) {
-        setCell(selected, vals[0]); flashCell(selected);
-        const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
-        setStatus(`✔ ${selected} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
-        advance();
-      } else {
-        setStatus('⚠️ No se reconoció ninguna coordenada.');
-      }
-    } else {
+    if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
-      setStatus(
-        `✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` +
-        (nk ? ` · siguiente: ${nk}` : ''),
-      );
+      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
+    } else if (selected && /^\d+(\.\d+)?$/.test(s)) {
+      setCell(selected, s); flashCell(selected);
+      setStatus(`✔ ${selected} = ${format2(s)}`);
+      advance();
+    } else {
+      setStatus('⚠️ No se reconoció ninguna coordenada.');
     }
     setManual('');
   }, [manual, selected, setCell, advance, flashCell, direction]);
@@ -538,12 +579,14 @@ export function GridMappingPage() {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
     setGrid({}); setSelected(null);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
+    sessionDecimalsRef.current = null;
     setStatus('Cuadrícula vacía.');
   };
   const newMapping = () => {
     setRecordId(null); setGrid({}); setSelected(null);
     setNominalThickness('');
     updateRowMode({ active: false, row: 0, colIdx: 0 });
+    sessionDecimalsRef.current = null;
     setMeta((m) => ({ ...m, fecha: todayISO() }));
     setStatus('Nueva cuadrícula lista.');
   };
@@ -588,9 +631,7 @@ export function GridMappingPage() {
         const v = grid[k];
         if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
       });
-      if (nominalThickness && isNumeric(nominalThickness)) {
-        cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
-      }
+      if (nominalThickness && isNumeric(nominalThickness)) cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
       const payload = {
         user_id: user?.id ?? null,
         matricula: meta.matricula.trim(),
@@ -607,13 +648,11 @@ export function GridMappingPage() {
         if (error) throw error;
         setRecordId((ins as { id: string }).id);
       }
-      setStatus('✔ Guardado en Supabase.');
+      setStatus('✔ Guardado.');
       void loadHistory();
     } catch (err: any) {
       setStatus('❌ ' + (err?.message ?? 'Error al guardar'));
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const exportCSV = () => {
@@ -621,9 +660,7 @@ export function GridMappingPage() {
     const data: (string | number)[][] = [];
     data.push(['INFORME DE GRID MAPPING']);
     data.push([`MATRICULA: ${meta.matricula}   WO/SAP: ${meta.wo_sap}   FR: ${meta.fr}   FECHA: ${fmtFecha(meta.fecha)}`]);
-    if (nominalThickness && isNumeric(nominalThickness)) {
-      data.push([`ESPESOR NOMINAL (PIEZA DE REFERENCIA): ${format2(nominalThickness)}`]);
-    }
+    if (nominalThickness && isNumeric(nominalThickness)) data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
     data.push([]);
     data.push(['', ...Array.from({ length: cols }, (_, ci) => colName(ci))]);
     for (let r = 1; r <= rows; r++) {
@@ -642,16 +679,13 @@ export function GridMappingPage() {
   };
 
   const nextCellLabel = rowMode.active && rowMode.colIdx < cols ? `${colName(rowMode.colIdx)}${rowMode.row}` : null;
-
   const displayValue = (key: string, raw: string): string => {
     if (focusedKey === key) return raw;
     if (raw && isNumeric(raw)) return format2(raw);
     return raw;
   };
-
   const nominalNum = nominalThickness && isNumeric(nominalThickness)
-    ? parseFloat(String(nominalThickness).replace(',', '.'))
-    : null;
+    ? parseFloat(String(nominalThickness).replace(',', '.')) : null;
 
   return (
     <div className="p-4 md:p-6 max-w-full mx-auto space-y-4">
@@ -725,26 +759,26 @@ export function GridMappingPage() {
         )}
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
-          🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas (<i>dos coma cero dos, dos coma cero cinco</i>) · <b>«FIN»</b> al terminar.
-          Tras cada valor la app te indicará la <b>coordenada siguiente</b> en el mensaje de estado.
+          🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas · <b>«FIN»</b> al terminar.
+          Si una lectura llega incompleta (p. ej. <i>2.0</i> en vez de <i>2.02</i>), la app la rechaza y te pide repetirla.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filas</span>
             <button type="button" onClick={() => setRowsCount(rows - 1)} disabled={rows <= MIN_ROWS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Quitar fila">−</button>
+              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
             <span className="w-8 text-center font-mono text-sm">{rows}</span>
             <button type="button" onClick={() => setRowsCount(rows + 1)} disabled={rows >= MAX_ROWS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Añadir fila">+</button>
+              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
           </div>
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Columnas</span>
             <button type="button" onClick={() => setColsCount(cols - 1)} disabled={cols <= MIN_COLS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Quitar columna">−</button>
+              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
             <span className="w-14 text-center font-mono text-sm">{colName(cols - 1)}</span>
             <button type="button" onClick={() => setColsCount(cols + 1)} disabled={cols >= MAX_COLS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Añadir columna">+</button>
+              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
           </div>
         </div>
 
@@ -799,10 +833,7 @@ export function GridMappingPage() {
                       <td
                         key={key}
                         className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${isNext && !v ? 'outline outline-2 outline-dashed outline-airbus-blue' : ''}`}
-                        style={{
-                          backgroundColor: bg,
-                          boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined,
-                        }}
+                        style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}
                       >
                         <input
                           className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
@@ -817,10 +848,7 @@ export function GridMappingPage() {
                             else if (val) setCellRaw(key, val);
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              (e.currentTarget as HTMLInputElement).blur();
-                            }
+                            if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
                           }}
                         />
                       </td>
