@@ -18,6 +18,7 @@ function colIndex(name: string): number {
 const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
 const RESERVED_NOMINAL_KEY = '_nominal';
+const WHISPER_SCRIPT_URL = 'https://unpkg.com/whisper-web-transcriber@0.2.5/dist/index.bundled.min.js';
 
 type GridData = Record<string, string>;
 type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string };
@@ -152,6 +153,50 @@ function nextKey(key: string, direction: Direction, colsN: number, rowsN: number
   return colName(ci) + ri;
 }
 
+/* -------------------- Utilidades de caché de Whisper ------------------ */
+
+async function clearWhisperCache(): Promise<void> {
+  try {
+    const databases = await (indexedDB as any).databases?.();
+    if (!databases) return;
+    const whisperDbs = databases.filter((db: any) =>
+      db.name && String(db.name).toLowerCase().includes('whisper'),
+    );
+    for (const db of whisperDbs) {
+      if (db.name) {
+        try {
+          indexedDB.deleteDatabase(db.name);
+          console.log(`🗑️ Caché IndexedDB eliminada: ${db.name}`);
+        } catch (e) {
+          console.warn('No se pudo eliminar DB:', db.name, e);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('indexedDB.databases() no disponible:', e);
+  }
+}
+
+function loadWhisperScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if ((window as any).WhisperTranscriber) return resolve();
+
+    // Si ya hay un script cargado pero sin éxito, lo quitamos
+    document.querySelectorAll('script[data-whisper-loader]').forEach((el) => el.remove());
+
+    const script = document.createElement('script');
+    script.src = WHISPER_SCRIPT_URL;
+    script.async = true;
+    script.setAttribute('data-whisper-loader', 'true');
+    script.onload = () => {
+      if ((window as any).WhisperTranscriber) resolve();
+      else reject(new Error('Script cargado pero WhisperTranscriber no está en window'));
+    };
+    script.onerror = () => reject(new Error('No se pudo cargar Whisper desde unpkg'));
+    document.head.appendChild(script);
+  });
+}
+
 /* ----------------------------- Componente ----------------------------- */
 
 export function GridMappingPage() {
@@ -195,7 +240,7 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
-  /* ---- Whisper (cargado desde CDN) ---- */
+  /* ---- Whisper ---- */
   const [modelLoading, setModelLoading] = useState(false);
   const [modelProgress, setModelProgress] = useState(0);
   const whisperRef = useRef<any>(null);
@@ -380,19 +425,24 @@ export function GridMappingPage() {
 
     setModelLoading(true);
     setModelProgress(0);
-    setStatus('Cargando Whisper desde CDN (solo la primera vez)…');
 
     try {
-      // ⬇️ Import dinámico desde CDN: no requiere npm install
-      const mod = await import(
-        /* @vite-ignore */
-        'https://esm.sh/whisper-web-transcriber@latest'
-      );
-      const WhisperTranscriber = mod.WhisperTranscriber;
+      setStatus('Limpiando caché antigua de Whisper…');
+      await clearWhisperCache();
 
+      setStatus('Cargando Whisper desde unpkg…');
+      await loadWhisperScript();
+
+      const WhisperTranscriber = (window as any).WhisperTranscriber;
+      if (!WhisperTranscriber) {
+        throw new Error('WhisperTranscriber no encontrado en window');
+      }
+
+      setStatus('Iniciando transcriber…');
       const transcriber = new WhisperTranscriber({
         modelSize: 'tiny',
         language: 'es',
+        debug: true,
         onProgress: (p: number) => setModelProgress(p),
         onStatus: (s: string) => setStatus(s),
         onTranscription: (text: string) => {
@@ -400,13 +450,15 @@ export function GridMappingPage() {
         },
       });
 
+      setStatus('Descargando modelo (solo la primera vez)…');
       await transcriber.loadModel();
+
       whisperRef.current = transcriber;
       await transcriber.startRecording();
       setListening(true);
       setStatus('Escuchando con Whisper (es)… di «fila N» para empezar.');
     } catch (err: any) {
-      console.error(err);
+      console.error('[Whisper] Error:', err);
       setStatus('❌ Error al iniciar Whisper: ' + (err?.message ?? 'desconocido'));
     } finally {
       setModelLoading(false);
