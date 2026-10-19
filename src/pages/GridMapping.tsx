@@ -18,6 +18,9 @@ function colIndex(name: string): number {
 const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
 const RESERVED_NOMINAL_KEY = '_nominal';
+const RESERVED_EQUIPO_ID_KEY = '_equipo_ut_id';
+const RESERVED_EQUIPO_CODIGO_KEY = '_equipo_ut_codigo';
+const RESERVED_EQUIPO_NOMBRE_KEY = '_equipo_ut_nombre';
 const LISTEN_TIMEOUT_MS = 10000;
 
 type GridData = Record<string, string>;
@@ -25,6 +28,16 @@ type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string };
 type Direction = 'right' | 'down';
 type RowMode = { active: boolean; row: number; colIdx: number };
 type ListenMode = 'none' | 'cell' | 'command';
+
+interface EquipoUT {
+  id: string;
+  id_equipo: string;
+  nombre: string;
+  codigo_barras: string | null;
+  estado: string | null;
+  proxima_calibracion: string | null;
+  tecnicas_ndt?: { codigo: string; nombre: string } | null;
+}
 
 interface GridMappingRow {
   id: string; matricula: string; wo_sap: string | null; fr: string | null;
@@ -154,6 +167,22 @@ function nextKey(key: string, direction: Direction, colsN: number, rowsN: number
   return colName(ci) + ri;
 }
 
+/* --------------- Utilidades del selector de equipos UT --------------- */
+
+function estadoEmoji(estado: string | null | undefined): string {
+  if (!estado) return '';
+  const e = estado.toLowerCase();
+  if (e === 'baja') return '⛔ ';
+  if (e === 'prestado') return '🔵 ';
+  if (e === 'calibracion' || e === 'mantenimiento' || e === 'pendiente_calibracion') return '🟡 ';
+  if (e === 'salida') return '🚚 ';
+  return '';
+}
+
+function equipoLabel(eq: EquipoUT): string {
+  return `${estadoEmoji(eq.estado)}[${eq.id_equipo}] ${eq.nombre}`;
+}
+
 /* ----------------------------- Componente ----------------------------- */
 
 export function GridMappingPage() {
@@ -173,6 +202,11 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [nominalThickness, setNominalThickness] = useState<string>('');
+
+  /* ---- Equipo UT ---- */
+  const [equiposUT, setEquiposUT] = useState<EquipoUT[]>([]);
+  const [loadingEquipos, setLoadingEquipos] = useState(false);
+  const [equipoUtId, setEquipoUtId] = useState<string>('');
 
   /* ---- Escucha ---- */
   const [listenMode, setListenMode] = useState<ListenMode>('none');
@@ -330,7 +364,6 @@ export function GridMappingPage() {
       return;
     }
 
-    // 1) Si tenemos celda objetivo → aplicar SOLO a esa celda
     if (targetCell) {
       const values = extractReadings(s, true);
       setLastReadings(values);
@@ -343,13 +376,11 @@ export function GridMappingPage() {
       flashCell(targetCell);
       setStatus(`✔ ${targetCell} = ${format2(v)}`);
 
-      // Auto-avanzar selección al siguiente
       const nk = nextKey(targetCell, direction, colsRef.current, rowsRef.current);
       if (nk) setSelected(nk);
       return;
     }
 
-    // 2) Sin celda objetivo → comportamiento de fila activa
     if (rowModeRef.current.active) {
       const values = extractReadings(s, true);
       setLastReadings(values);
@@ -418,7 +449,6 @@ export function GridMappingPage() {
   }, []);
 
   const startRecognition = useCallback((mode: ListenMode, cell: string | null) => {
-    // Cerrar el anterior si hubiera
     if (modeRef.current !== 'none') {
       stopRecognition();
     }
@@ -453,7 +483,6 @@ export function GridMappingPage() {
     rec.onresult = (e: any) => {
       const result = e.results[e.resultIndex];
 
-      // Interim → mostrar
       if (!result.isFinal) {
         let interim = '';
         for (let i = 0; i < result.length; i++) interim += result[i].transcript + ' ';
@@ -461,12 +490,10 @@ export function GridMappingPage() {
         return;
       }
 
-      // Final → elegir mejor alternativa (la primera suele ser la más fiable)
-      let best = result[0]?.transcript?.trim() ?? '';
+      const best = result[0]?.transcript?.trim() ?? '';
       setHeard(best);
 
       const target = modeRef.current === 'cell' ? cellRef.current : null;
-      // Parar reconocimiento ANTES de aplicar para que no se acumule
       stopRecognition();
       handleVoiceRef.current(best, target);
     };
@@ -477,14 +504,13 @@ export function GridMappingPage() {
       } else if (e.error === 'no-speech') {
         stopRecognition('⏸ No se detectó voz.');
       } else if (e.error === 'aborted') {
-        // Cancelación manual, silencio
+        // silencio
       } else {
         stopRecognition('⚠️ Error de voz: ' + e.error);
       }
     };
 
     rec.onend = () => {
-      // Si el navegador cierra solo (por silencio) sin resultado → limpiar
       if (!wantsStopRef.current) {
         stopRecognition('⏸ Sin resultado. Toca la celda de nuevo.');
       }
@@ -496,16 +522,13 @@ export function GridMappingPage() {
       return;
     }
 
-    // Timeout de seguridad
     timeoutRef.current = window.setTimeout(() => {
       stopRecognition('⏸ Tiempo agotado. Toca la celda de nuevo.');
     }, LISTEN_TIMEOUT_MS);
   }, [stopRecognition]);
 
-  /* --------------- Click en celda → dictar --------------- */
   const onCellClick = useCallback((key: string) => {
     if (modeRef.current === 'cell' && cellRef.current === key) {
-      // Ya está escuchando para esta celda → cancelar
       stopRecognition('Cancelado.');
       return;
     }
@@ -513,7 +536,6 @@ export function GridMappingPage() {
     startRecognition('cell', key);
   }, [startRecognition, stopRecognition]);
 
-  /* --------------- Botón comando global --------------- */
   const toggleCommandMic = useCallback(() => {
     if (modeRef.current === 'command') {
       stopRecognition('Detenido.');
@@ -530,6 +552,52 @@ export function GridMappingPage() {
     }
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
+
+  /* ------------------ Cargar equipos UT ------------------ */
+  const loadEquiposUT = useCallback(async () => {
+    setLoadingEquipos(true);
+    try {
+      // Join con tecnicas_ndt!inner para filtrar UT en SQL
+      const { data, error } = await supabase
+        .from('equipos')
+        .select(`
+          id,
+          id_equipo,
+          nombre,
+          codigo_barras,
+          estado,
+          proxima_calibracion,
+          tecnicas_ndt!inner ( codigo, nombre )
+        `)
+        .eq('tecnicas_ndt.codigo', 'UT')
+        .order('id_equipo', { ascending: true });
+
+      if (error) {
+        console.warn('[Equipos UT] Error con join, probando sin filtro:', error.message);
+        // Fallback: cargar todos y filtrar en cliente si no hay join disponible
+        const { data: all, error: err2 } = await supabase
+          .from('equipos')
+          .select('id, id_equipo, nombre, codigo_barras, estado, proxima_calibracion, tecnicas_ndt(codigo, nombre)')
+          .order('id_equipo', { ascending: true });
+
+        if (err2) {
+          console.warn('[Equipos UT] Error fallback:', err2.message);
+          return;
+        }
+        const uts = (all ?? []).filter((e: any) => e.tecnicas_ndt?.codigo === 'UT');
+        setEquiposUT(uts as EquipoUT[]);
+        return;
+      }
+
+      setEquiposUT((data ?? []) as unknown as EquipoUT[]);
+    } catch (err) {
+      console.warn('[Equipos UT] Error inesperado:', err);
+    } finally {
+      setLoadingEquipos(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadEquiposUT(); }, [loadEquiposUT]);
 
   /* ------------------ Cambiar tamaño ------------------ */
   const setRowsCount = (n: number) => {
@@ -621,6 +689,7 @@ export function GridMappingPage() {
     stopRecognition();
     setRecordId(null); setGrid({}); setSelected(null);
     setNominalThickness('');
+    setEquipoUtId('');
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setMeta((m) => ({ ...m, fecha: todayISO() }));
     setStatus('Nueva cuadrícula lista.');
@@ -646,12 +715,17 @@ export function GridMappingPage() {
     const rawData = row.grid_data ?? {};
     const normalized: GridData = {};
     let nominalFromGrid = '';
+    let equipoIdFromGrid = '';
     Object.entries(rawData).forEach(([k, v]) => {
       if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
+      if (k === RESERVED_EQUIPO_ID_KEY) { equipoIdFromGrid = v ?? ''; return; }
+      if (k === RESERVED_EQUIPO_CODIGO_KEY) return;
+      if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
     setGrid(normalized);
     setNominalThickness(nominalFromGrid);
+    setEquipoUtId(equipoIdFromGrid);
     setRecordId(row.id);
     setStatus(`✔ Cargado: ${row.matricula} · FR ${row.fr ?? '—'}`);
   };
@@ -667,7 +741,19 @@ export function GridMappingPage() {
         const v = grid[k];
         if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
       });
-      if (nominalThickness && isNumeric(nominalThickness)) cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
+      if (nominalThickness && isNumeric(nominalThickness)) {
+        cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
+      }
+      // Guardar equipo UT (uuid + id_equipo + nombre)
+      if (equipoUtId) {
+        cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
+        const eq = equiposUT.find((e) => e.id === equipoUtId);
+        if (eq) {
+          cleanGrid[RESERVED_EQUIPO_CODIGO_KEY] = eq.id_equipo;
+          cleanGrid[RESERVED_EQUIPO_NOMBRE_KEY] = eq.nombre;
+        }
+      }
+
       const payload = {
         user_id: user?.id ?? null,
         matricula: meta.matricula.trim(),
@@ -696,7 +782,15 @@ export function GridMappingPage() {
     const data: (string | number)[][] = [];
     data.push(['INFORME DE GRID MAPPING']);
     data.push([`MATRICULA: ${meta.matricula}   WO/SAP: ${meta.wo_sap}   FR: ${meta.fr}   FECHA: ${fmtFecha(meta.fecha)}`]);
-    if (nominalThickness && isNumeric(nominalThickness)) data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
+
+    const eqSel = equiposUT.find((e) => e.id === equipoUtId);
+    if (eqSel) {
+      const cb = eqSel.codigo_barras ? ` · CB: ${eqSel.codigo_barras}` : '';
+      data.push([`EQUIPO UT: [${eqSel.id_equipo}] ${eqSel.nombre}${cb}`]);
+    }
+    if (nominalThickness && isNumeric(nominalThickness)) {
+      data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
+    }
     data.push([]);
     data.push(['', ...Array.from({ length: cols }, (_, ci) => colName(ci))]);
     for (let r = 1; r <= rows; r++) {
@@ -722,6 +816,7 @@ export function GridMappingPage() {
   };
   const nominalNum = nominalThickness && isNumeric(nominalThickness)
     ? parseFloat(String(nominalThickness).replace(',', '.')) : null;
+  const equipoSeleccionado = equiposUT.find((e) => e.id === equipoUtId) ?? null;
 
   return (
     <div className="p-4 md:p-6 max-w-full mx-auto space-y-4">
@@ -739,8 +834,9 @@ export function GridMappingPage() {
         </div>
       </div>
 
+      {/* Metadatos + Equipo UT + Espesor nominal */}
       <div className="card">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
             <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} /></div>
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">WO / SAP</label>
@@ -749,6 +845,32 @@ export function GridMappingPage() {
             <input className="input" value={meta.fr} onChange={(e) => setMeta({ ...meta, fr: e.target.value })} /></div>
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha</label>
             <input className="input" type="date" value={meta.fecha} onChange={(e) => setMeta({ ...meta, fecha: e.target.value })} /></div>
+
+          <div className="lg:col-span-1 md:col-span-2">
+            <label className="block text-xs uppercase tracking-wide text-airbus-navy mb-1 font-semibold">
+              Equipo UT
+            </label>
+            <select
+              className="input"
+              value={equipoUtId}
+              onChange={(e) => setEquipoUtId(e.target.value)}
+              disabled={loadingEquipos}
+              title={loadingEquipos ? 'Cargando equipos…' : 'Selecciona el equipo de medición UT'}
+            >
+              <option value="">
+                {loadingEquipos ? 'Cargando equipos…' : '— Selecciona equipo UT —'}
+              </option>
+              {equiposUT.map((eq) => {
+                const baja = (eq.estado ?? '').toLowerCase() === 'baja';
+                return (
+                  <option key={eq.id} value={eq.id} disabled={baja}>
+                    {equipoLabel(eq)}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">Espesor nominal</label>
             <input className="input" type="text" inputMode="decimal" placeholder="mm"
@@ -757,6 +879,33 @@ export function GridMappingPage() {
               onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
           </div>
         </div>
+
+        {/* Aviso si no hay equipos UT */}
+        {!loadingEquipos && equiposUT.length === 0 && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">
+            ⚠️ No se han encontrado equipos con técnica <b>UT</b> en la tabla <b>equipos</b>.
+            Añade o da de alta equipos UT desde la página de <b>Equipos</b>.
+          </p>
+        )}
+
+        {/* Chip informativo del equipo seleccionado */}
+        {equipoSeleccionado && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
+              {equipoSeleccionado.id_equipo}
+            </span>
+            <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
+            {equipoSeleccionado.codigo_barras && (
+              <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
+            )}
+            {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
+              <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
+                {equipoSeleccionado.estado}
+              </span>
+            )}
+          </div>
+        )}
+
         {nominalNum !== null && valueStats.hasData && (
           <p className="text-xs text-airbus-blue mt-2">
             ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
@@ -764,6 +913,7 @@ export function GridMappingPage() {
         )}
       </div>
 
+      {/* Voz */}
       <div className="card space-y-3">
         <button onClick={toggleCommandMic}
           className={`w-full py-3 rounded-lg font-semibold text-white transition ${
@@ -853,6 +1003,7 @@ export function GridMappingPage() {
         </div>
       </div>
 
+      {/* Cuadrícula */}
       <div className="card p-0 overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -913,6 +1064,7 @@ export function GridMappingPage() {
         </table>
       </div>
 
+      {/* Leyenda */}
       <div className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Escala de color</div>
@@ -955,6 +1107,7 @@ export function GridMappingPage() {
         </div>
       </div>
 
+      {/* Historial */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
