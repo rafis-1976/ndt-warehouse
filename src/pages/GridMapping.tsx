@@ -153,7 +153,8 @@ function parseCoordinates(s: string, rowsLimit: number, colsLimit: number) {
   return out;
 }
 function todayISO(): string { return new Date().toISOString().slice(0, 10); }
-function fmtFecha(iso: string): string {
+function fmtFecha(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const [y, m, d] = iso.split('-');
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
@@ -829,8 +830,14 @@ export function GridMappingPage() {
       {/* CSS para impresión */}
       <style>{`
         @media print {
-          @page { margin: 10mm; size: auto; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @page { margin: 15mm; size: A4 portrait; }
+          body { 
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+            background: white;
+          }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
         }
       `}</style>
 
@@ -1048,7 +1055,12 @@ export function GridMappingPage() {
             <span className="badge badge-gray">{filled} / {rows * cols}</span>
             <button className="btn-ghost text-airbus-red" onClick={clearAll}>Borrar todo</button>
             <button className="btn-ghost" onClick={exportCSV}>CSV</button>
-            <button className="btn-ghost" onClick={() => window.print()}>Imprimir</button>
+            <button className="btn-ghost flex items-center gap-2 text-airbus-blue font-semibold" onClick={() => window.print()}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              Generar PDF
+            </button>
           </div>
         </div>
 
@@ -1169,52 +1181,83 @@ export function GridMappingPage() {
       {/* ==================================================================== */}
       {/* VISTA DE IMPRESIÓN (oculta en pantalla, visible al imprimir)        */}
       {/* ==================================================================== */}
-      <div className="hidden print:block bg-white text-black p-2">
-        <h1 className="text-xl font-bold text-center mb-1">INFORME DE GRID MAPPING</h1>
-        <div className="text-center text-xs mb-4">Fecha de impresión: {new Date().toLocaleString('es-ES')}</div>
-        
-        <table className="w-full mb-4 border-collapse border border-gray-500 text-xs">
-          <tbody>
-            <tr>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">MATRÍCULA</th>
-              <td className="border border-gray-500 px-2 py-1">{meta.matricula}</td>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">WO / SAP</th>
-              <td className="border border-gray-500 px-2 py-1">{meta.wo_sap}</td>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">FR</th>
-              <td className="border border-gray-500 px-2 py-1">{meta.fr}</td>
-            </tr>
-            <tr>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">FECHA</th>
-              <td className="border border-gray-500 px-2 py-1">{fmtFecha(meta.fecha)}</td>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">OPERADOR</th>
-              <td className="border border-gray-500 px-2 py-1">{meta.operador || '—'}</td>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">ESPESOR NOMINAL</th>
-              <td className="border border-gray-500 px-2 py-1">{nominalThickness ? format2(nominalThickness) + ' mm' : '—'}</td>
-            </tr>
-            <tr>
-              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">EQUIPO UT</th>
-              <td className="border border-gray-500 px-2 py-1" colSpan={5}>
-                {equipoSeleccionado 
-                  ? `[${equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}] ${equipoSeleccionado.nombre} ${equipoSeleccionado.codigo_barras ? `· CB: ${equipoSeleccionado.codigo_barras}` : ''}`
-                  : '—'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="hidden print:block bg-white text-black" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
+        {/* Header */}
+        <div className="flex justify-between items-start border-b-2 border-gray-800 pb-2 mb-4">
+          <div>
+            <h1 className="text-2xl font-bold uppercase tracking-wider text-gray-900 m-0">Informe de Grid Mapping</h1>
+            <p className="text-sm text-gray-600 mt-1">Inspección de Espesores por Ultrasonidos (UT)</p>
+          </div>
+          <div className="text-right text-xs text-gray-600">
+            <p><strong>Fecha Emisión:</strong> {fmtFecha(meta.fecha)}</p>
+            <p><strong>Impreso el:</strong> {new Date().toLocaleString('es-ES')}</p>
+          </div>
+        </div>
 
-        <table className="w-full border-collapse border border-gray-500 text-xs">
+        {/* Metadata Tables */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <table className="w-full text-sm border-collapse border border-gray-400">
+            <tbody>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Matrícula</td>
+                <td className="border border-gray-400 px-2 py-1">{meta.matricula}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">WO / SAP</td>
+                <td className="border border-gray-400 px-2 py-1">{meta.wo_sap || '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">FR</td>
+                <td className="border border-gray-400 px-2 py-1">{meta.fr || '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Operador</td>
+                <td className="border border-gray-400 px-2 py-1">{meta.operador || '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Espesor Nominal</td>
+                <td className="border border-gray-400 px-2 py-1">{nominalThickness ? format2(nominalThickness) + ' mm' : '—'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table className="w-full text-sm border-collapse border border-gray-400">
+            <tbody>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Equipo UT</td>
+                <td className="border border-gray-400 px-2 py-1">{equipoSeleccionado ? equipoSeleccionado.nombre : '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Nº Serie / ID</td>
+                <td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo) : '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Código de Barras</td>
+                <td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.codigo_barras || '—') : '—'}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Próx. Calibración</td>
+                <td className="border border-gray-400 px-2 py-1 font-medium text-gray-800">{equipoSeleccionado?.proxima_calibracion ? fmtFecha(equipoSeleccionado.proxima_calibracion) : '—'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Grid */}
+        <h2 className="text-lg font-bold mb-2 border-l-4 border-gray-800 pl-2">Resultados de la Medición</h2>
+        <table className="w-full border-collapse border border-gray-800 text-xs text-center">
           <thead>
             <tr>
-              <th className="border border-gray-500 bg-gray-100 px-1 py-1 w-6"></th>
+              <th className="border border-gray-800 bg-gray-200 px-1 py-1 w-8"></th>
               {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
-                <th key={c} className="border border-gray-500 bg-gray-100 px-1 py-1 font-semibold">{c}</th>
+                <th key={c} className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: rows }, (_, i) => i + 1).map((r) => (
               <tr key={r}>
-                <th className="border border-gray-500 bg-gray-100 px-1 py-1 text-center">{r}</th>
+                <th className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{r}</th>
                 {Array.from({ length: cols }, (_, ci) => {
                   const c = colName(ci);
                   const v = grid[`${c}${r}`] ?? '';
@@ -1225,8 +1268,8 @@ export function GridMappingPage() {
                   return (
                     <td 
                       key={c} 
-                      className="border border-gray-500 px-1 py-1 text-center font-mono"
-                      style={{ backgroundColor: bg }}
+                      className="border border-gray-800 px-1 py-1 font-mono font-medium"
+                      style={{ backgroundColor: bg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
                     >
                       {v}
                     </td>
@@ -1236,6 +1279,26 @@ export function GridMappingPage() {
             ))}
           </tbody>
         </table>
+
+        {/* Legend */}
+        {valueStats.hasData && (
+          <div className="mt-4 flex items-center gap-4 text-xs">
+            <span className="font-bold uppercase text-gray-700">Escala de medición:</span>
+            <div className="flex items-center gap-2">
+              <span>{format2(valueStats.min)}</span>
+              <div className="w-48 h-3 border border-gray-400" style={{ background: LEGEND_GRADIENT, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} />
+              <span>{format2(valueStats.max)}</span>
+            </div>
+            {nominalNum !== null && (
+              <span className="ml-4"><strong>Espesor nominal:</strong> {format2(nominalNum)} mm</span>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="mt-8 pt-4 border-t border-gray-400 text-[10px] text-gray-500 text-center">
+          Este documento ha sido generado automáticamente por el sistema NDT Warehouse.
+        </div>
       </div>
     </>
   );
