@@ -24,8 +24,7 @@ const RESERVED_EQUIPO_NOMBRE_KEY = '_equipo_ut_nombre';
 const LISTEN_TIMEOUT_MS = 10000;
 
 type GridData = Record<string, string>;
-type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string };
-type Direction = 'right' | 'down';
+type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string; operador: string; };
 type RowMode = { active: boolean; row: number; colIdx: number };
 type ListenMode = 'none' | 'cell' | 'command';
 
@@ -64,16 +63,17 @@ function isNumeric(v: string): boolean {
   return !isNaN(n) && isFinite(n);
 }
 
+// 🎨 Escala de colores pastel para que los números negros se lean bien
 const COLOR_STOPS = [
-  { t: 0.00, r: 215, g: 48,  b: 39  },
-  { t: 0.20, r: 253, g: 174, b: 97  },
-  { t: 0.40, r: 255, g: 255, b: 191 },
-  { t: 0.60, r: 217, g: 239, b: 139 },
-  { t: 0.80, r: 102, g: 189, b: 99  },
-  { t: 1.00, r: 0,   g: 104, b: 55  },
+  { t: 0.00, r: 254, g: 202, b: 202 }, // red-200
+  { t: 0.20, r: 253, g: 230, b: 138 }, // yellow-200
+  { t: 0.40, r: 254, g: 240, b: 138 }, // yellow-200
+  { t: 0.60, r: 187, g: 247, b: 208 }, // green-200
+  { t: 0.80, r: 134, g: 239, b: 172 }, // green-300
+  { t: 1.00, r: 74,  g: 222, b: 128 }, // green-400
 ];
 function colorForValue(v: number, min: number, max: number): string {
-  if (max === min) return 'rgb(255, 255, 191)';
+  if (max === min) return 'rgb(254, 240, 138)'; // yellow-200 por defecto
   const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
   for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
     const a = COLOR_STOPS[i], b = COLOR_STOPS[i + 1];
@@ -82,7 +82,7 @@ function colorForValue(v: number, min: number, max: number): string {
       return `rgb(${Math.round(a.r + (b.r - a.r) * k)}, ${Math.round(a.g + (b.g - a.g) * k)}, ${Math.round(a.b + (b.b - a.b) * k)})`;
     }
   }
-  return 'rgb(255, 255, 191)';
+  return 'rgb(254, 240, 138)';
 }
 const LEGEND_GRADIENT =
   'linear-gradient(to right, ' +
@@ -157,13 +157,14 @@ function fmtFecha(iso: string): string {
   const [y, m, d] = iso.split('-');
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
-function nextKey(key: string, direction: Direction, colsN: number, rowsN: number): string | null {
+
+function nextKey(key: string, colsN: number, rowsN: number): string | null {
   const m = key.match(/^([A-Z])('*)(\d+)$/);
   if (!m) return null;
   let ci = colIndex(m[1] + m[2]);
   let ri = parseInt(m[3], 10);
-  if (direction === 'right') { ci += 1; if (ci >= colsN) { ci = 0; ri += 1; } }
-  else { ri += 1; if (ri > rowsN) { ri = 1; ci += 1; } }
+  ci += 1;
+  if (ci >= colsN) { ci = 0; ri += 1; }
   if (ri > rowsN || ci >= colsN) return null;
   return colName(ci) + ri;
 }
@@ -196,16 +197,14 @@ function equipoLabel(eq: EquipoUT): string {
 
 export function GridMappingPage() {
   const [meta, setMeta] = useState<Meta>({
-    matricula: 'EC-NAV', wo_sap: '6567863537', fr: '248', fecha: todayISO(),
+    matricula: 'EC-NAV', wo_sap: '6567863537', fr: '248', fecha: todayISO(), operador: '',
   });
   const [grid, setGrid] = useState<GridData>({});
   const [selected, setSelected] = useState<string | null>(null);
-  const [direction, setDirection] = useState<Direction>('right');
   const [status, setStatus] = useState<string>('Toca una celda para dictar su valor, o pulsa «Dictar fila N / FIN».');
   const [heard, setHeard] = useState<string>('');
   const [lastNormalized, setLastNormalized] = useState<string>('');
   const [lastReadings, setLastReadings] = useState<string[]>([]);
-  const [manual, setManual] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -318,11 +317,6 @@ export function GridMappingPage() {
     });
   }, []);
 
-  const advance = useCallback(() => {
-    if (!selected) return;
-    setSelected(nextKey(selected, direction, colsRef.current, rowsRef.current));
-  }, [selected, direction]);
-
   const detectRow = (s: string): number => {
     const m1 = s.match(/\bfila\b[^0-9]*?(\d+)/);
     if (m1) return parseInt(m1[1], 10);
@@ -391,7 +385,7 @@ export function GridMappingPage() {
       flashCell(targetCell);
       setStatus(`✔ ${targetCell} = ${format2(v)}`);
 
-      const nk = nextKey(targetCell, direction, colsRef.current, rowsRef.current);
+      const nk = nextKey(targetCell, colsRef.current, rowsRef.current);
       if (nk) setSelected(nk);
       return;
     }
@@ -431,7 +425,7 @@ export function GridMappingPage() {
     if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
-      const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
+      const nk = nextKey(lastKey, colsRef.current, rowsRef.current);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
       return;
     }
@@ -439,7 +433,7 @@ export function GridMappingPage() {
     if (/^\d+(\.\d+)?$/.test(s)) {
       setStatus('Toca una celda primero o di «fila N».');
     }
-  }, [setCell, flashCell, updateRowMode, direction]);
+  }, [setCell, flashCell, updateRowMode]);
 
   const handleVoiceRef = useRef(handleVoice);
   useEffect(() => { handleVoiceRef.current = handleVoice; }, [handleVoice]);
@@ -682,38 +676,6 @@ export function GridMappingPage() {
     setCols(n); colsRef.current = n;
   };
 
-  /* ------------------ Manual / acciones ------------------ */
-  const applyManual = useCallback(() => {
-    if (!manual.trim()) return;
-    const s = normalizeVoice(manual);
-    setLastNormalized(s);
-
-    const targetCell = focusedKey ?? selected;
-    if (targetCell) {
-      const vals = extractReadings(s, true);
-      setLastReadings(vals);
-      if (vals.length > 0) {
-        setCell(targetCell, vals[0]); flashCell(targetCell);
-        const nk = nextKey(targetCell, direction, colsRef.current, rowsRef.current);
-        setStatus(`✔ ${targetCell} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
-        advance();
-        setManual('');
-        return;
-      }
-    }
-
-    const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
-    if (coords.length > 0) {
-      coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
-      const lastKey = coords[coords.length - 1].key;
-      const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
-      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
-    } else {
-      setStatus('⚠️ Toca una celda o escribe A1 12.5 …');
-    }
-    setManual('');
-  }, [manual, focusedKey, selected, setCell, advance, flashCell, direction]);
-
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
     stopRecognition();
@@ -727,7 +689,7 @@ export function GridMappingPage() {
     setNominalThickness('');
     setEquipoUtId('');
     updateRowMode({ active: false, row: 0, colIdx: 0 });
-    setMeta((m) => ({ ...m, fecha: todayISO() }));
+    setMeta((m) => ({ ...m, fecha: todayISO(), operador: '' }));
     setStatus('Nueva cuadrícula lista.');
   };
 
@@ -747,18 +709,22 @@ export function GridMappingPage() {
     const { data, error } = await supabase.from('grid_mappings').select('*').eq('id', id).single();
     if (error || !data) { setStatus('❌ ' + (error?.message ?? 'No encontrado')); return; }
     const row = data as GridMappingRow;
-    setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha });
     const rawData = row.grid_data ?? {};
     const normalized: GridData = {};
     let nominalFromGrid = '';
     let equipoIdFromGrid = '';
+    let operadorFromGrid = '';
+    
     Object.entries(rawData).forEach(([k, v]) => {
       if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
       if (k === RESERVED_EQUIPO_ID_KEY) { equipoIdFromGrid = v ?? ''; return; }
       if (k === RESERVED_EQUIPO_SERIAL_KEY) return;
       if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
+      if (k === '_operador') { operadorFromGrid = v ?? ''; return; }
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
+    
+    setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha, operador: operadorFromGrid });
     setGrid(normalized);
     setNominalThickness(nominalFromGrid);
     setEquipoUtId(equipoIdFromGrid);
@@ -779,6 +745,9 @@ export function GridMappingPage() {
       });
       if (nominalThickness && isNumeric(nominalThickness)) {
         cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
+      }
+      if (meta.operador.trim()) {
+        cleanGrid['_operador'] = meta.operador.trim();
       }
       if (equipoUtId) {
         cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
@@ -824,6 +793,7 @@ export function GridMappingPage() {
       const cb = eqSel.codigo_barras ? ` · CB: ${eqSel.codigo_barras}` : '';
       data.push([`EQUIPO UT: [${serial}] ${eqSel.nombre}${cb}`]);
     }
+    if (meta.operador) data.push([`OPERADOR: ${meta.operador}`]);
     if (nominalThickness && isNumeric(nominalThickness)) {
       data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
     }
@@ -855,368 +825,418 @@ export function GridMappingPage() {
   const equipoSeleccionado = equiposUT.find((e) => e.id === equipoUtId) ?? null;
 
   return (
-    <div className="p-4 md:p-6 max-w-full mx-auto space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-airbus-navy">Grid Mapping</h1>
-          <p className="text-sm text-gray-500">
-            Toca una celda para dictar su valor
-            {recordId && (<> · <span className="text-airbus-green">editando</span></>)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn-ghost" onClick={newMapping}>Nueva</button>
-          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
-        </div>
-      </div>
+    <>
+      {/* CSS para impresión */}
+      <style>{`
+        @media print {
+          @page { margin: 10mm; size: auto; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
 
-      {/* ========== TARJETA 1: METADATOS ========== */}
-      <div className="card">
-        <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Datos del informe</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
-            <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} /></div>
-          <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">WO / SAP</label>
-            <input className="input" value={meta.wo_sap} onChange={(e) => setMeta({ ...meta, wo_sap: e.target.value })} /></div>
-          <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">FR</label>
-            <input className="input" value={meta.fr} onChange={(e) => setMeta({ ...meta, fr: e.target.value })} /></div>
-          <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha</label>
-            <input className="input" type="date" value={meta.fecha} onChange={(e) => setMeta({ ...meta, fecha: e.target.value })} /></div>
+      {/* VISTA PRINCIPAL (oculta al imprimir) */}
+      <div className="p-4 md:p-6 max-w-full mx-auto space-y-4 print:hidden">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl md:text-2xl font-semibold text-airbus-navy">Grid Mapping</h1>
+            <p className="text-sm text-gray-500">
+              Toca una celda para dictar su valor
+              {recordId && (<> · <span className="text-airbus-green">editando</span></>)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={newMapping}>Nueva</button>
+            <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Guardando…' : 'Guardar Grid Mapping'}</button>
+          </div>
         </div>
-      </div>
 
-      {/* ========== TARJETA 2: EQUIPO DE MEDICIÓN ========== */}
-      <div className="card border-2 border-airbus-blue/30 bg-airbus-sky/5">
-        <h3 className="text-xs uppercase tracking-wide text-airbus-navy font-bold mb-3 flex items-center gap-2">
-          🔧 Configuración de medición
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2">
-            <label className="block text-xs uppercase tracking-wide text-airbus-navy mb-1 font-semibold">
-              Equipo de medición UT
-              {loadingEquipos && <span className="ml-2 text-airbus-sky font-normal normal-case">(cargando…)</span>}
-              {!loadingEquipos && (
-                <span className="ml-2 text-gray-400 font-normal normal-case">
-                  ({equiposUT.length} disponible{equiposUT.length !== 1 ? 's' : ''})
-                </span>
-              )}
-            </label>
-            <select
-              className="input text-base"
-              value={equipoUtId}
-              onChange={(e) => setEquipoUtId(e.target.value)}
-              disabled={loadingEquipos}
-            >
-              <option value="">
-                {loadingEquipos
-                  ? 'Cargando equipos…'
-                  : equiposUT.length === 0
-                  ? '— No hay equipos UT disponibles —'
-                  : '— Selecciona un equipo UT —'}
-              </option>
-              {equiposUT.map((eq) => {
-                const baja = (eq.estado ?? '').toLowerCase() === 'baja';
-                return (
-                  <option key={eq.id} value={eq.id} disabled={baja}>
-                    {equipoLabel(eq)}
-                  </option>
-                );
-              })}
-            </select>
+        {/* ========== TARJETA 1: METADATOS ========== */}
+        <div className="card">
+          <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Datos del informe</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
+              <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} /></div>
+            <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">WO / SAP</label>
+              <input className="input" value={meta.wo_sap} onChange={(e) => setMeta({ ...meta, wo_sap: e.target.value })} /></div>
+            <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">FR</label>
+              <input className="input" value={meta.fr} onChange={(e) => setMeta({ ...meta, fr: e.target.value })} /></div>
+            <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha</label>
+              <input className="input" type="date" value={meta.fecha} onChange={(e) => setMeta({ ...meta, fecha: e.target.value })} /></div>
+            <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Operador (Nº Usuario)</label>
+              <input className="input" value={meta.operador} onChange={(e) => setMeta({ ...meta, operador: e.target.value })} placeholder="Ej. 12345" /></div>
+          </div>
+        </div>
 
-            {/* Chip informativo del equipo seleccionado */}
-            {equipoSeleccionado && (
-              <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
-                  {equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}
-                </span>
-                <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
-                {equipoSeleccionado.codigo_barras && (
-                  <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
-                )}
-                {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
-                  <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
-                    {equipoSeleccionado.estado}
+        {/* ========== TARJETA 2: EQUIPO DE MEDICIÓN ========== */}
+        <div className="card border-2 border-airbus-blue/30 bg-airbus-sky/5">
+          <h3 className="text-xs uppercase tracking-wide text-airbus-navy font-bold mb-3 flex items-center gap-2">
+            🔧 Configuración de medición
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-2">
+              <label className="block text-xs uppercase tracking-wide text-airbus-navy mb-1 font-semibold">
+                Equipo de medición UT
+                {loadingEquipos && <span className="ml-2 text-airbus-sky font-normal normal-case">(cargando…)</span>}
+                {!loadingEquipos && (
+                  <span className="ml-2 text-gray-400 font-normal normal-case">
+                    ({equiposUT.length} disponible{equiposUT.length !== 1 ? 's' : ''})
                   </span>
                 )}
-              </div>
-            )}
+              </label>
+              <select
+                className="input text-base"
+                value={equipoUtId}
+                onChange={(e) => setEquipoUtId(e.target.value)}
+                disabled={loadingEquipos}
+              >
+                <option value="">
+                  {loadingEquipos
+                    ? 'Cargando equipos…'
+                    : equiposUT.length === 0
+                    ? '— No hay equipos UT disponibles —'
+                    : '— Selecciona un equipo UT —'}
+                </option>
+                {equiposUT.map((eq) => {
+                  const baja = (eq.estado ?? '').toLowerCase() === 'baja';
+                  return (
+                    <option key={eq.id} value={eq.id} disabled={baja}>
+                      {equipoLabel(eq)}
+                    </option>
+                  );
+                })}
+              </select>
 
-            {/* Panel de diagnóstico */}
-            <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
-              <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
-              {debugEquipos.codigosEncontrados.length > 0 && (
-                <> · códigos: <b>{debugEquipos.codigosEncontrados.join(', ')}</b></>
+              {/* Chip informativo del equipo seleccionado */}
+              {equipoSeleccionado && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
+                    {equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}
+                  </span>
+                  <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
+                  {equipoSeleccionado.codigo_barras && (
+                    <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
+                  )}
+                  {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
+                    <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
+                      {equipoSeleccionado.estado}
+                    </span>
+                  )}
+                </div>
               )}
-              {debugEquipos.errorMsg && (
-                <> · <span className="text-red-600">ERROR: {debugEquipos.errorMsg}</span></>
-              )}
+
+              {/* Panel de diagnóstico */}
+              <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
+                <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
+                {debugEquipos.codigosEncontrados.length > 0 && (
+                  <> · códigos: <b>{debugEquipos.codigosEncontrados.join(', ')}</b></>
+                )}
+                {debugEquipos.errorMsg && (
+                  <> · <span className="text-red-600">ERROR: {debugEquipos.errorMsg}</span></>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
+                Espesor nominal (mm)
+              </label>
+              <input className="input text-base" type="text" inputMode="decimal" placeholder="0.00"
+                value={nominalThickness}
+                onChange={(e) => setNominalThickness(e.target.value)}
+                onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
-              Espesor nominal (mm)
-            </label>
-            <input className="input text-base" type="text" inputMode="decimal" placeholder="0.00"
-              value={nominalThickness}
-              onChange={(e) => setNominalThickness(e.target.value)}
-              onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
-          </div>
-        </div>
-
-        {!loadingEquipos && equiposUT.length === 0 && debugEquipos.totalEnDB > 0 && (
-          <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
-            <p className="text-xs text-red-700 font-semibold">
-              ⚠️ Hay {debugEquipos.totalEnDB} equipos en BD, pero ninguno tiene técnica UT.
-            </p>
-            <p className="text-xs text-red-600 mt-1">
-              Códigos de técnica encontrados: <b>{debugEquipos.codigosEncontrados.join(', ') || 'ninguno'}</b>.
-            </p>
-          </div>
-        )}
-        {!loadingEquipos && debugEquipos.totalEnDB === 0 && !debugEquipos.errorMsg && (
-          <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2">
-            <p className="text-xs text-yellow-800">
-              ⚠️ La consulta no ha devuelto ningún equipo. Revisa permisos (RLS) o que la tabla no esté vacía.
-            </p>
-          </div>
-        )}
-        {debugEquipos.errorMsg && (
-          <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
-            <p className="text-xs text-red-700 font-semibold">❌ Error de consulta:</p>
-            <p className="text-xs text-red-600 font-mono mt-1">{debugEquipos.errorMsg}</p>
-          </div>
-        )}
-
-        {nominalNum !== null && valueStats.hasData && (
-          <p className="text-xs text-airbus-blue mt-2">
-            ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
-          </p>
-        )}
-      </div>
-
-      {/* Voz */}
-      <div className="card space-y-3">
-        <button onClick={toggleCommandMic}
-          className={`w-full py-3 rounded-lg font-semibold text-white transition ${
-            listenMode === 'command'
-              ? 'bg-airbus-red animate-pulse'
-              : 'bg-airbus-blue hover:bg-airbus-navy'
-          }`}>
-          {listenMode === 'command' ? '⏹ Cancelar comando' : '🎤 Dictar fila N / FIN (comando)'}
-        </button>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {rowMode.active ? (
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-airbus-blue text-white text-sm font-medium">
-              📋 Fila {rowMode.row} <span className="text-xs opacity-90">{nextCellLabel ? `siguiente: ${nextCellLabel}` : 'completa · di FIN'}</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium">Sin fila activa</span>
+          {!loadingEquipos && equiposUT.length === 0 && debugEquipos.totalEnDB > 0 && (
+            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
+              <p className="text-xs text-red-700 font-semibold">
+                ⚠️ Hay {debugEquipos.totalEnDB} equipos en BD, pero ninguno tiene técnica UT.
+              </p>
+            </div>
           )}
-          <span className="text-xs text-gray-500">{status}</span>
-        </div>
+          {!loadingEquipos && debugEquipos.totalEnDB === 0 && !debugEquipos.errorMsg && (
+            <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2">
+              <p className="text-xs text-yellow-800">
+                ⚠️ La consulta no ha devuelto ningún equipo. Revisa permisos (RLS) o que la tabla no esté vacía.
+              </p>
+            </div>
+          )}
+          {debugEquipos.errorMsg && (
+            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
+              <p className="text-xs text-red-700 font-semibold">❌ Error de consulta:</p>
+              <p className="text-xs text-red-600 font-mono mt-1">{debugEquipos.errorMsg}</p>
+            </div>
+          )}
 
-        <div className="min-h-[38px] text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700">
-          {heard ? (
-            <>
-              {listenMode === 'cell' && activeCellKey && (
-                <span className="mr-2 text-[11px] px-2 py-0.5 rounded bg-airbus-blue text-white font-mono">
-                  {activeCellKey}
-                </span>
-              )}
-              {heard}
-            </>
-          ) : (
-            <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>
+          {nominalNum !== null && valueStats.hasData && (
+            <p className="text-xs text-airbus-blue mt-2">
+              ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
+            </p>
           )}
         </div>
 
-        {(lastNormalized || lastReadings.length > 0) && (
-          <div className="text-[11px] text-gray-400 bg-white border border-dashed border-gray-200 rounded-lg px-3 py-1.5 font-mono">
-            Normalizado: <b className="text-gray-600">{lastNormalized || '—'}</b>
-            {lastReadings.length > 0 && (
-              <> · Valores: <b className="text-gray-600">[{lastReadings.map((v) => format2(v)).join(', ')}]</b></>
+        {/* Voz */}
+        <div className="card space-y-3">
+          <button onClick={toggleCommandMic}
+            className={`w-full py-3 rounded-lg font-semibold text-white transition ${
+              listenMode === 'command'
+                ? 'bg-airbus-red animate-pulse'
+                : 'bg-airbus-blue hover:bg-airbus-navy'
+            }`}>
+            {listenMode === 'command' ? '⏹ Cancelar comando' : '🎤 Dictar fila N / FIN (comando)'}
+          </button>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {rowMode.active ? (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-airbus-blue text-white text-sm font-medium">
+                📋 Fila {rowMode.row} <span className="text-xs opacity-90">{nextCellLabel ? `siguiente: ${nextCellLabel}` : 'completa · di FIN'}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium">Sin fila activa</span>
+            )}
+            <span className="text-xs text-gray-500">{status}</span>
+          </div>
+
+          <div className="min-h-[38px] text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700">
+            {heard ? (
+              <>
+                {listenMode === 'cell' && activeCellKey && (
+                  <span className="mr-2 text-[11px] px-2 py-0.5 rounded bg-airbus-blue text-white font-mono">
+                    {activeCellKey}
+                  </span>
+                )}
+                {heard}
+              </>
+            ) : (
+              <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>
             )}
           </div>
-        )}
 
-        <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
-          🗣️ <b>Toca una celda</b> → habla → di el valor (p. ej. <i>«dos coma cero dos»</i>). El micrófono se cierra solo.
-        </p>
+          {(lastNormalized || lastReadings.length > 0) && (
+            <div className="text-[11px] text-gray-400 bg-white border border-dashed border-gray-200 rounded-lg px-3 py-1.5 font-mono">
+              Normalizado: <b className="text-gray-600">{lastNormalized || '—'}</b>
+              {lastReadings.length > 0 && (
+                <> · Valores: <b className="text-gray-600">[{lastReadings.map((v) => format2(v)).join(', ')}]</b></>
+              )}
+            </div>
+          )}
 
-        <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filas</span>
-            <button type="button" onClick={() => setRowsCount(rows - 1)} disabled={rows <= MIN_ROWS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
-            <span className="w-8 text-center font-mono text-sm">{rows}</span>
-            <button type="button" onClick={() => setRowsCount(rows + 1)} disabled={rows >= MAX_ROWS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+          <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
+            🗣️ <b>Toca una celda</b> → habla → di el valor (p. ej. <i>«dos coma cero dos»</i>). El micrófono se cierra solo.
+          </p>
+
+          <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filas</span>
+              <button type="button" onClick={() => setRowsCount(rows - 1)} disabled={rows <= MIN_ROWS}
+                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+              <span className="w-8 text-center font-mono text-sm">{rows}</span>
+              <button type="button" onClick={() => setRowsCount(rows + 1)} disabled={rows >= MAX_ROWS}
+                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Columnas</span>
+              <button type="button" onClick={() => setColsCount(cols - 1)} disabled={cols <= MIN_COLS}
+                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+              <span className="w-14 text-center font-mono text-sm">{colName(cols - 1)}</span>
+              <button type="button" onClick={() => setColsCount(cols + 1)} disabled={cols >= MAX_COLS}
+                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Columnas</span>
-            <button type="button" onClick={() => setColsCount(cols - 1)} disabled={cols <= MIN_COLS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
-            <span className="w-14 text-center font-mono text-sm">{colName(cols - 1)}</span>
-            <button type="button" onClick={() => setColsCount(cols + 1)} disabled={cols >= MAX_COLS}
-              className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+
+          <div className="flex gap-2 flex-wrap items-center pt-2">
+            <span className="badge badge-gray">{filled} / {rows * cols}</span>
+            <button className="btn-ghost text-airbus-red" onClick={clearAll}>Borrar todo</button>
+            <button className="btn-ghost" onClick={exportCSV}>CSV</button>
+            <button className="btn-ghost" onClick={() => window.print()}>Imprimir</button>
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          <input className="input flex-1 min-w-[220px]" placeholder="Manual: A1 12.5, A'2 13.2 …"
-            value={manual} onChange={(e) => setManual(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyManual(); } }} />
-          <button className="btn-primary" onClick={applyManual}>Aplicar</button>
+        {/* Cuadrícula */}
+        <div className="card p-0 overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="bg-airbus-navy text-white w-9 h-9 border border-gray-200" />
+                {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
+                  <th key={c} className="bg-airbus-navy text-white font-semibold h-9 border border-gray-200 min-w-[44px] whitespace-nowrap">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: rows }, (_, i) => i + 1).map((r) => {
+                const isCurrentRow = rowMode.active && rowMode.row === r;
+                return (
+                  <tr key={r}>
+                    <th className={`font-bold text-xs border border-gray-200 h-10 transition-colors ${isCurrentRow ? 'bg-airbus-blue text-white' : 'bg-gray-100 text-gray-600'}`}>{r}</th>
+                    {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => {
+                      const key = `${c}${r}`;
+                      const v = grid[key] ?? '';
+                      const display = displayValue(key, v);
+                      const active = selected === key;
+                      const listening = listenMode === 'cell' && activeCellKey === key;
+                      const flashing = flashKey === key;
+                      const numeric = isNumeric(v);
+                      const bg = numeric && valueStats.hasData
+                        ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
+                        : undefined;
+                      return (
+                        <td
+                          key={key}
+                          className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${listening ? 'outline outline-2 outline-red-500' : ''}`}
+                          style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}
+                        >
+                          <input
+                            className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
+                            inputMode="decimal"
+                            value={display}
+                            onClick={() => onCellClick(key)}
+                            onChange={(e) => setCellRaw(key, e.target.value)}
+                            onFocus={() => { setFocusedKey(key); setSelected(key); }}
+                            onBlur={(e) => {
+                              setFocusedKey(null);
+                              const val = e.target.value.trim();
+                              if (val && isNumeric(val)) setCell(key, val);
+                              else if (val) setCellRaw(key, val);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
+                            }}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
-        <div className="flex gap-2 flex-wrap items-center">
-          <select className="input max-w-[200px]" value={direction}
-            onChange={(e) => setDirection(e.target.value as Direction)}>
-            <option value="right">Avance → (fila)</option>
-            <option value="down">Avance ↓ (columna)</option>
-          </select>
-          <span className="badge badge-gray">{filled} / {rows * cols}</span>
-          <button className="btn-ghost text-airbus-red" onClick={clearAll}>Borrar todo</button>
-          <button className="btn-ghost" onClick={exportCSV}>CSV</button>
-          <button className="btn-ghost" onClick={() => window.print()}>Imprimir</button>
+        {/* Leyenda */}
+        <div className="card">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Escala de color</div>
+            {valueStats.hasData ? (
+              <div className="flex items-center gap-3 text-xs flex-1 min-w-[240px]">
+                <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.min)}</span>
+                <div className="flex-1 relative py-2">
+                  <div className="h-4 rounded-full border border-gray-200" style={{ background: LEGEND_GRADIENT }} />
+                  {nominalPct !== null && (
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow"
+                      style={{ left: `${nominalPct}%`, transform: 'translateX(-50%)' }}
+                      title={`Nominal: ${format2(nominalNum ?? 0)}`} />
+                  )}
+                </div>
+                <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.max)}</span>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-400">Introduce valores numéricos para ver el gradiente</span>
+            )}
+          </div>
+        </div>
+
+        {/* Historial */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
+            <button className="btn-ghost text-sm" onClick={loadHistory} disabled={loadingHistory}>
+              {loadingHistory ? 'Cargando…' : 'Refrescar'}
+            </button>
+          </div>
+          {history.length === 0 ? (
+            <p className="text-sm text-gray-500">Aún no hay cuadrículas guardadas.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {history.map((h) => (
+                <li key={h.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-800 truncate">
+                      {h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}
+                    </div>
+                  </div>
+                  <button className="btn-ghost text-airbus-blue text-sm" onClick={() => loadRecord(h.id)}>Cargar</button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      {/* Cuadrícula */}
-      <div className="card p-0 overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+      {/* ==================================================================== */}
+      {/* VISTA DE IMPRESIÓN (oculta en pantalla, visible al imprimir)        */}
+      {/* ==================================================================== */}
+      <div className="hidden print:block bg-white text-black p-2">
+        <h1 className="text-xl font-bold text-center mb-1">INFORME DE GRID MAPPING</h1>
+        <div className="text-center text-xs mb-4">Fecha de impresión: {new Date().toLocaleString('es-ES')}</div>
+        
+        <table className="w-full mb-4 border-collapse border border-gray-500 text-xs">
+          <tbody>
+            <tr>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">MATRÍCULA</th>
+              <td className="border border-gray-500 px-2 py-1">{meta.matricula}</td>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">WO / SAP</th>
+              <td className="border border-gray-500 px-2 py-1">{meta.wo_sap}</td>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100 w-1/6">FR</th>
+              <td className="border border-gray-500 px-2 py-1">{meta.fr}</td>
+            </tr>
+            <tr>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">FECHA</th>
+              <td className="border border-gray-500 px-2 py-1">{fmtFecha(meta.fecha)}</td>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">OPERADOR</th>
+              <td className="border border-gray-500 px-2 py-1">{meta.operador || '—'}</td>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">ESPESOR NOMINAL</th>
+              <td className="border border-gray-500 px-2 py-1">{nominalThickness ? format2(nominalThickness) + ' mm' : '—'}</td>
+            </tr>
+            <tr>
+              <th className="border border-gray-500 px-2 py-1 text-left bg-gray-100">EQUIPO UT</th>
+              <td className="border border-gray-500 px-2 py-1" colSpan={5}>
+                {equipoSeleccionado 
+                  ? `[${equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}] ${equipoSeleccionado.nombre} ${equipoSeleccionado.codigo_barras ? `· CB: ${equipoSeleccionado.codigo_barras}` : ''}`
+                  : '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table className="w-full border-collapse border border-gray-500 text-xs">
           <thead>
             <tr>
-              <th className="bg-airbus-navy text-white w-9 h-9 border border-gray-200" />
+              <th className="border border-gray-500 bg-gray-100 px-1 py-1 w-6"></th>
               {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
-                <th key={c} className="bg-airbus-navy text-white font-semibold h-9 border border-gray-200 min-w-[44px] whitespace-nowrap">{c}</th>
+                <th key={c} className="border border-gray-500 bg-gray-100 px-1 py-1 font-semibold">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: rows }, (_, i) => i + 1).map((r) => {
-              const isCurrentRow = rowMode.active && rowMode.row === r;
-              return (
-                <tr key={r}>
-                  <th className={`font-bold text-xs border border-gray-200 h-10 transition-colors ${isCurrentRow ? 'bg-airbus-blue text-white' : 'bg-gray-100 text-gray-600'}`}>{r}</th>
-                  {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => {
-                    const key = `${c}${r}`;
-                    const v = grid[key] ?? '';
-                    const display = displayValue(key, v);
-                    const active = selected === key;
-                    const listening = listenMode === 'cell' && activeCellKey === key;
-                    const flashing = flashKey === key;
-                    const numeric = isNumeric(v);
-                    const bg = numeric && valueStats.hasData
-                      ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
-                      : undefined;
-                    return (
-                      <td
-                        key={key}
-                        className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${listening ? 'outline outline-2 outline-red-500' : ''}`}
-                        style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}
-                      >
-                        <input
-                          className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
-                          inputMode="decimal"
-                          value={display}
-                          onClick={() => onCellClick(key)}
-                          onChange={(e) => setCellRaw(key, e.target.value)}
-                          onFocus={() => { setFocusedKey(key); setSelected(key); }}
-                          onBlur={(e) => {
-                            setFocusedKey(null);
-                            const val = e.target.value.trim();
-                            if (val && isNumeric(val)) setCell(key, val);
-                            else if (val) setCellRaw(key, val);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+            {Array.from({ length: rows }, (_, i) => i + 1).map((r) => (
+              <tr key={r}>
+                <th className="border border-gray-500 bg-gray-100 px-1 py-1 text-center">{r}</th>
+                {Array.from({ length: cols }, (_, ci) => {
+                  const c = colName(ci);
+                  const v = grid[`${c}${r}`] ?? '';
+                  const numeric = isNumeric(v);
+                  const bg = numeric && valueStats.hasData 
+                    ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
+                    : undefined;
+                  return (
+                    <td 
+                      key={c} 
+                      className="border border-gray-500 px-1 py-1 text-center font-mono"
+                      style={{ backgroundColor: bg }}
+                    >
+                      {v}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-
-      {/* Leyenda */}
-      <div className="card">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Escala de color</div>
-          {valueStats.hasData ? (
-            <div className="flex items-center gap-3 text-xs flex-1 min-w-[240px]">
-              <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.min)}</span>
-              <div className="flex-1 relative py-2">
-                <div className="h-4 rounded-full border border-gray-200" style={{ background: LEGEND_GRADIENT }} />
-                {nominalPct !== null && (
-                  <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow"
-                    style={{ left: `${nominalPct}%`, transform: 'translateX(-50%)' }}
-                    title={`Nominal: ${format2(nominalNum ?? 0)}`} />
-                )}
-              </div>
-              <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.max)}</span>
-            </div>
-          ) : (
-            <span className="text-xs text-gray-400">Introduce valores numéricos para ver el gradiente</span>
-          )}
-        </div>
-        <div className="flex items-center gap-4 flex-wrap mt-2 text-[11px] text-gray-500">
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgb(215,48,39)' }} />
-            Mínimo
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgb(255,255,191)' }} />
-            Medio
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgb(0,104,55)' }} />
-            Máximo
-          </span>
-          {nominalPct !== null && (
-            <span className="inline-flex items-center gap-1 ml-auto text-airbus-blue font-medium">
-              <span className="inline-block w-0.5 h-3 bg-blue-600" />
-              Nominal: {format2(nominalNum ?? 0)}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Historial */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
-          <button className="btn-ghost text-sm" onClick={loadHistory} disabled={loadingHistory}>
-            {loadingHistory ? 'Cargando…' : 'Refrescar'}
-          </button>
-        </div>
-        {history.length === 0 ? (
-          <p className="text-sm text-gray-500">Aún no hay cuadrículas guardadas.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {history.map((h) => (
-              <li key={h.id} className="py-2 flex items-center justify-between gap-3 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium text-gray-800 truncate">
-                    {h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}
-                  </div>
-                </div>
-                <button className="btn-ghost text-airbus-blue text-sm" onClick={() => loadRecord(h.id)}>Cargar</button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
