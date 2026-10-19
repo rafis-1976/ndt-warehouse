@@ -36,7 +36,7 @@ interface EquipoUT {
   codigo_barras: string | null;
   estado: string | null;
   proxima_calibracion: string | null;
-  tecnicas_ndt?: { codigo: string; nombre: string } | null;
+  tecnicas_ndt?: { codigo: string; nombre: string } | { codigo: string; nombre: string }[] | null;
 }
 
 interface GridMappingRow {
@@ -179,6 +179,13 @@ function estadoEmoji(estado: string | null | undefined): string {
   return '';
 }
 
+function getTecnicaCodigo(eq: EquipoUT): string | null {
+  const t = eq.tecnicas_ndt;
+  if (!t) return null;
+  if (Array.isArray(t)) return t[0]?.codigo ?? null;
+  return t.codigo ?? null;
+}
+
 function equipoLabel(eq: EquipoUT): string {
   return `${estadoEmoji(eq.estado)}[${eq.id_equipo}] ${eq.nombre}`;
 }
@@ -207,6 +214,12 @@ export function GridMappingPage() {
   const [equiposUT, setEquiposUT] = useState<EquipoUT[]>([]);
   const [loadingEquipos, setLoadingEquipos] = useState(false);
   const [equipoUtId, setEquipoUtId] = useState<string>('');
+  const [debugEquipos, setDebugEquipos] = useState<{
+    totalEnDB: number;
+    totalUT: number;
+    codigosEncontrados: string[];
+    errorMsg: string | null;
+  }>({ totalEnDB: 0, totalUT: 0, codigosEncontrados: [], errorMsg: null });
 
   /* ---- Escucha ---- */
   const [listenMode, setListenMode] = useState<ListenMode>('none');
@@ -556,8 +569,10 @@ export function GridMappingPage() {
   /* ------------------ Cargar equipos UT ------------------ */
   const loadEquiposUT = useCallback(async () => {
     setLoadingEquipos(true);
+    setDebugEquipos({ totalEnDB: 0, totalUT: 0, codigosEncontrados: [], errorMsg: null });
+
     try {
-      // Join con tecnicas_ndt!inner para filtrar UT en SQL
+      // Estrategia robusta: cargar TODOS los equipos con su técnica y filtrar en JS
       const { data, error } = await supabase
         .from('equipos')
         .select(`
@@ -567,31 +582,52 @@ export function GridMappingPage() {
           codigo_barras,
           estado,
           proxima_calibracion,
-          tecnicas_ndt!inner ( codigo, nombre )
+          tecnicas_ndt ( codigo, nombre )
         `)
-        .eq('tecnicas_ndt.codigo', 'UT')
         .order('id_equipo', { ascending: true });
 
       if (error) {
-        console.warn('[Equipos UT] Error con join, probando sin filtro:', error.message);
-        // Fallback: cargar todos y filtrar en cliente si no hay join disponible
-        const { data: all, error: err2 } = await supabase
-          .from('equipos')
-          .select('id, id_equipo, nombre, codigo_barras, estado, proxima_calibracion, tecnicas_ndt(codigo, nombre)')
-          .order('id_equipo', { ascending: true });
-
-        if (err2) {
-          console.warn('[Equipos UT] Error fallback:', err2.message);
-          return;
-        }
-        const uts = (all ?? []).filter((e: any) => e.tecnicas_ndt?.codigo === 'UT');
-        setEquiposUT(uts as EquipoUT[]);
+        console.error('[Equipos UT] Error consultando equipos:', error);
+        setDebugEquipos({
+          totalEnDB: 0, totalUT: 0, codigosEncontrados: [],
+          errorMsg: error.message,
+        });
         return;
       }
 
-      setEquiposUT((data ?? []) as unknown as EquipoUT[]);
-    } catch (err) {
-      console.warn('[Equipos UT] Error inesperado:', err);
+      const all = (data ?? []) as EquipoUT[];
+
+      // Recolectar todos los códigos de técnica para diagnóstico
+      const codigosSet = new Set<string>();
+      all.forEach((eq) => {
+        const c = getTecnicaCodigo(eq);
+        if (c) codigosSet.add(c);
+      });
+      const codigosEncontrados = Array.from(codigosSet).sort();
+
+      // Filtrar UT (acepta 'UT', 'ut', 'UT-1', 'UTIL...' etc.)
+      const uts = all.filter((eq) => {
+        const codigo = getTecnicaCodigo(eq);
+        if (!codigo) return false;
+        return codigo.toUpperCase().startsWith('UT');
+      });
+
+      setEquiposUT(uts);
+      setDebugEquipos({
+        totalEnDB: all.length,
+        totalUT: uts.length,
+        codigosEncontrados,
+        errorMsg: null,
+      });
+
+      console.log('[Equipos UT] Cargados:', uts.length, 'de', all.length, 'equipos');
+      console.log('[Equipos UT] Códigos de técnica encontrados:', codigosEncontrados);
+    } catch (err: any) {
+      console.error('[Equipos UT] Error inesperado:', err);
+      setDebugEquipos({
+        totalEnDB: 0, totalUT: 0, codigosEncontrados: [],
+        errorMsg: err?.message ?? 'Error desconocido',
+      });
     } finally {
       setLoadingEquipos(false);
     }
@@ -744,7 +780,6 @@ export function GridMappingPage() {
       if (nominalThickness && isNumeric(nominalThickness)) {
         cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
       }
-      // Guardar equipo UT (uuid + id_equipo + nombre)
       if (equipoUtId) {
         cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
         const eq = equiposUT.find((e) => e.id === equipoUtId);
@@ -834,9 +869,10 @@ export function GridMappingPage() {
         </div>
       </div>
 
-      {/* Metadatos + Equipo UT + Espesor nominal */}
+      {/* ========== TARJETA 1: METADATOS ========== */}
       <div className="card">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Datos del informe</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
             <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} /></div>
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">WO / SAP</label>
@@ -845,20 +881,38 @@ export function GridMappingPage() {
             <input className="input" value={meta.fr} onChange={(e) => setMeta({ ...meta, fr: e.target.value })} /></div>
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha</label>
             <input className="input" type="date" value={meta.fecha} onChange={(e) => setMeta({ ...meta, fecha: e.target.value })} /></div>
+        </div>
+      </div>
 
-          <div className="lg:col-span-1 md:col-span-2">
+      {/* ========== TARJETA 2: EQUIPO DE MEDICIÓN ========== */}
+      <div className="card border-2 border-airbus-blue/30 bg-airbus-sky/5">
+        <h3 className="text-xs uppercase tracking-wide text-airbus-navy font-bold mb-3 flex items-center gap-2">
+          🔧 Configuración de medición
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Selector equipo UT — grande, ocupa 2 columnas */}
+          <div className="md:col-span-2">
             <label className="block text-xs uppercase tracking-wide text-airbus-navy mb-1 font-semibold">
-              Equipo UT
+              Equipo de medición UT
+              {loadingEquipos && <span className="ml-2 text-airbus-sky font-normal normal-case">(cargando…)</span>}
+              {!loadingEquipos && (
+                <span className="ml-2 text-gray-400 font-normal normal-case">
+                  ({equiposUT.length} disponible{equiposUT.length !== 1 ? 's' : ''})
+                </span>
+              )}
             </label>
             <select
-              className="input"
+              className="input text-base"
               value={equipoUtId}
               onChange={(e) => setEquipoUtId(e.target.value)}
               disabled={loadingEquipos}
-              title={loadingEquipos ? 'Cargando equipos…' : 'Selecciona el equipo de medición UT'}
             >
               <option value="">
-                {loadingEquipos ? 'Cargando equipos…' : '— Selecciona equipo UT —'}
+                {loadingEquipos
+                  ? 'Cargando equipos…'
+                  : equiposUT.length === 0
+                  ? '— No hay equipos UT disponibles —'
+                  : '— Selecciona un equipo UT —'}
               </option>
               {equiposUT.map((eq) => {
                 const baja = (eq.estado ?? '').toLowerCase() === 'baja';
@@ -869,40 +923,72 @@ export function GridMappingPage() {
                 );
               })}
             </select>
+
+            {/* Chip informativo del equipo seleccionado */}
+            {equipoSeleccionado && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
+                  {equipoSeleccionado.id_equipo}
+                </span>
+                <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
+                {equipoSeleccionado.codigo_barras && (
+                  <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
+                )}
+                {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
+                  <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
+                    {equipoSeleccionado.estado}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* ===== Panel de diagnóstico — quitar cuando funcione ===== */}
+            <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
+              <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
+              {debugEquipos.codigosEncontrados.length > 0 && (
+                <> · códigos: <b>{debugEquipos.codigosEncontrados.join(', ')}</b></>
+              )}
+              {debugEquipos.errorMsg && (
+                <> · <span className="text-red-600">ERROR: {debugEquipos.errorMsg}</span></>
+              )}
+            </div>
           </div>
 
+          {/* Espesor nominal */}
           <div>
-            <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">Espesor nominal</label>
-            <input className="input" type="text" inputMode="decimal" placeholder="mm"
+            <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
+              Espesor nominal (mm)
+            </label>
+            <input className="input text-base" type="text" inputMode="decimal" placeholder="0.00"
               value={nominalThickness}
               onChange={(e) => setNominalThickness(e.target.value)}
               onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
           </div>
         </div>
 
-        {/* Aviso si no hay equipos UT */}
-        {!loadingEquipos && equiposUT.length === 0 && (
-          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">
-            ⚠️ No se han encontrado equipos con técnica <b>UT</b> en la tabla <b>equipos</b>.
-            Añade o da de alta equipos UT desde la página de <b>Equipos</b>.
-          </p>
+        {/* Aviso grande si no hay equipos UT */}
+        {!loadingEquipos && equiposUT.length === 0 && debugEquipos.totalEnDB > 0 && (
+          <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
+            <p className="text-xs text-red-700 font-semibold">
+              ⚠️ Hay {debugEquipos.totalEnDB} equipos en BD, pero ninguno tiene técnica UT.
+            </p>
+            <p className="text-xs text-red-600 mt-1">
+              Códigos de técnica encontrados: <b>{debugEquipos.codigosEncontrados.join(', ') || 'ninguno'}</b>.
+              Necesitas que algún equipo tenga un código que empiece por <b>UT</b> (por ejemplo <b>UT</b>, <b>UT-1</b>).
+            </p>
+          </div>
         )}
-
-        {/* Chip informativo del equipo seleccionado */}
-        {equipoSeleccionado && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
-              {equipoSeleccionado.id_equipo}
-            </span>
-            <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
-            {equipoSeleccionado.codigo_barras && (
-              <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
-            )}
-            {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
-              <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
-                {equipoSeleccionado.estado}
-              </span>
-            )}
+        {!loadingEquipos && debugEquipos.totalEnDB === 0 && !debugEquipos.errorMsg && (
+          <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2">
+            <p className="text-xs text-yellow-800">
+              ⚠️ La consulta no ha devuelto ningún equipo. Puede ser un problema de <b>RLS</b> (permisos) o que la tabla esté vacía.
+            </p>
+          </div>
+        )}
+        {debugEquipos.errorMsg && (
+          <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
+            <p className="text-xs text-red-700 font-semibold">❌ Error de consulta:</p>
+            <p className="text-xs text-red-600 font-mono mt-1">{debugEquipos.errorMsg}</p>
           </div>
         )}
 
@@ -961,7 +1047,6 @@ export function GridMappingPage() {
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
           🗣️ <b>Toca una celda</b> → habla → di el valor (p. ej. <i>«dos coma cero dos»</i>). El micrófono se cierra solo.
-          Di <b>«fila N»</b> o <b>«FIN»</b> en cualquier momento para controlar la fila activa.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
