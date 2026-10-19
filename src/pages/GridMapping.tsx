@@ -18,12 +18,13 @@ function colIndex(name: string): number {
 const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
 const RESERVED_NOMINAL_KEY = '_nominal';
-const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+const LISTEN_TIMEOUT_MS = 10000;
 
 type GridData = Record<string, string>;
 type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string };
 type Direction = 'right' | 'down';
 type RowMode = { active: boolean; row: number; colIdx: number };
+type ListenMode = 'none' | 'cell' | 'command';
 
 interface GridMappingRow {
   id: string; matricula: string; wo_sap: string | null; fr: string | null;
@@ -153,25 +154,6 @@ function nextKey(key: string, direction: Direction, colsN: number, rowsN: number
   return colName(ci) + ri;
 }
 
-/* -------------------- Carga de @xenova/transformers ------------------- */
-
-let transformersPromise: Promise<any> | null = null;
-
-async function loadTransformers(): Promise<any> {
-  if (transformersPromise) return transformersPromise;
-  transformersPromise = (async () => {
-    // Cargar el módulo ESM dinámicamente desde jsDelivr
-    const mod = await import(/* @vite-ignore */ `${TRANSFORMERS_CDN}`);
-    // Configurar para usar CDN de modelos de Hugging Face
-    mod.env.allowLocalModels = false;
-    mod.env.useBrowserCache = true;
-    // Opcional: si quieres acelerar con WebGPU cuando esté disponible
-    // mod.env.backends.onnx.wasm.numThreads = 1;
-    return mod;
-  })();
-  return transformersPromise;
-}
-
 /* ----------------------------- Componente ----------------------------- */
 
 export function GridMappingPage() {
@@ -181,9 +163,7 @@ export function GridMappingPage() {
   const [grid, setGrid] = useState<GridData>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [direction, setDirection] = useState<Direction>('right');
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [status, setStatus] = useState<string>('Pulsa «Grabar lectura» y di el valor. Vuelve a pulsar para transcribir.');
+  const [status, setStatus] = useState<string>('Toca una celda para dictar su valor, o pulsa «Dictar fila N / FIN».');
   const [heard, setHeard] = useState<string>('');
   const [lastNormalized, setLastNormalized] = useState<string>('');
   const [lastReadings, setLastReadings] = useState<string[]>([]);
@@ -193,6 +173,10 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [nominalThickness, setNominalThickness] = useState<string>('');
+
+  /* ---- Escucha ---- */
+  const [listenMode, setListenMode] = useState<ListenMode>('none');
+  const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
 
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
@@ -216,12 +200,12 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
-  /* ---- Modelo y grabación ---- */
-  const [modelLoading, setModelLoading] = useState(false);
-  const [modelProgress, setModelProgress] = useState(0);
-  const transcriberRef = useRef<any>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  /* ---- Refs de reconocimiento ---- */
+  const recRef = useRef<any>(null);
+  const modeRef = useRef<ListenMode>('none');
+  const cellRef = useRef<string | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+  const wantsStopRef = useRef<boolean>(false);
 
   const filled = useMemo(
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
@@ -309,7 +293,7 @@ export function GridMappingPage() {
   };
 
   /* ------------------ Procesamiento de texto ------------------ */
-  const handleVoiceFinal = useCallback((text: string) => {
+  const handleVoice = useCallback((text: string, targetCell: string | null) => {
     const s = normalizeVoice(text);
     setLastNormalized(s);
     if (!s) return;
@@ -339,13 +323,33 @@ export function GridMappingPage() {
       if (rowModeRef.current.active) {
         const r = rowModeRef.current.row;
         updateRowMode({ active: false, row: 0, colIdx: 0 });
-        setStatus(`Fila ${r} terminada · di «fila N» para continuar`);
+        setStatus(`Fila ${r} terminada · toca una celda o di «fila N»`);
       } else {
         setStatus('No hay fila activa · di «fila N» primero');
       }
       return;
     }
 
+    // 1) Si tenemos celda objetivo → aplicar SOLO a esa celda
+    if (targetCell) {
+      const values = extractReadings(s, true);
+      setLastReadings(values);
+      if (values.length === 0) {
+        setStatus('No se reconoció ningún número · repite la lectura');
+        return;
+      }
+      const v = values[0];
+      setCell(targetCell, v);
+      flashCell(targetCell);
+      setStatus(`✔ ${targetCell} = ${format2(v)}`);
+
+      // Auto-avanzar selección al siguiente
+      const nk = nextKey(targetCell, direction, colsRef.current, rowsRef.current);
+      if (nk) setSelected(nk);
+      return;
+    }
+
+    // 2) Sin celda objetivo → comportamiento de fila activa
     if (rowModeRef.current.active) {
       const values = extractReadings(s, true);
       setLastReadings(values);
@@ -386,135 +390,148 @@ export function GridMappingPage() {
       return;
     }
 
-    if (/^\d+(\.\d+)?$/.test(s)) setStatus('Di «fila N» primero para empezar.');
+    if (/^\d+(\.\d+)?$/.test(s)) {
+      setStatus('Toca una celda primero o di «fila N».');
+    }
   }, [setCell, flashCell, updateRowMode, direction]);
 
-  const handleVoiceFinalRef = useRef(handleVoiceFinal);
-  useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
+  const handleVoiceRef = useRef(handleVoice);
+  useEffect(() => { handleVoiceRef.current = handleVoice; }, [handleVoice]);
 
-  /* -------------------- Init del modelo -------------------- */
-  const initModel = useCallback(async () => {
-    if (transcriberRef.current) return transcriberRef.current;
-
-    setModelLoading(true);
-    setModelProgress(0);
-    setStatus('Cargando Whisper (solo la primera vez, ~75 MB)…');
-
-    try {
-      const { pipeline, env } = await loadTransformers();
-      env.allowLocalModels = false;
-
-      const transcriber = await pipeline(
-        'automatic-speech-recognition',
-        'Xenova/whisper-tiny',
-        {
-          language: 'spanish',
-          task: 'transcribe',
-          quantized: true,
-          progress_callback: (p: any) => {
-            if (typeof p?.progress === 'number') {
-              setModelProgress(Math.round(p.progress));
-            }
-          },
-        },
-      );
-
-      transcriberRef.current = transcriber;
-      setStatus('Modelo listo. Pulsa «Grabar lectura» para dictar.');
-      return transcriber;
-    } catch (err: any) {
-      console.error('[Whisper] Error cargando modelo:', err);
-      setStatus('❌ Error cargando el modelo: ' + (err?.message ?? 'desconocido'));
-      throw err;
-    } finally {
-      setModelLoading(false);
+  /* ------------------ Reconocimiento one-shot ------------------ */
+  const stopRecognition = useCallback((reason?: string) => {
+    wantsStopRef.current = true;
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
+    if (recRef.current) {
+      try { recRef.current.stop(); } catch { /* noop */ }
+      try { recRef.current.abort?.(); } catch { /* noop */ }
+    }
+    recRef.current = null;
+    modeRef.current = 'none';
+    cellRef.current = null;
+    setListenMode('none');
+    setActiveCellKey(null);
+    if (reason) setStatus(reason);
   }, []);
 
-  /* -------------------- Grabar / transcribir -------------------- */
-  const toggleRecording = useCallback(async () => {
-    // Si está grabando, parar y transcribir
-    if (recording && mediaRecorderRef.current) {
-      try { mediaRecorderRef.current.stop(); } catch { /* noop */ }
-      setRecording(false);
-      setStatus('Transcribiendo…');
+  const startRecognition = useCallback((mode: ListenMode, cell: string | null) => {
+    // Cerrar el anterior si hubiera
+    if (modeRef.current !== 'none') {
+      stopRecognition();
+    }
+
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setStatus('❌ Este navegador no soporta voz. Usa Chrome o Edge.');
       return;
     }
 
-    // Si no está grabando, iniciar
-    try {
-      setStatus('Preparando modelo…');
-      await initModel();
+    wantsStopRef.current = false;
+    modeRef.current = mode;
+    cellRef.current = cell;
+    setListenMode(mode);
+    setActiveCellKey(cell);
+    setHeard('');
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          noiseSuppression: true,
-          echoCancellation: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
-      });
+    const rec = new SR();
+    rec.lang = 'es-ES';
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      audioChunksRef.current = [];
+    rec.onstart = () => {
+      if (mode === 'cell' && cell) {
+        setStatus(`🎤 Escuchando para ${cell}… di el valor.`);
+      } else {
+        setStatus('🎤 Escuchando… di «fila N» o «FIN».');
+      }
+    };
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
+    rec.onresult = (e: any) => {
+      const result = e.results[e.resultIndex];
 
-      mediaRecorder.onstop = async () => {
-        // Detener el micrófono
-        stream.getTracks().forEach((t) => t.stop());
+      // Interim → mostrar
+      if (!result.isFinal) {
+        let interim = '';
+        for (let i = 0; i < result.length; i++) interim += result[i].transcript + ' ';
+        setHeard(interim.trim());
+        return;
+      }
 
-        if (audioChunksRef.current.length === 0) {
-          setStatus('No se capturó audio. Inténtalo de nuevo.');
-          return;
-        }
+      // Final → elegir mejor alternativa (la primera suele ser la más fiable)
+      let best = result[0]?.transcript?.trim() ?? '';
+      setHeard(best);
 
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const arrayBuffer = await blob.arrayBuffer();
+      const target = modeRef.current === 'cell' ? cellRef.current : null;
+      // Parar reconocimiento ANTES de aplicar para que no se acumule
+      stopRecognition();
+      handleVoiceRef.current(best, target);
+    };
 
-        setTranscribing(true);
-        try {
-          // Transformers.js acepta un Float32Array a 16 kHz
-          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
-            sampleRate: 16000,
-          });
-          const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-          const float32 = audioBuffer.getChannelData(0);
+    rec.onerror = (e: any) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        stopRecognition('❌ Permiso de micrófono denegado (necesita HTTPS).');
+      } else if (e.error === 'no-speech') {
+        stopRecognition('⏸ No se detectó voz.');
+      } else if (e.error === 'aborted') {
+        // Cancelación manual, silencio
+      } else {
+        stopRecognition('⚠️ Error de voz: ' + e.error);
+      }
+    };
 
-          const result = await transcriberRef.current(float32, {
-            language: 'spanish',
-            task: 'transcribe',
-          });
+    rec.onend = () => {
+      // Si el navegador cierra solo (por silencio) sin resultado → limpiar
+      if (!wantsStopRef.current) {
+        stopRecognition('⏸ Sin resultado. Toca la celda de nuevo.');
+      }
+    };
 
-          const text = String(result?.text ?? '').trim();
-          setHeard(text || '(sin transcripción)');
-          if (text) handleVoiceFinalRef.current(text);
-          else setStatus('No se detectó voz. Vuelve a intentarlo.');
-        } catch (err: any) {
-          console.error('[Whisper] Error transcribiendo:', err);
-          setStatus('❌ Error al transcribir: ' + (err?.message ?? 'desconocido'));
-        } finally {
-          setTranscribing(false);
-        }
-      };
-
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
-      setRecording(true);
-      setStatus('🎙️ Grabando… vuelve a pulsar para parar y transcribir.');
-    } catch (err: any) {
-      console.error('[Whisper] Error iniciando grabación:', err);
-      setStatus('❌ Error al iniciar grabación: ' + (err?.message ?? 'desconocido'));
+    recRef.current = rec;
+    try { rec.start(); } catch (err: any) {
+      stopRecognition('⚠️ ' + err.message);
+      return;
     }
-  }, [recording, initModel]);
+
+    // Timeout de seguridad
+    timeoutRef.current = window.setTimeout(() => {
+      stopRecognition('⏸ Tiempo agotado. Toca la celda de nuevo.');
+    }, LISTEN_TIMEOUT_MS);
+  }, [stopRecognition]);
+
+  /* --------------- Click en celda → dictar --------------- */
+  const onCellClick = useCallback((key: string) => {
+    if (modeRef.current === 'cell' && cellRef.current === key) {
+      // Ya está escuchando para esta celda → cancelar
+      stopRecognition('Cancelado.');
+      return;
+    }
+    setSelected(key);
+    startRecognition('cell', key);
+  }, [startRecognition, stopRecognition]);
+
+  /* --------------- Botón comando global --------------- */
+  const toggleCommandMic = useCallback(() => {
+    if (modeRef.current === 'command') {
+      stopRecognition('Detenido.');
+    } else {
+      startRecognition('command', null);
+    }
+  }, [startRecognition, stopRecognition]);
 
   useEffect(() => () => {
-    try { mediaRecorderRef.current?.stop?.(); } catch { /* noop */ }
+    wantsStopRef.current = true;
+    if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+    if (recRef.current) {
+      try { recRef.current.abort?.(); } catch { /* noop */ }
+    }
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
+  /* ------------------ Cambiar tamaño ------------------ */
   const setRowsCount = (n: number) => {
     if (n < MIN_ROWS || n > MAX_ROWS) return;
     if (n < rows) {
@@ -561,38 +578,47 @@ export function GridMappingPage() {
     setCols(n); colsRef.current = n;
   };
 
+  /* ------------------ Manual / acciones ------------------ */
   const applyManual = useCallback(() => {
     if (!manual.trim()) return;
     const s = normalizeVoice(manual);
     setLastNormalized(s);
-    const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
-    if (coords.length === 0) {
+
+    const targetCell = focusedKey ?? selected;
+    if (targetCell) {
       const vals = extractReadings(s, true);
       setLastReadings(vals);
-      if (vals.length > 0 && selected) {
-        setCell(selected, vals[0]); flashCell(selected);
-        const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
-        setStatus(`✔ ${selected} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
+      if (vals.length > 0) {
+        setCell(targetCell, vals[0]); flashCell(targetCell);
+        const nk = nextKey(targetCell, direction, colsRef.current, rowsRef.current);
+        setStatus(`✔ ${targetCell} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
         advance();
-      } else {
-        setStatus('⚠️ No se reconoció ninguna coordenada.');
+        setManual('');
+        return;
       }
-    } else {
+    }
+
+    const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
+    if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
       setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
+    } else {
+      setStatus('⚠️ Toca una celda o escribe A1 12.5 …');
     }
     setManual('');
-  }, [manual, selected, setCell, advance, flashCell, direction]);
+  }, [manual, focusedKey, selected, setCell, advance, flashCell, direction]);
 
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
+    stopRecognition();
     setGrid({}); setSelected(null);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setStatus('Cuadrícula vacía.');
   };
   const newMapping = () => {
+    stopRecognition();
     setRecordId(null); setGrid({}); setSelected(null);
     setNominalThickness('');
     updateRowMode({ active: false, row: 0, colIdx: 0 });
@@ -600,6 +626,7 @@ export function GridMappingPage() {
     setStatus('Nueva cuadrícula lista.');
   };
 
+  /* ------------------ Persistencia ------------------ */
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     const { data, error } = await supabase
@@ -702,7 +729,7 @@ export function GridMappingPage() {
         <div>
           <h1 className="text-xl md:text-2xl font-semibold text-airbus-navy">Grid Mapping</h1>
           <p className="text-sm text-gray-500">
-            Lectura por voz · fila → lecturas → FIN
+            Toca una celda para dictar su valor
             {recordId && (<> · <span className="text-airbus-green">editando</span></>)}
           </p>
         </div>
@@ -738,17 +765,13 @@ export function GridMappingPage() {
       </div>
 
       <div className="card space-y-3">
-        <button onClick={toggleRecording} disabled={modelLoading || transcribing}
+        <button onClick={toggleCommandMic}
           className={`w-full py-3 rounded-lg font-semibold text-white transition ${
-            recording ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'
-          } disabled:opacity-60`}>
-          {modelLoading
-            ? `Cargando modelo… ${modelProgress}%`
-            : transcribing
-            ? '⏳ Transcribiendo…'
-            : recording
-            ? '⏹ Parar y transcribir'
-            : '🎙️ Grabar lectura'}
+            listenMode === 'command'
+              ? 'bg-airbus-red animate-pulse'
+              : 'bg-airbus-blue hover:bg-airbus-navy'
+          }`}>
+          {listenMode === 'command' ? '⏹ Cancelar comando' : '🎤 Dictar fila N / FIN (comando)'}
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -757,13 +780,24 @@ export function GridMappingPage() {
               📋 Fila {rowMode.row} <span className="text-xs opacity-90">{nextCellLabel ? `siguiente: ${nextCellLabel}` : 'completa · di FIN'}</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium">Sin fila activa · di «fila N»</span>
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium">Sin fila activa</span>
           )}
           <span className="text-xs text-gray-500">{status}</span>
         </div>
 
         <div className="min-h-[38px] text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700">
-          {heard || <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>}
+          {heard ? (
+            <>
+              {listenMode === 'cell' && activeCellKey && (
+                <span className="mr-2 text-[11px] px-2 py-0.5 rounded bg-airbus-blue text-white font-mono">
+                  {activeCellKey}
+                </span>
+              )}
+              {heard}
+            </>
+          ) : (
+            <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>
+          )}
         </div>
 
         {(lastNormalized || lastReadings.length > 0) && (
@@ -776,8 +810,8 @@ export function GridMappingPage() {
         )}
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
-          🗣️ Pulsa <b>«Grabar lectura»</b>, di el valor (p. ej. <i>«dos coma cero dos»</i>) y vuelve a pulsar para transcribir.
-          Di <b>«fila N»</b> o <b>«FIN»</b> también por voz. La app usa Whisper localmente.
+          🗣️ <b>Toca una celda</b> → habla → di el valor (p. ej. <i>«dos coma cero dos»</i>). El micrófono se cierra solo.
+          Di <b>«fila N»</b> o <b>«FIN»</b> en cualquier momento para controlar la fila activa.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
@@ -835,13 +869,13 @@ export function GridMappingPage() {
               return (
                 <tr key={r}>
                   <th className={`font-bold text-xs border border-gray-200 h-10 transition-colors ${isCurrentRow ? 'bg-airbus-blue text-white' : 'bg-gray-100 text-gray-600'}`}>{r}</th>
-                  {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c, ci) => {
+                  {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => {
                     const key = `${c}${r}`;
                     const v = grid[key] ?? '';
                     const display = displayValue(key, v);
                     const active = selected === key;
+                    const listening = listenMode === 'cell' && activeCellKey === key;
                     const flashing = flashKey === key;
-                    const isNext = isCurrentRow && rowMode.colIdx === ci;
                     const numeric = isNumeric(v);
                     const bg = numeric && valueStats.hasData
                       ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
@@ -849,13 +883,14 @@ export function GridMappingPage() {
                     return (
                       <td
                         key={key}
-                        className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${isNext && !v ? 'outline outline-2 outline-dashed outline-airbus-blue' : ''}`}
+                        className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${listening ? 'outline outline-2 outline-red-500' : ''}`}
                         style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}
                       >
                         <input
                           className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
                           inputMode="decimal"
                           value={display}
+                          onClick={() => onCellClick(key)}
                           onChange={(e) => setCellRaw(key, e.target.value)}
                           onFocus={() => { setFocusedKey(key); setSelected(key); }}
                           onBlur={(e) => {
