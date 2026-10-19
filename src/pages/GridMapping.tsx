@@ -85,27 +85,17 @@ const ORDINALS: Record<string, number> = {
   novena: 9, noveno: 9, decima: 10, decimo: 10,
 };
 
-/**
- * Normaliza el texto dictado:
- *   "dos coma cero dos" → "2.02"
- *   "doce coma cinco"   → "12.5"
- *   "a prima uno doce coma cinco" → "a'1 12.5"
- *   "2.02, 2.05"        → "2.02 , 2.05" (dos valores separados)
- */
 function normalizeVoice(text: string): string {
   let s = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
 
-  // 1) Convierte números-palabra a dígitos
   s = s.split(/\s+/).map((w) => {
     const clean = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
     return NUM_WORDS[clean] !== undefined ? ` ${NUM_WORDS[clean]} ` : w;
   }).join(' ');
 
-  // 2) Marca "coma" y "punto" como separador decimal
   s = s.replace(/\bcoma\b|\bpunto\b/g, ' DEC ');
 
-  // 3) Reconstrúye: tras DEC, une dígitos sueltos como parte decimal
   const tokens = s.split(/\s+/).filter(Boolean);
   const out: string[] = [];
   let state: 'normal' | 'waitDec' | 'inDec' = 'normal';
@@ -132,7 +122,6 @@ function normalizeVoice(text: string): string {
   }
   s = out.join(' ');
 
-  // 4) Primes y limpieza
   s = s.replace(/\bdoble\s+prima\b/g, "''")
        .replace(/\bprima\b/g, "'")
        .replace(/\bprimas\b/g, "'")
@@ -163,7 +152,6 @@ function fmtFecha(iso: string): string {
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
 
-/** Dado un key ("B3"), devuelve la siguiente coordenada según direction. */
 function nextKey(key: string, direction: Direction, colsN: number, rowsN: number): string | null {
   const m = key.match(/^([A-Z])('*)(\d+)$/);
   if (!m) return null;
@@ -212,11 +200,13 @@ export function GridMappingPage() {
     setRowModeState(next);
   }, []);
 
-  // grid ref para consultar "primera celda libre" sin re-suscribir callbacks
   const gridRef = useRef(grid);
   useEffect(() => { gridRef.current = grid; }, [grid]);
 
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+
+  /* --------- NUEVO: flag para saber cuándo está hablando la app -------- */
+  const isSpeakingRef = useRef(false);
 
   const [voiceFeedback, setVoiceFeedback] = useState(true);
   const voiceFeedbackRef = useRef(true);
@@ -231,7 +221,6 @@ export function GridMappingPage() {
 
   const filled = useMemo(() => Object.values(grid).filter(Boolean).length, [grid]);
 
-  /* ------------------- Stats para escala de color -------------------- */
   const valueStats = useMemo(() => {
     const nums: number[] = [];
     Object.values(grid).forEach((v) => {
@@ -241,7 +230,6 @@ export function GridMappingPage() {
     return { min: Math.min(...nums), max: Math.max(...nums), hasData: true };
   }, [grid]);
 
-  /* --------------------- Normalizar valores antiguos ----------------- */
   useEffect(() => {
     let needsUpdate = false;
     const next: GridData = { ...grid };
@@ -276,11 +264,22 @@ export function GridMappingPage() {
     if (!voiceFeedbackRef.current) return;
     const synth = synthRef.current;
     if (!synth) return;
+
+    // Marcar que la app va a hablar → el reconocedor ignorará lo que llegue
+    isSpeakingRef.current = true;
+
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'es-ES'; utter.rate = 1.15; utter.pitch = 1.0; utter.volume = 0.95;
     const voices = synth.getVoices();
     const esVoice = voices.find((v) => v.lang === 'es-ES') || voices.find((v) => v.lang.startsWith('es'));
     if (esVoice) utter.voice = esVoice;
+
+    // Cuando empieza a sonar, confirmamos el flag
+    utter.onstart = () => { isSpeakingRef.current = true; };
+    // Cuando termina (o se cancela / falla), lo liberamos
+    utter.onend = () => { isSpeakingRef.current = false; };
+    utter.onerror = () => { isSpeakingRef.current = false; };
+
     if (interrupt) {
       synth.cancel();
       setTimeout(() => synth.speak(utter), 60);
@@ -288,7 +287,10 @@ export function GridMappingPage() {
       synth.speak(utter);
     }
   }, []);
-  const cancelSpeech = useCallback(() => synthRef.current?.cancel(), []);
+  const cancelSpeech = useCallback(() => {
+    synthRef.current?.cancel();
+    isSpeakingRef.current = false;
+  }, []);
 
   const flashCell = useCallback((key: string) => {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
@@ -334,7 +336,6 @@ export function GridMappingPage() {
   const isSiguienteFila = (s: string) =>
     /\b(siguiente|otra|proxima)\s+fila\b/.test(s) || /\bfila\s+(siguiente|proxima)\b/.test(s);
 
-  /* --------------- Primera celda libre en una fila ------------------ */
   const firstEmptyCol = (rowNum: number): number => {
     const g = gridRef.current;
     for (let i = 0; i < colsRef.current; i++) {
@@ -348,7 +349,6 @@ export function GridMappingPage() {
     const s = normalizeVoice(text);
     if (!s) return;
 
-    // 1) "siguiente fila"
     if (isSiguienteFila(s)) {
       const currentRow = rowModeRef.current.active ? rowModeRef.current.row : 0;
       const nextRow = Math.min(rowsRef.current, currentRow + 1);
@@ -361,7 +361,6 @@ export function GridMappingPage() {
       }
     }
 
-    // 2) "fila N"
     const targetRow = detectRow(s);
     if (targetRow >= 1 && targetRow <= MAX_ROWS) {
       if (targetRow > rowsRef.current) { setRows(targetRow); rowsRef.current = targetRow; }
@@ -373,7 +372,6 @@ export function GridMappingPage() {
       return;
     }
 
-    // 3) "FIN"
     if (isFin(s)) {
       if (rowModeRef.current.active) {
         const r = rowModeRef.current.row;
@@ -386,7 +384,6 @@ export function GridMappingPage() {
       return;
     }
 
-    // 4) En modo fila: extrae TODOS los números de la frase y rellena celdas
     if (rowModeRef.current.active) {
       const values = [...s.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
       if (values.length === 0) {
@@ -419,7 +416,6 @@ export function GridMappingPage() {
       return;
     }
 
-    // 5) Fallback: coordenada completa "A1 2.02" (sin modo fila activo)
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
     if (coords.length > 0) {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
@@ -430,7 +426,6 @@ export function GridMappingPage() {
       return;
     }
 
-    // 6) Número suelto sin fila activa
     if (/^\d+(\.\d+)?$/.test(s)) {
       setStatus('Di «fila N» primero para empezar.');
       speak('Di fila, y el número', true);
@@ -456,6 +451,9 @@ export function GridMappingPage() {
     rec.lang = 'es-ES'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
     rec.onstart = () => { setListening(true); setStatus('Escuchando… di «fila N» para empezar.'); };
     rec.onresult = (e: any) => {
+      // 🔇 Si la app está hablando, ignoramos completamente el audio
+      if (isSpeakingRef.current) return;
+
       let interim = '', final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -483,6 +481,7 @@ export function GridMappingPage() {
 
   useEffect(() => () => {
     wantListenRef.current = false;
+    isSpeakingRef.current = false;
     recRef.current?.stop?.();
     synthRef.current?.cancel();
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
@@ -729,7 +728,7 @@ export function GridMappingPage() {
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
           🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas (<i>dos coma cero dos, dos coma cero cinco</i>) · <b>«FIN»</b> al terminar.
-          Tras cada valor te dirá la <b>coordenada siguiente</b> (ej. «B 1»).
+          Tras cada valor te dirá la <b>coordenada siguiente</b>. El micrófono se silencia mientras la app habla.
         </p>
 
         {/* Controles de tamaño */}
