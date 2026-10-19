@@ -179,9 +179,9 @@ async function clearWhisperCache(): Promise<void> {
 
 function loadWhisperScript(): Promise<void> {
   return new Promise((resolve, reject) => {
+    // La versión bundled inyecta un módulo en window.WhisperTranscriber
     if ((window as any).WhisperTranscriber) return resolve();
 
-    // Si ya hay un script cargado pero sin éxito, lo quitamos
     document.querySelectorAll('script[data-whisper-loader]').forEach((el) => el.remove());
 
     const script = document.createElement('script');
@@ -433,13 +433,18 @@ export function GridMappingPage() {
       setStatus('Cargando Whisper desde unpkg…');
       await loadWhisperScript();
 
-      const WhisperTranscriber = (window as any).WhisperTranscriber;
-      if (!WhisperTranscriber) {
+      // ✅ CORRECCIÓN: la versión bundled expone la clase dentro del módulo
+      const WhisperModule = (window as any).WhisperTranscriber;
+      if (!WhisperModule) {
         throw new Error('WhisperTranscriber no encontrado en window');
+      }
+      const WhisperClass = WhisperModule.WhisperTranscriber || WhisperModule;
+      if (typeof WhisperClass !== 'function') {
+        throw new Error('WhisperTranscriber no es un constructor válido');
       }
 
       setStatus('Iniciando transcriber…');
-      const transcriber = new WhisperTranscriber({
+      const transcriber = new WhisperClass({
         modelSize: 'tiny',
         language: 'es',
         debug: true,
