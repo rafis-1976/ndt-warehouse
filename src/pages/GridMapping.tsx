@@ -18,7 +18,7 @@ function colIndex(name: string): number {
 const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
 const RESERVED_NOMINAL_KEY = '_nominal';
-const WHISPER_SCRIPT_URL = 'https://unpkg.com/whisper-web-transcriber@0.2.5/dist/index.bundled.min.js';
+const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
 type GridData = Record<string, string>;
 type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string };
@@ -153,48 +153,23 @@ function nextKey(key: string, direction: Direction, colsN: number, rowsN: number
   return colName(ci) + ri;
 }
 
-/* -------------------- Utilidades de caché de Whisper ------------------ */
+/* -------------------- Carga de @xenova/transformers ------------------- */
 
-async function clearWhisperCache(): Promise<void> {
-  try {
-    const databases = await (indexedDB as any).databases?.();
-    if (!databases) return;
-    const whisperDbs = databases.filter((db: any) =>
-      db.name && String(db.name).toLowerCase().includes('whisper'),
-    );
-    for (const db of whisperDbs) {
-      if (db.name) {
-        try {
-          indexedDB.deleteDatabase(db.name);
-          console.log(`🗑️ Caché IndexedDB eliminada: ${db.name}`);
-        } catch (e) {
-          console.warn('No se pudo eliminar DB:', db.name, e);
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('indexedDB.databases() no disponible:', e);
-  }
-}
+let transformersPromise: Promise<any> | null = null;
 
-function loadWhisperScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // La versión bundled inyecta un módulo en window.WhisperTranscriber
-    if ((window as any).WhisperTranscriber) return resolve();
-
-    document.querySelectorAll('script[data-whisper-loader]').forEach((el) => el.remove());
-
-    const script = document.createElement('script');
-    script.src = WHISPER_SCRIPT_URL;
-    script.async = true;
-    script.setAttribute('data-whisper-loader', 'true');
-    script.onload = () => {
-      if ((window as any).WhisperTranscriber) resolve();
-      else reject(new Error('Script cargado pero WhisperTranscriber no está en window'));
-    };
-    script.onerror = () => reject(new Error('No se pudo cargar Whisper desde unpkg'));
-    document.head.appendChild(script);
-  });
+async function loadTransformers(): Promise<any> {
+  if (transformersPromise) return transformersPromise;
+  transformersPromise = (async () => {
+    // Cargar el módulo ESM dinámicamente desde jsDelivr
+    const mod = await import(/* @vite-ignore */ `${TRANSFORMERS_CDN}`);
+    // Configurar para usar CDN de modelos de Hugging Face
+    mod.env.allowLocalModels = false;
+    mod.env.useBrowserCache = true;
+    // Opcional: si quieres acelerar con WebGPU cuando esté disponible
+    // mod.env.backends.onnx.wasm.numThreads = 1;
+    return mod;
+  })();
+  return transformersPromise;
 }
 
 /* ----------------------------- Componente ----------------------------- */
@@ -206,8 +181,9 @@ export function GridMappingPage() {
   const [grid, setGrid] = useState<GridData>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [direction, setDirection] = useState<Direction>('right');
-  const [listening, setListening] = useState(false);
-  const [status, setStatus] = useState<string>('Pulsa «Iniciar lectura por voz» y di «fila 1».');
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [status, setStatus] = useState<string>('Pulsa «Grabar lectura» y di el valor. Vuelve a pulsar para transcribir.');
   const [heard, setHeard] = useState<string>('');
   const [lastNormalized, setLastNormalized] = useState<string>('');
   const [lastReadings, setLastReadings] = useState<string[]>([]);
@@ -240,10 +216,12 @@ export function GridMappingPage() {
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
-  /* ---- Whisper ---- */
+  /* ---- Modelo y grabación ---- */
   const [modelLoading, setModelLoading] = useState(false);
   const [modelProgress, setModelProgress] = useState(0);
-  const whisperRef = useRef<any>(null);
+  const transcriberRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const filled = useMemo(
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
@@ -372,7 +350,7 @@ export function GridMappingPage() {
       const values = extractReadings(s, true);
       setLastReadings(values);
       if (values.length === 0) {
-        setStatus('No se reconoció ningún número · di la lectura de nuevo');
+        setStatus('No se reconoció ningún número · repite la lectura');
         return;
       }
 
@@ -414,65 +392,126 @@ export function GridMappingPage() {
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
 
-  /* --------------------------- Whisper --------------------- */
-  const toggleListen = useCallback(async () => {
-    if (listening) {
-      try { whisperRef.current?.stopRecording?.(); } catch { /* noop */ }
-      setListening(false);
-      setStatus('Detenido.');
-      return;
-    }
+  /* -------------------- Init del modelo -------------------- */
+  const initModel = useCallback(async () => {
+    if (transcriberRef.current) return transcriberRef.current;
 
     setModelLoading(true);
     setModelProgress(0);
+    setStatus('Cargando Whisper (solo la primera vez, ~75 MB)…');
 
     try {
-      setStatus('Limpiando caché antigua de Whisper…');
-      await clearWhisperCache();
+      const { pipeline, env } = await loadTransformers();
+      env.allowLocalModels = false;
 
-      setStatus('Cargando Whisper desde unpkg…');
-      await loadWhisperScript();
-
-      // ✅ CORRECCIÓN: la versión bundled expone la clase dentro del módulo
-      const WhisperModule = (window as any).WhisperTranscriber;
-      if (!WhisperModule) {
-        throw new Error('WhisperTranscriber no encontrado en window');
-      }
-      const WhisperClass = WhisperModule.WhisperTranscriber || WhisperModule;
-      if (typeof WhisperClass !== 'function') {
-        throw new Error('WhisperTranscriber no es un constructor válido');
-      }
-
-      setStatus('Iniciando transcriber…');
-      const transcriber = new WhisperClass({
-        modelSize: 'tiny',
-        language: 'es',
-        debug: true,
-        onProgress: (p: number) => setModelProgress(p),
-        onStatus: (s: string) => setStatus(s),
-        onTranscription: (text: string) => {
-          handleVoiceFinalRef.current(text);
+      const transcriber = await pipeline(
+        'automatic-speech-recognition',
+        'Xenova/whisper-tiny',
+        {
+          language: 'spanish',
+          task: 'transcribe',
+          quantized: true,
+          progress_callback: (p: any) => {
+            if (typeof p?.progress === 'number') {
+              setModelProgress(Math.round(p.progress));
+            }
+          },
         },
-      });
+      );
 
-      setStatus('Descargando modelo (solo la primera vez)…');
-      await transcriber.loadModel();
-
-      whisperRef.current = transcriber;
-      await transcriber.startRecording();
-      setListening(true);
-      setStatus('Escuchando con Whisper (es)… di «fila N» para empezar.');
+      transcriberRef.current = transcriber;
+      setStatus('Modelo listo. Pulsa «Grabar lectura» para dictar.');
+      return transcriber;
     } catch (err: any) {
-      console.error('[Whisper] Error:', err);
-      setStatus('❌ Error al iniciar Whisper: ' + (err?.message ?? 'desconocido'));
+      console.error('[Whisper] Error cargando modelo:', err);
+      setStatus('❌ Error cargando el modelo: ' + (err?.message ?? 'desconocido'));
+      throw err;
     } finally {
       setModelLoading(false);
     }
-  }, [listening]);
+  }, []);
+
+  /* -------------------- Grabar / transcribir -------------------- */
+  const toggleRecording = useCallback(async () => {
+    // Si está grabando, parar y transcribir
+    if (recording && mediaRecorderRef.current) {
+      try { mediaRecorderRef.current.stop(); } catch { /* noop */ }
+      setRecording(false);
+      setStatus('Transcribiendo…');
+      return;
+    }
+
+    // Si no está grabando, iniciar
+    try {
+      setStatus('Preparando modelo…');
+      await initModel();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Detener el micrófono
+        stream.getTracks().forEach((t) => t.stop());
+
+        if (audioChunksRef.current.length === 0) {
+          setStatus('No se capturó audio. Inténtalo de nuevo.');
+          return;
+        }
+
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const arrayBuffer = await blob.arrayBuffer();
+
+        setTranscribing(true);
+        try {
+          // Transformers.js acepta un Float32Array a 16 kHz
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
+            sampleRate: 16000,
+          });
+          const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+          const float32 = audioBuffer.getChannelData(0);
+
+          const result = await transcriberRef.current(float32, {
+            language: 'spanish',
+            task: 'transcribe',
+          });
+
+          const text = String(result?.text ?? '').trim();
+          setHeard(text || '(sin transcripción)');
+          if (text) handleVoiceFinalRef.current(text);
+          else setStatus('No se detectó voz. Vuelve a intentarlo.');
+        } catch (err: any) {
+          console.error('[Whisper] Error transcribiendo:', err);
+          setStatus('❌ Error al transcribir: ' + (err?.message ?? 'desconocido'));
+        } finally {
+          setTranscribing(false);
+        }
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setRecording(true);
+      setStatus('🎙️ Grabando… vuelve a pulsar para parar y transcribir.');
+    } catch (err: any) {
+      console.error('[Whisper] Error iniciando grabación:', err);
+      setStatus('❌ Error al iniciar grabación: ' + (err?.message ?? 'desconocido'));
+    }
+  }, [recording, initModel]);
 
   useEffect(() => () => {
-    try { whisperRef.current?.stopRecording?.(); } catch { /* noop */ }
-    try { whisperRef.current?.destroy?.(); } catch { /* noop */ }
+    try { mediaRecorderRef.current?.stop?.(); } catch { /* noop */ }
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
@@ -699,9 +738,17 @@ export function GridMappingPage() {
       </div>
 
       <div className="card space-y-3">
-        <button onClick={toggleListen} disabled={modelLoading}
-          className={`w-full py-3 rounded-lg font-semibold text-white transition ${listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'} disabled:opacity-60`}>
-          {modelLoading ? `Cargando modelo… ${modelProgress}%` : listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz (Whisper)'}
+        <button onClick={toggleRecording} disabled={modelLoading || transcribing}
+          className={`w-full py-3 rounded-lg font-semibold text-white transition ${
+            recording ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'
+          } disabled:opacity-60`}>
+          {modelLoading
+            ? `Cargando modelo… ${modelProgress}%`
+            : transcribing
+            ? '⏳ Transcribiendo…'
+            : recording
+            ? '⏹ Parar y transcribir'
+            : '🎙️ Grabar lectura'}
         </button>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -729,8 +776,8 @@ export function GridMappingPage() {
         )}
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
-          🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas · <b>«FIN»</b> al terminar.
-          La app usa Whisper localmente, sin pitidos ni envío de audio a servidores.
+          🗣️ Pulsa <b>«Grabar lectura»</b>, di el valor (p. ej. <i>«dos coma cero dos»</i>) y vuelve a pulsar para transcribir.
+          Di <b>«fila N»</b> o <b>«FIN»</b> también por voz. La app usa Whisper localmente.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
