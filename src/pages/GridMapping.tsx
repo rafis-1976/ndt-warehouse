@@ -70,19 +70,12 @@ function colorForValue(v: number, min: number, max: number): string {
     const b = COLOR_STOPS[i + 1];
     if (t >= a.t && t <= b.t) {
       const k = (t - a.t) / (b.t - a.t);
-      return `rgb(${
-        Math.round(a.r + (b.r - a.r) * k)
-      }, ${
-        Math.round(a.g + (b.g - a.g) * k)
-      }, ${
-        Math.round(a.b + (b.b - a.b) * k)
-      })`;
+      return `rgb(${Math.round(a.r + (b.r - a.r) * k)}, ${Math.round(a.g + (b.g - a.g) * k)}, ${Math.round(a.b + (b.b - a.b) * k)})`;
     }
   }
   return 'rgb(255, 255, 191)';
 }
 
-/** Gradiente CSS que corresponde a COLOR_STOPS. */
 const LEGEND_GRADIENT =
   'linear-gradient(to right, ' +
   COLOR_STOPS.map((s) => `rgb(${s.r},${s.g},${s.b}) ${(s.t * 100).toFixed(0)}%`).join(', ') +
@@ -105,47 +98,77 @@ const ORDINALS: Record<string, number> = {
   novena: 9, noveno: 9, decima: 10, decimo: 10,
 };
 
+/**
+ * Normaliza el texto dictado y REPARA medidas "rotas":
+ *   "dos coma cero dos"    → "2.02"
+ *   "2.0 2"                → "2.02"
+ *   "2 02"                 → "2 02" (se une luego en extractReadings)
+ *   "2,02"                 → "2.02"
+ *   "2.0 2 2.0 5"          → "2.02 2.05"  (dos lecturas)
+ */
 function normalizeVoice(text: string): string {
   let s = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
 
+  // Palabras a dígitos
   s = s.split(/\s+/).map((w) => {
     const clean = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
     return NUM_WORDS[clean] !== undefined ? ` ${NUM_WORDS[clean]} ` : w;
   }).join(' ');
 
-  s = s.replace(/\bcoma\b|\bpunto\b/g, ' DEC ');
+  // "coma" / "punto" (palabra) → "."
+  s = s.replace(/\bcoma\b|\bpunto\b/g, ' . ');
 
-  const tokens = s.split(/\s+/).filter(Boolean);
-  const out: string[] = [];
-  let state: 'normal' | 'waitDec' | 'inDec' = 'normal';
+  // Espacios alrededor de puntos
+  s = s.replace(/\s*\.\s*/g, '.');
 
-  for (const tok of tokens) {
-    if (tok === 'DEC') { state = 'waitDec'; continue; }
-    if (state === 'waitDec') {
-      if (/^\d+$/.test(tok) && out.length > 0 && /\d$/.test(out[out.length - 1])) {
-        out[out.length - 1] += '.' + tok;
-        state = /^\d$/.test(tok) ? 'inDec' : 'normal';
-        continue;
-      }
-      state = 'normal';
-    }
-    if (state === 'inDec' && /^\d$/.test(tok)) {
-      out[out.length - 1] += tok;
-      continue;
-    }
-    state = 'normal';
-    out.push(tok);
-  }
-  s = out.join(' ');
+  // Unir X.Y Z → X.YZ  (iterativo, para cadenas "2.0 2 2.0 5")
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/(\d+)\.(\d)\s+(\d)(?![\d.])/g, '$1.$2$3');
+  } while (s !== prev);
 
+  // Coma como separador decimal: "2,02" → "2.02"
+  s = s.replace(/(\d),(\d)/g, '$1.$2');
+
+  // Primes
   s = s.replace(/\bdoble\s+prima\b/g, "''")
        .replace(/\bprima\b/g, "'")
-       .replace(/\bprimas\b/g, "'")
-       .replace(/(\d),(\d)/g, '$1.$2')
-       .replace(/\s+/g, ' ')
-       .trim();
+       .replace(/\bprimas\b/g, "'");
+
+  s = s.replace(/\s+/g, ' ').trim();
   return s;
+}
+
+/**
+ * Extrae la lista de valores a aplicar.
+ * En modo fila (expectSingle=true), si NO hay punto en el texto, une los dígitos
+ * sueltos como decimal ("2 02" → 2.02; "2 02 2 05" → 2.02 y 2.05 en pares).
+ */
+function extractReadings(normalized: string, expectSingle: boolean): string[] {
+  let values = [...normalized.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
+  if (!expectSingle) return values;
+  if (values.length === 0) return values;
+  if (/\./.test(normalized)) return values; // si ya hay punto → valores separados
+
+  // Sin punto: puede ser "X Y" (un decimal roto) o "X Y Z W" (dos decimales rotos)
+  if (values.length === 1) return values;
+
+  if (values.length >= 4 && values.length % 2 === 0) {
+    const paired: string[] = [];
+    for (let i = 0; i < values.length; i += 2) {
+      paired.push(values[i] + '.' + values[i + 1]);
+    }
+    return paired;
+  }
+
+  const first = values[0];
+  const rest = values.slice(1).join('');
+  if (rest.length <= 2) {
+    return [first + '.' + rest];
+  }
+  return values;
 }
 
 function parseCoordinates(s: string, rowsLimit: number, colsLimit: number) {
@@ -197,13 +220,14 @@ export function GridMappingPage() {
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState<string>('Pulsa «Iniciar lectura por voz» y di «fila 1».');
   const [heard, setHeard] = useState<string>('');
+  const [lastNormalized, setLastNormalized] = useState<string>('');
+  const [lastReadings, setLastReadings] = useState<string[]>([]);
   const [manual, setManual] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  /* ---- Espesor nominal (referencia) ---- */
   const [nominalThickness, setNominalThickness] = useState<string>('');
 
   const [rows, setRows] = useState(10);
@@ -225,7 +249,6 @@ export function GridMappingPage() {
 
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
-  /* --------- Flag anti-bucle TTS ---- */
   const isSpeakingRef = useRef(false);
 
   const [voiceFeedback, setVoiceFeedback] = useState(true);
@@ -239,13 +262,11 @@ export function GridMappingPage() {
   const recRef = useRef<any>(null);
   const wantListenRef = useRef(false);
 
-  /* Contador de celdas rellenas (ignora claves reservadas) */
   const filled = useMemo(
     () => Object.keys(grid).filter((k) => !k.startsWith('_') && grid[k]).length,
     [grid],
   );
 
-  /* Stats para la escala de color (ignora claves reservadas) */
   const valueStats = useMemo(() => {
     const nums: number[] = [];
     Object.entries(grid).forEach(([k, v]) => {
@@ -256,7 +277,6 @@ export function GridMappingPage() {
     return { min: Math.min(...nums), max: Math.max(...nums), hasData: true };
   }, [grid]);
 
-  /* Posición del nominal en la leyenda (0–100 %) */
   const nominalPct = useMemo(() => {
     if (!nominalThickness || !isNumeric(nominalThickness)) return null;
     if (!valueStats.hasData) return null;
@@ -266,7 +286,6 @@ export function GridMappingPage() {
     return Math.max(0, Math.min(100, t * 100));
   }, [nominalThickness, valueStats]);
 
-  /* Normalizar valores antiguos (ignora claves reservadas y la celda enfocada) */
   useEffect(() => {
     let needsUpdate = false;
     const next: GridData = { ...grid };
@@ -297,24 +316,19 @@ export function GridMappingPage() {
     };
   }, [speechSupported]);
 
-  /* -------------------------- Hablar ------------------------- */
   const speak = useCallback((text: string, interrupt = false) => {
     if (!voiceFeedbackRef.current) return;
     const synth = synthRef.current;
     if (!synth) return;
-
     isSpeakingRef.current = true;
-
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'es-ES'; utter.rate = 1.15; utter.pitch = 1.0; utter.volume = 0.95;
     const voices = synth.getVoices();
     const esVoice = voices.find((v) => v.lang === 'es-ES') || voices.find((v) => v.lang.startsWith('es'));
     if (esVoice) utter.voice = esVoice;
-
     utter.onstart = () => { isSpeakingRef.current = true; };
     utter.onend = () => { isSpeakingRef.current = false; };
     utter.onerror = () => { isSpeakingRef.current = false; };
-
     if (interrupt) {
       synth.cancel();
       setTimeout(() => synth.speak(utter), 60);
@@ -322,6 +336,7 @@ export function GridMappingPage() {
       synth.speak(utter);
     }
   }, []);
+
   const cancelSpeech = useCallback(() => {
     synthRef.current?.cancel();
     isSpeakingRef.current = false;
@@ -358,7 +373,6 @@ export function GridMappingPage() {
     setSelected(nk);
   }, [selected, direction]);
 
-  /* ------------------ Detección de comandos ------------------ */
   const detectRow = (s: string): number => {
     const m1 = s.match(/\bfila\b[^0-9]*?(\d+)/);
     if (m1) return parseInt(m1[1], 10);
@@ -379,9 +393,9 @@ export function GridMappingPage() {
     return colsRef.current;
   };
 
-  /* ------------------ Procesado de voz ----------------------- */
   const handleVoiceFinal = useCallback((text: string) => {
     const s = normalizeVoice(text);
+    setLastNormalized(s);
     if (!s) return;
 
     if (isSiguienteFila(s)) {
@@ -420,7 +434,9 @@ export function GridMappingPage() {
     }
 
     if (rowModeRef.current.active) {
-      const values = [...s.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
+      // En modo fila extraemos lecturas reparando medidas "rotas"
+      const values = extractReadings(s, true);
+      setLastReadings(values);
       if (values.length === 0) {
         setStatus('No se reconoció ningún número · di la lectura de nuevo');
         return;
@@ -470,7 +486,6 @@ export function GridMappingPage() {
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
 
-  /* --------------------------- Micrófono --------------------- */
   const toggleListen = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { setStatus('❌ Este navegador no soporta voz. Usa Chrome/Edge en Android, o el campo manual.'); return; }
@@ -520,7 +535,6 @@ export function GridMappingPage() {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
-  /* ------------------- Cambiar tamaño ----------------------- */
   const setRowsCount = (n: number) => {
     if (n < MIN_ROWS || n > MAX_ROWS) return;
     if (n < rows) {
@@ -569,16 +583,18 @@ export function GridMappingPage() {
     setCols(n); colsRef.current = n;
   };
 
-  /* ------------------- Manual / acciones ------------------- */
   const applyManual = useCallback(() => {
     if (!manual.trim()) return;
     const s = normalizeVoice(manual);
+    setLastNormalized(s);
     const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
     if (coords.length === 0) {
-      if (/^\d+(\.\d+)?$/.test(s) && selected) {
-        setCell(selected, s); flashCell(selected);
+      const vals = extractReadings(s, true);
+      setLastReadings(vals);
+      if (vals.length > 0 && selected) {
+        setCell(selected, vals[0]); flashCell(selected);
         const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
-        setStatus(`✔ ${selected} = ${format2(s)}`);
+        setStatus(`✔ ${selected} = ${format2(vals[0])}`);
         advance();
         if (nk) speak(nk, true);
       } else {
@@ -608,7 +624,6 @@ export function GridMappingPage() {
     setStatus('Nueva cuadrícula lista.');
   };
 
-  /* ------------------- Persistencia ------------------------ */
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     const { data, error } = await supabase
@@ -625,15 +640,11 @@ export function GridMappingPage() {
     if (error || !data) { setStatus('❌ ' + (error?.message ?? 'No encontrado')); return; }
     const row = data as GridMappingRow;
     setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha });
-
     const rawData = row.grid_data ?? {};
     const normalized: GridData = {};
     let nominalFromGrid = '';
     Object.entries(rawData).forEach(([k, v]) => {
-      if (k === RESERVED_NOMINAL_KEY) {
-        nominalFromGrid = v ?? '';
-        return;
-      }
+      if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
     setGrid(normalized);
@@ -653,11 +664,9 @@ export function GridMappingPage() {
         const v = grid[k];
         if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
       });
-      // Guardamos el nominal dentro del JSON con clave reservada
       if (nominalThickness && isNumeric(nominalThickness)) {
         cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
       }
-
       const payload = {
         user_id: user?.id ?? null,
         matricula: meta.matricula.trim(),
@@ -708,8 +717,6 @@ export function GridMappingPage() {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
 
-  /* ------------------------------ Render ----------------------------- */
-
   const nextCellLabel = rowMode.active && rowMode.colIdx < cols ? `${colName(rowMode.colIdx)}${rowMode.row}` : null;
 
   const displayValue = (key: string, raw: string): string => {
@@ -724,7 +731,6 @@ export function GridMappingPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-full mx-auto space-y-4">
-      {/* Cabecera */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl md:text-2xl font-semibold text-airbus-navy">Grid Mapping</h1>
@@ -739,7 +745,6 @@ export function GridMappingPage() {
         </div>
       </div>
 
-      {/* Metadatos + Espesor nominal */}
       <div className="card">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
@@ -751,33 +756,20 @@ export function GridMappingPage() {
           <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha</label>
             <input className="input" type="date" value={meta.fecha} onChange={(e) => setMeta({ ...meta, fecha: e.target.value })} /></div>
           <div>
-            <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
-              Espesor nominal
-            </label>
-            <input
-              className="input"
-              type="text"
-              inputMode="decimal"
-              placeholder="mm"
+            <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">Espesor nominal</label>
+            <input className="input" type="text" inputMode="decimal" placeholder="mm"
               value={nominalThickness}
               onChange={(e) => setNominalThickness(e.target.value)}
-              onBlur={() => {
-                if (nominalThickness && isNumeric(nominalThickness)) {
-                  setNominalThickness(format2(nominalThickness));
-                }
-              }}
-            />
+              onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
           </div>
         </div>
         {nominalNum !== null && valueStats.hasData && (
           <p className="text-xs text-airbus-blue mt-2">
-            ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido{' '}
-            <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
+            ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
           </p>
         )}
       </div>
 
-      {/* Voz */}
       <div className="card space-y-3">
         <div className="flex gap-2 items-stretch">
           <button onClick={toggleListen}
@@ -808,12 +800,20 @@ export function GridMappingPage() {
           {heard || <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>}
         </div>
 
+        {/* Debug: texto normalizado y valores extraídos */}
+        {(lastNormalized || lastReadings.length > 0) && (
+          <div className="text-[11px] text-gray-400 bg-white border border-dashed border-gray-200 rounded-lg px-3 py-1.5 font-mono">
+            Normalizado: <b className="text-gray-600">{lastNormalized || '—'}</b>
+            {lastReadings.length > 0 && (
+              <> · Valores: <b className="text-gray-600">[{lastReadings.map((v) => format2(v)).join(', ')}]</b></>
+            )}
+          </div>
+        )}
+
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
           🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas (<i>dos coma cero dos, dos coma cero cinco</i>) · <b>«FIN»</b> al terminar.
-          Tras cada valor te dirá la <b>coordenada siguiente</b>. El micrófono se silencia mientras la app habla.
         </p>
 
-        {/* Controles de tamaño */}
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filas</span>
@@ -853,7 +853,6 @@ export function GridMappingPage() {
         </div>
       </div>
 
-      {/* Cuadrícula */}
       <div className="card p-0 overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -877,12 +876,10 @@ export function GridMappingPage() {
                     const active = selected === key;
                     const flashing = flashKey === key;
                     const isNext = isCurrentRow && rowMode.colIdx === ci;
-
                     const numeric = isNumeric(v);
                     const bg = numeric && valueStats.hasData
                       ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
                       : undefined;
-
                     return (
                       <td
                         key={key}
@@ -921,7 +918,6 @@ export function GridMappingPage() {
         </table>
       </div>
 
-      {/* 🎨 Leyenda (rojo = mínimo · verde = máximo) */}
       <div className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Escala de color</div>
@@ -931,11 +927,9 @@ export function GridMappingPage() {
               <div className="flex-1 relative py-2">
                 <div className="h-4 rounded-full border border-gray-200" style={{ background: LEGEND_GRADIENT }} />
                 {nominalPct !== null && (
-                  <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow"
+                  <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow"
                     style={{ left: `${nominalPct}%`, transform: 'translateX(-50%)' }}
-                    title={`Nominal: ${format2(nominalNum ?? 0)}`}
-                  />
+                    title={`Nominal: ${format2(nominalNum ?? 0)}`} />
                 )}
               </div>
               <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.max)}</span>
@@ -944,7 +938,6 @@ export function GridMappingPage() {
             <span className="text-xs text-gray-400">Introduce valores numéricos para ver el gradiente</span>
           )}
         </div>
-
         <div className="flex items-center gap-4 flex-wrap mt-2 text-[11px] text-gray-500">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgb(215,48,39)' }} />
@@ -967,7 +960,6 @@ export function GridMappingPage() {
         </div>
       </div>
 
-      {/* Historial */}
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
