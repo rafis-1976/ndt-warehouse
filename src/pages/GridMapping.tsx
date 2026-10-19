@@ -54,12 +54,12 @@ function isNumeric(v: string): boolean {
 
 /** Paleta RdYlGn (rojo → verde). t=0 → rojo (valor mínimo), t=1 → verde (valor máximo). */
 const COLOR_STOPS = [
-  { t: 0.00, r: 215, g: 48,  b: 39  }, // rojo
-  { t: 0.20, r: 253, g: 174, b: 97  }, // naranja
-  { t: 0.40, r: 255, g: 255, b: 191 }, // amarillo pálido
-  { t: 0.60, r: 217, g: 239, b: 139 }, // verde-amarillo
-  { t: 0.80, r: 102, g: 189, b: 99  }, // verde medio
-  { t: 1.00, r: 0,   g: 104, b: 55  }, // verde oscuro
+  { t: 0.00, r: 215, g: 48,  b: 39  },
+  { t: 0.20, r: 253, g: 174, b: 97  },
+  { t: 0.40, r: 255, g: 255, b: 191 },
+  { t: 0.60, r: 217, g: 239, b: 139 },
+  { t: 0.80, r: 102, g: 189, b: 99  },
+  { t: 1.00, r: 0,   g: 104, b: 55  },
 ];
 
 function colorForValue(v: number, min: number, max: number): string {
@@ -98,41 +98,26 @@ const ORDINALS: Record<string, number> = {
   novena: 9, noveno: 9, decima: 10, decimo: 10,
 };
 
-/**
- * Normaliza el texto dictado y REPARA medidas "rotas":
- *   "dos coma cero dos"    → "2.02"
- *   "2.0 2"                → "2.02"
- *   "2 02"                 → "2 02" (se une luego en extractReadings)
- *   "2,02"                 → "2.02"
- *   "2.0 2 2.0 5"          → "2.02 2.05"  (dos lecturas)
- */
 function normalizeVoice(text: string): string {
   let s = (text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   s = s.replace(/\bhache\b/g, 'h').replace(/\bjota\b/g, 'j');
 
-  // Palabras a dígitos
   s = s.split(/\s+/).map((w) => {
     const clean = w.replace(/^[.,;:]+/, '').replace(/[.,;:]+$/, '');
     return NUM_WORDS[clean] !== undefined ? ` ${NUM_WORDS[clean]} ` : w;
   }).join(' ');
 
-  // "coma" / "punto" (palabra) → "."
   s = s.replace(/\bcoma\b|\bpunto\b/g, ' . ');
-
-  // Espacios alrededor de puntos
   s = s.replace(/\s*\.\s*/g, '.');
 
-  // Unir X.Y Z → X.YZ  (iterativo, para cadenas "2.0 2 2.0 5")
   let prev;
   do {
     prev = s;
     s = s.replace(/(\d+)\.(\d)\s+(\d)(?![\d.])/g, '$1.$2$3');
   } while (s !== prev);
 
-  // Coma como separador decimal: "2,02" → "2.02"
   s = s.replace(/(\d),(\d)/g, '$1.$2');
 
-  // Primes
   s = s.replace(/\bdoble\s+prima\b/g, "''")
        .replace(/\bprima\b/g, "'")
        .replace(/\bprimas\b/g, "'");
@@ -141,18 +126,12 @@ function normalizeVoice(text: string): string {
   return s;
 }
 
-/**
- * Extrae la lista de valores a aplicar.
- * En modo fila (expectSingle=true), si NO hay punto en el texto, une los dígitos
- * sueltos como decimal ("2 02" → 2.02; "2 02 2 05" → 2.02 y 2.05 en pares).
- */
 function extractReadings(normalized: string, expectSingle: boolean): string[] {
   let values = [...normalized.matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
   if (!expectSingle) return values;
   if (values.length === 0) return values;
-  if (/\./.test(normalized)) return values; // si ya hay punto → valores separados
+  if (/\./.test(normalized)) return values;
 
-  // Sin punto: puede ser "X Y" (un decimal roto) o "X Y Z W" (dos decimales rotos)
   if (values.length === 1) return values;
 
   if (values.length >= 4 && values.length % 2 === 0) {
@@ -249,13 +228,6 @@ export function GridMappingPage() {
 
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
-  const isSpeakingRef = useRef(false);
-
-  const [voiceFeedback, setVoiceFeedback] = useState(true);
-  const voiceFeedbackRef = useRef(true);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
@@ -301,46 +273,6 @@ export function GridMappingPage() {
     if (needsUpdate) setGrid(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, focusedKey]);
-
-  useEffect(() => { voiceFeedbackRef.current = voiceFeedback; }, [voiceFeedback]);
-
-  useEffect(() => {
-    if (!speechSupported) return;
-    synthRef.current = window.speechSynthesis;
-    window.speechSynthesis.getVoices();
-    const onVoices = () => window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = onVoices;
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-      window.speechSynthesis.cancel();
-    };
-  }, [speechSupported]);
-
-  const speak = useCallback((text: string, interrupt = false) => {
-    if (!voiceFeedbackRef.current) return;
-    const synth = synthRef.current;
-    if (!synth) return;
-    isSpeakingRef.current = true;
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'es-ES'; utter.rate = 1.15; utter.pitch = 1.0; utter.volume = 0.95;
-    const voices = synth.getVoices();
-    const esVoice = voices.find((v) => v.lang === 'es-ES') || voices.find((v) => v.lang.startsWith('es'));
-    if (esVoice) utter.voice = esVoice;
-    utter.onstart = () => { isSpeakingRef.current = true; };
-    utter.onend = () => { isSpeakingRef.current = false; };
-    utter.onerror = () => { isSpeakingRef.current = false; };
-    if (interrupt) {
-      synth.cancel();
-      setTimeout(() => synth.speak(utter), 60);
-    } else {
-      synth.speak(utter);
-    }
-  }, []);
-
-  const cancelSpeech = useCallback(() => {
-    synthRef.current?.cancel();
-    isSpeakingRef.current = false;
-  }, []);
 
   const flashCell = useCallback((key: string) => {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
@@ -405,7 +337,6 @@ export function GridMappingPage() {
         const startCol = firstEmptyCol(nextRow);
         updateRowMode({ active: true, row: nextRow, colIdx: startCol });
         setStatus(`Fila ${nextRow} activa · siguiente: ${colName(startCol)}${nextRow}`);
-        speak(`Fila ${nextRow}, adelante`, true);
         return;
       }
     }
@@ -417,7 +348,6 @@ export function GridMappingPage() {
       updateRowMode({ active: true, row: targetRow, colIdx: startCol });
       setStatus(`Fila ${targetRow} activa · siguiente: ${colName(startCol)}${targetRow}`);
       setHeard(`Fila ${targetRow}`);
-      speak(`Fila ${targetRow}, adelante`, true);
       return;
     }
 
@@ -426,7 +356,6 @@ export function GridMappingPage() {
         const r = rowModeRef.current.row;
         updateRowMode({ active: false, row: 0, colIdx: 0 });
         setStatus(`Fila ${r} terminada · di «fila N» para continuar`);
-        speak(`Fila ${r} terminada`, true);
       } else {
         setStatus('No hay fila activa · di «fila N» primero');
       }
@@ -434,7 +363,6 @@ export function GridMappingPage() {
     }
 
     if (rowModeRef.current.active) {
-      // En modo fila extraemos lecturas reparando medidas "rotas"
       const values = extractReadings(s, true);
       setLastReadings(values);
       if (values.length === 0) {
@@ -457,12 +385,10 @@ export function GridMappingPage() {
       if (currentColIdx >= colsN) {
         updateRowMode({ active: true, row, colIdx: currentColIdx });
         setStatus(`Fila ${row} completa · di FIN`);
-        speak('Di fin', true);
       } else {
         const nextCol = colName(currentColIdx);
         updateRowMode({ active: true, row, colIdx: currentColIdx });
         setStatus(`✔ Fila ${row} · siguiente: ${nextCol}${row}`);
-        speak(`${nextCol} ${row}`, true);
       }
       return;
     }
@@ -472,16 +398,17 @@ export function GridMappingPage() {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
-      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}`);
-      if (nk) speak(nk, true);
+      setStatus(
+        `✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` +
+        (nk ? ` · siguiente: ${nk}` : ''),
+      );
       return;
     }
 
     if (/^\d+(\.\d+)?$/.test(s)) {
       setStatus('Di «fila N» primero para empezar.');
-      speak('Di fila, y el número', true);
     }
-  }, [setCell, flashCell, speak, updateRowMode, direction]);
+  }, [setCell, flashCell, updateRowMode, direction]);
 
   const handleVoiceFinalRef = useRef(handleVoiceFinal);
   useEffect(() => { handleVoiceFinalRef.current = handleVoiceFinal; }, [handleVoiceFinal]);
@@ -492,7 +419,6 @@ export function GridMappingPage() {
     if (listening) {
       wantListenRef.current = false;
       recRef.current?.stop?.();
-      cancelSpeech();
       setListening(false);
       return;
     }
@@ -501,7 +427,6 @@ export function GridMappingPage() {
     rec.lang = 'es-ES'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
     rec.onstart = () => { setListening(true); setStatus('Escuchando… di «fila N» para empezar.'); };
     rec.onresult = (e: any) => {
-      if (isSpeakingRef.current) return;
       let interim = '', final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -525,13 +450,11 @@ export function GridMappingPage() {
     };
     recRef.current = rec;
     try { rec.start(); } catch (err: any) { setStatus('⚠️ ' + err.message); }
-  }, [listening, cancelSpeech]);
+  }, [listening]);
 
   useEffect(() => () => {
     wantListenRef.current = false;
-    isSpeakingRef.current = false;
     recRef.current?.stop?.();
-    synthRef.current?.cancel();
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
@@ -594,9 +517,8 @@ export function GridMappingPage() {
       if (vals.length > 0 && selected) {
         setCell(selected, vals[0]); flashCell(selected);
         const nk = nextKey(selected, direction, colsRef.current, rowsRef.current);
-        setStatus(`✔ ${selected} = ${format2(vals[0])}`);
+        setStatus(`✔ ${selected} = ${format2(vals[0])}` + (nk ? ` · siguiente: ${nk}` : ''));
         advance();
-        if (nk) speak(nk, true);
       } else {
         setStatus('⚠️ No se reconoció ninguna coordenada.');
       }
@@ -604,11 +526,13 @@ export function GridMappingPage() {
       coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
       const lastKey = coords[coords.length - 1].key;
       const nk = nextKey(lastKey, direction, colsRef.current, rowsRef.current);
-      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}`);
-      if (nk) speak(nk, true);
+      setStatus(
+        `✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` +
+        (nk ? ` · siguiente: ${nk}` : ''),
+      );
     }
     setManual('');
-  }, [manual, selected, setCell, advance, flashCell, direction, speak]);
+  }, [manual, selected, setCell, advance, flashCell, direction]);
 
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
@@ -771,19 +695,10 @@ export function GridMappingPage() {
       </div>
 
       <div className="card space-y-3">
-        <div className="flex gap-2 items-stretch">
-          <button onClick={toggleListen}
-            className={`flex-1 py-3 rounded-lg font-semibold text-white transition ${listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'}`}>
-            {listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz'}
-          </button>
-          {speechSupported && (
-            <button onClick={() => setVoiceFeedback((v) => !v)}
-              className={`px-4 py-3 rounded-lg font-semibold border-2 transition ${voiceFeedback ? 'bg-airbus-green text-white border-airbus-green' : 'bg-white text-gray-400 border-gray-300'}`}
-              title={voiceFeedback ? 'Silenciar repetición' : 'Activar repetición'}>
-              {voiceFeedback ? '🔊' : '🔇'}
-            </button>
-          )}
-        </div>
+        <button onClick={toggleListen}
+          className={`w-full py-3 rounded-lg font-semibold text-white transition ${listening ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'}`}>
+          {listening ? '⏹ Detener (escuchando…)' : '🎤 Iniciar lectura por voz'}
+        </button>
 
         <div className="flex items-center gap-2 flex-wrap">
           {rowMode.active ? (
@@ -800,7 +715,6 @@ export function GridMappingPage() {
           {heard || <i className="text-gray-400">Aquí aparecerá lo reconocido…</i>}
         </div>
 
-        {/* Debug: texto normalizado y valores extraídos */}
         {(lastNormalized || lastReadings.length > 0) && (
           <div className="text-[11px] text-gray-400 bg-white border border-dashed border-gray-200 rounded-lg px-3 py-1.5 font-mono">
             Normalizado: <b className="text-gray-600">{lastNormalized || '—'}</b>
@@ -812,6 +726,7 @@ export function GridMappingPage() {
 
         <p className="text-xs text-gray-500 bg-airbus-cream/40 border border-airbus-light/30 rounded-lg px-3 py-2">
           🗣️ Di <b>«fila 1»</b> · dicta lecturas seguidas (<i>dos coma cero dos, dos coma cero cinco</i>) · <b>«FIN»</b> al terminar.
+          Tras cada valor la app te indicará la <b>coordenada siguiente</b> en el mensaje de estado.
         </p>
 
         <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
