@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
- 
+
 function colName(idx: number): string {
   if (idx < 0) return '';
   const letter = String.fromCharCode(65 + (idx % 26));
@@ -19,7 +19,7 @@ const MIN_ROWS = 1, MAX_ROWS = 50;
 const MIN_COLS = 1, MAX_COLS = 78;
 const RESERVED_NOMINAL_KEY = '_nominal';
 const RESERVED_EQUIPO_ID_KEY = '_equipo_ut_id';
-const RESERVED_EQUIPO_CODIGO_KEY = '_equipo_ut_codigo';
+const RESERVED_EQUIPO_SERIAL_KEY = '_equipo_ut_serial';
 const RESERVED_EQUIPO_NOMBRE_KEY = '_equipo_ut_nombre';
 const LISTEN_TIMEOUT_MS = 10000;
 
@@ -33,6 +33,7 @@ interface EquipoUT {
   id: string;
   id_equipo: string;
   nombre: string;
+  numero_serie: string | null;
   codigo_barras: string | null;
   estado: string | null;
   proxima_calibracion: string | null;
@@ -187,7 +188,8 @@ function getTecnicaCodigo(eq: EquipoUT): string | null {
 }
 
 function equipoLabel(eq: EquipoUT): string {
-  return `${estadoEmoji(eq.estado)}[${eq.id_equipo}] ${eq.nombre}`;
+  const serial = eq.numero_serie || eq.id_equipo || 'S/N';
+  return `${estadoEmoji(eq.estado)}[${serial}] ${eq.nombre}`;
 }
 
 /* ----------------------------- Componente ----------------------------- */
@@ -572,13 +574,13 @@ export function GridMappingPage() {
     setDebugEquipos({ totalEnDB: 0, totalUT: 0, codigosEncontrados: [], errorMsg: null });
 
     try {
-      // Estrategia robusta: cargar TODOS los equipos con su técnica y filtrar en JS
       const { data, error } = await supabase
         .from('equipos')
         .select(`
           id,
           id_equipo,
           nombre,
+          numero_serie,
           codigo_barras,
           estado,
           proxima_calibracion,
@@ -597,7 +599,6 @@ export function GridMappingPage() {
 
       const all = (data ?? []) as EquipoUT[];
 
-      // Recolectar todos los códigos de técnica para diagnóstico
       const codigosSet = new Set<string>();
       all.forEach((eq) => {
         const c = getTecnicaCodigo(eq);
@@ -605,7 +606,6 @@ export function GridMappingPage() {
       });
       const codigosEncontrados = Array.from(codigosSet).sort();
 
-      // Filtrar UT (acepta 'UT', 'ut', 'UT-1', 'UTIL...' etc.)
       const uts = all.filter((eq) => {
         const codigo = getTecnicaCodigo(eq);
         if (!codigo) return false;
@@ -755,7 +755,7 @@ export function GridMappingPage() {
     Object.entries(rawData).forEach(([k, v]) => {
       if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
       if (k === RESERVED_EQUIPO_ID_KEY) { equipoIdFromGrid = v ?? ''; return; }
-      if (k === RESERVED_EQUIPO_CODIGO_KEY) return;
+      if (k === RESERVED_EQUIPO_SERIAL_KEY) return;
       if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
@@ -784,7 +784,7 @@ export function GridMappingPage() {
         cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
         const eq = equiposUT.find((e) => e.id === equipoUtId);
         if (eq) {
-          cleanGrid[RESERVED_EQUIPO_CODIGO_KEY] = eq.id_equipo;
+          cleanGrid[RESERVED_EQUIPO_SERIAL_KEY] = eq.numero_serie || eq.id_equipo;
           cleanGrid[RESERVED_EQUIPO_NOMBRE_KEY] = eq.nombre;
         }
       }
@@ -820,8 +820,9 @@ export function GridMappingPage() {
 
     const eqSel = equiposUT.find((e) => e.id === equipoUtId);
     if (eqSel) {
+      const serial = eqSel.numero_serie || eqSel.id_equipo;
       const cb = eqSel.codigo_barras ? ` · CB: ${eqSel.codigo_barras}` : '';
-      data.push([`EQUIPO UT: [${eqSel.id_equipo}] ${eqSel.nombre}${cb}`]);
+      data.push([`EQUIPO UT: [${serial}] ${eqSel.nombre}${cb}`]);
     }
     if (nominalThickness && isNumeric(nominalThickness)) {
       data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
@@ -890,7 +891,6 @@ export function GridMappingPage() {
           🔧 Configuración de medición
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Selector equipo UT — grande, ocupa 2 columnas */}
           <div className="md:col-span-2">
             <label className="block text-xs uppercase tracking-wide text-airbus-navy mb-1 font-semibold">
               Equipo de medición UT
@@ -928,7 +928,7 @@ export function GridMappingPage() {
             {equipoSeleccionado && (
               <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
-                  {equipoSeleccionado.id_equipo}
+                  {equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}
                 </span>
                 <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
                 {equipoSeleccionado.codigo_barras && (
@@ -942,7 +942,7 @@ export function GridMappingPage() {
               </div>
             )}
 
-            {/* ===== Panel de diagnóstico — quitar cuando funcione ===== */}
+            {/* Panel de diagnóstico */}
             <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
               <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
               {debugEquipos.codigosEncontrados.length > 0 && (
@@ -954,7 +954,6 @@ export function GridMappingPage() {
             </div>
           </div>
 
-          {/* Espesor nominal */}
           <div>
             <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
               Espesor nominal (mm)
@@ -966,7 +965,6 @@ export function GridMappingPage() {
           </div>
         </div>
 
-        {/* Aviso grande si no hay equipos UT */}
         {!loadingEquipos && equiposUT.length === 0 && debugEquipos.totalEnDB > 0 && (
           <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
             <p className="text-xs text-red-700 font-semibold">
@@ -974,14 +972,13 @@ export function GridMappingPage() {
             </p>
             <p className="text-xs text-red-600 mt-1">
               Códigos de técnica encontrados: <b>{debugEquipos.codigosEncontrados.join(', ') || 'ninguno'}</b>.
-              Necesitas que algún equipo tenga un código que empiece por <b>UT</b> (por ejemplo <b>UT</b>, <b>UT-1</b>).
             </p>
           </div>
         )}
         {!loadingEquipos && debugEquipos.totalEnDB === 0 && !debugEquipos.errorMsg && (
           <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2">
             <p className="text-xs text-yellow-800">
-              ⚠️ La consulta no ha devuelto ningún equipo. Puede ser un problema de <b>RLS</b> (permisos) o que la tabla esté vacía.
+              ⚠️ La consulta no ha devuelto ningún equipo. Revisa permisos (RLS) o que la tabla no esté vacía.
             </p>
           </div>
         )}
