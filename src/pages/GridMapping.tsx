@@ -819,18 +819,53 @@ export function GridMappingPage() {
   const exportCSV = () => {
     const sep = ';';
     const data: (string | number)[][] = [];
-    data.push(['INFORME DE GRID MAPPING']);
-    data.push([`MATRICULA: ${meta.matricula}   WO/SAP: ${meta.wo_sap}   FR: ${meta.fr}   FECHA: ${fmtFecha(meta.fecha)}`]);
 
+    // --- 1. METADATOS (Cabecera) ---
+    data.push(['INFORME DE GRID MAPPING']);
+    data.push([`MATRICULA:`, meta.matricula]);
+    data.push([`WO / SAP:`, meta.wo_sap || '—']);
+    data.push([`FR:`, meta.fr || '—']);
+    data.push([`FECHA EMISIÓN:`, fmtFecha(meta.fecha)]);
+    data.push([`OPERADOR:`, meta.operador || '—']);
+
+    // --- 2. EQUIPO UT ---
     const eqSel = equiposUT.find((e) => e.id === equipoUtId);
     if (eqSel) {
       const serial = eqSel.numero_serie || eqSel.id_equipo;
       const cb = eqSel.codigo_barras ? ` · CB: ${eqSel.codigo_barras}` : '';
-      data.push([`EQUIPO UT: [${serial}] ${eqSel.nombre}${cb}`]);
+      data.push([`EQUIPO UT:`, `[${serial}] ${eqSel.nombre}${cb}`]);
+      data.push([`PRÓX. CALIBRACIÓN:`, eqSel.proxima_calibracion ? fmtFecha(eqSel.proxima_calibracion) : '—']);
+    } else {
+      data.push([`EQUIPO UT:`, '—']);
     }
-    if (meta.operador) data.push([`OPERADOR: ${meta.operador}`]);
-    if (nominalThickness && isNumeric(nominalThickness)) data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
+
+    // --- 3. CONDICIONANTE DE COLORES ---
+    if (nominalThickness && isNumeric(nominalThickness)) {
+      data.push([`ESPESOR NOMINAL:`, format2(nominalThickness) + ' mm']);
+    }
+    if (valueStats.hasData) {
+      data.push([`ESCALA DE COLOR (MIN/MAX):`, `MIN=${format2(valueStats.min)} | MAX=${format2(valueStats.max)}`]);
+    }
+
+    // --- 4. FLECHAS Y ORIENTACIÓN ---
+    if (markers.length > 0) {
+      data.push([]);
+      data.push(['FLECHAS Y ORIENTACIÓN:']);
+      markers.forEach((m) => {
+        data.push([`  ${m.text}:`, m.arrow]);
+      });
+    }
+
+    // --- 5. IMAGEN (Base64) ---
+    if (referenceImage) {
+      data.push([]);
+      data.push(['IMAGEN DE REFERENCIA (Copiar y pegar en visor Base64):']);
+      data.push([referenceImage]);
+    }
+
+    // --- 6. TABLA DE VALORES ---
     data.push([]);
+    data.push(['CUADRICULA DE MEDICIÓN:']);
     data.push(['', ...colLabels]);
     for (let r = 0; r < rowLabels.length; r++) {
       const rowLabel = rowLabels[r];
@@ -839,6 +874,23 @@ export function GridMappingPage() {
         return v ? (isNumeric(v) ? format2(v) : v) : '';
       })]);
     }
+
+    // --- 7. TABLA DE COLORES (RGB por celda) ---
+    if (valueStats.hasData) {
+      data.push([]);
+      data.push(['COLORES DE FONDO POR CELDA (Para validación visual):']);
+      data.push(['', ...colLabels]);
+      for (let r = 0; r < rowLabels.length; r++) {
+        const rowLabel = rowLabels[r];
+        data.push([rowLabel, ...colLabels.map(c => {
+          const v = grid[`${c}${rowLabel}`] ?? '';
+          if (!v || !isNumeric(v)) return '';
+          return colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max);
+        })]);
+      }
+    }
+
+    // Generar y descargar archivo
     const csv = '\uFEFF' + data.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(sep)).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
