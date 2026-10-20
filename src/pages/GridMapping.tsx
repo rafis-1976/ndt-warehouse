@@ -27,6 +27,7 @@ type GridData = Record<string, string>;
 type Meta = { matricula: string; wo_sap: string; fr: string; fecha: string; operador: string; };
 type RowMode = { active: boolean; row: number; colIdx: number };
 type ListenMode = 'none' | 'cell' | 'command';
+type Marker = { id: string; arrow: string; text: string };
 
 interface EquipoUT {
   id: string;
@@ -73,7 +74,7 @@ const COLOR_STOPS = [
   { t: 1.00, r: 74,  g: 222, b: 128 }, // green-400
 ];
 function colorForValue(v: number, min: number, max: number): string {
-  if (max === min) return 'rgb(254, 240, 138)'; // yellow-200 por defecto
+  if (max === min) return 'rgb(254, 240, 138)';
   const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
   for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
     const a = COLOR_STOPS[i], b = COLOR_STOPS[i + 1];
@@ -211,6 +212,10 @@ export function GridMappingPage() {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [nominalThickness, setNominalThickness] = useState<string>('');
+
+  /* ---- Imagen y Orientación ---- */
+  const [referenceImage, setReferenceImage] = useState<string>('');
+  const [markers, setMarkers] = useState<Marker[]>([]);
 
   /* ---- Equipo UT ---- */
   const [equiposUT, setEquiposUT] = useState<EquipoUT[]>([]);
@@ -615,8 +620,6 @@ export function GridMappingPage() {
         errorMsg: null,
       });
 
-      console.log('[Equipos UT] Cargados:', uts.length, 'de', all.length, 'equipos');
-      console.log('[Equipos UT] Códigos de técnica encontrados:', codigosEncontrados);
     } catch (err: any) {
       console.error('[Equipos UT] Error inesperado:', err);
       setDebugEquipos({
@@ -689,6 +692,8 @@ export function GridMappingPage() {
     setRecordId(null); setGrid({}); setSelected(null);
     setNominalThickness('');
     setEquipoUtId('');
+    setReferenceImage('');
+    setMarkers([]);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setMeta((m) => ({ ...m, fecha: todayISO(), operador: '' }));
     setStatus('Nueva cuadrícula lista.');
@@ -722,6 +727,11 @@ export function GridMappingPage() {
       if (k === RESERVED_EQUIPO_SERIAL_KEY) return;
       if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
       if (k === '_operador') { operadorFromGrid = v ?? ''; return; }
+      if (k === '_reference_image') { setReferenceImage(v); return; }
+      if (k === '_markers') { 
+        try { setMarkers(JSON.parse(v)); } catch { setMarkers([]); }
+        return; 
+      }
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
     
@@ -749,6 +759,12 @@ export function GridMappingPage() {
       }
       if (meta.operador.trim()) {
         cleanGrid['_operador'] = meta.operador.trim();
+      }
+      if (referenceImage) {
+        cleanGrid['_reference_image'] = referenceImage;
+      }
+      if (markers.length > 0) {
+        cleanGrid['_markers'] = JSON.stringify(markers);
       }
       if (equipoUtId) {
         cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
@@ -827,15 +843,12 @@ export function GridMappingPage() {
 
   return (
     <>
-      {/* CSS para impresión: oculta Header/Sidebar y quita márgenes del layout */}
       <style>{`
         @media print {
           @page { margin: 12mm; size: A4 portrait; }
           
-          /* Ocultar barra de navegación, header y sidebar globales */
           header, aside, nav, .app-header, .app-sidebar { display: none !important; }
           
-          /* Resetear contenedores Flexbox principales para que el informe ocupe todo el ancho */
           body, #root, .min-h-screen, .flex-1, main { 
             display: block !important; 
             height: auto !important; 
@@ -855,7 +868,6 @@ export function GridMappingPage() {
         }
       `}</style>
 
-      {/* VISTA PRINCIPAL (oculta al imprimir) */}
       <div className="p-4 md:p-6 max-w-full mx-auto space-y-4 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -927,7 +939,6 @@ export function GridMappingPage() {
                 })}
               </select>
 
-              {/* Chip informativo del equipo seleccionado */}
               {equipoSeleccionado && (
                 <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-airbus-navy text-white font-mono font-bold">
@@ -945,7 +956,6 @@ export function GridMappingPage() {
                 </div>
               )}
 
-              {/* Panel de diagnóstico */}
               <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
                 <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
                 {debugEquipos.codigosEncontrados.length > 0 && (
@@ -994,6 +1004,100 @@ export function GridMappingPage() {
               ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
             </p>
           )}
+        </div>
+
+        {/* ========== TARJETA 3: IMAGEN Y ORIENTACIÓN ========== */}
+        <div className="card">
+          <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Imagen y Orientación</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Subida de Imagen */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">Imagen de Referencia</label>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setReferenceImage(ev.target?.result as string);
+                  reader.readAsDataURL(file);
+                }}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-airbus-blue/10 file:text-airbus-blue hover:file:bg-airbus-blue/20"
+              />
+              {referenceImage && (
+                <div className="mt-3 relative inline-block border rounded-lg p-2 bg-gray-50">
+                  <img src={referenceImage} alt="Referencia" className="max-h-48 object-contain" />
+                  <button 
+                    onClick={() => setReferenceImage('')}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow hover:bg-red-600"
+                    title="Eliminar imagen"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Flechas y Textos */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">Flechas y Textos de Referencia</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {[
+                  { arrow: '↑', text: 'UP' },
+                  { arrow: '↓', text: 'DOWN' },
+                  { arrow: '←', text: 'INBOARD' },
+                  { arrow: '→', text: 'OUTBOARD' },
+                  { arrow: '↖', text: 'FWD' },
+                ].map((preset) => (
+                  <button
+                    key={preset.text}
+                    onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), ...preset }])}
+                    className="px-2 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-semibold text-gray-700 transition"
+                  >
+                    + {preset.arrow} {preset.text}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), arrow: '↑', text: '' }])}
+                  className="px-2 py-1 bg-airbus-blue text-white rounded text-xs font-semibold hover:bg-airbus-navy transition"
+                >
+                  + Personalizado
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                {markers.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2">
+                    <select
+                      value={m.arrow}
+                      onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, arrow: e.target.value } : x))}
+                      className="input text-sm w-16 text-center font-bold"
+                    >
+                      {['↑','↓','←','→','↖','↗','↘','↙'].map(a => (
+                        <option key={a} value={a}>{a}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={m.text}
+                      onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, text: e.target.value } : x))}
+                      placeholder="Texto (ej. FWD)"
+                      className="input text-sm flex-1"
+                    />
+                    <button
+                      onClick={() => setMarkers(markers.filter(x => x.id !== m.id))}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Eliminar"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Voz */}
@@ -1257,8 +1361,30 @@ export function GridMappingPage() {
           </table>
         </div>
 
+        {/* Imagen de referencia */}
+        {referenceImage && (
+          <div className="mb-6 flex justify-center">
+            <img src={referenceImage} alt="Referencia" className="max-h-64 object-contain border border-gray-300 p-1" />
+          </div>
+        )}
+
+        {/* Flechas y textos */}
+        {markers.length > 0 && (
+          <div className="mb-6 p-3 bg-gray-50 border border-gray-300 rounded">
+            <div className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Indicaciones de Orientación:</div>
+            <div className="flex flex-wrap gap-6">
+              {markers.map(m => (
+                <div key={m.id} className="flex items-center gap-2 text-sm font-bold">
+                  <span className="text-lg">{m.arrow}</span>
+                  <span>{m.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Grid */}
-        <h2 className="text-lg font-bold mb-2 border-l-4 border-gray-800 pl-2">Resultados de la Medición</h2>
+        <h2 className="text-lg font-bold mb-2 border-l-4 border-gray-800 pl-2 mt-6">Resultados de la Medición</h2>
         <table className="w-full border-collapse border border-gray-800 text-xs text-center">
           <thead>
             <tr>
