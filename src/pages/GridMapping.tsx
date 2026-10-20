@@ -208,11 +208,6 @@ export function GridMappingPage() {
   const [invertRows, setInvertRows] = useState(false);
   const [invertCols, setInvertCols] = useState(false);
 
-  /* ---- OCR Auto-Detección ---- */
-  const [customColLabels, setCustomColLabels] = useState<string[]>([]);
-  const [customRowLabels, setCustomRowLabels] = useState<string[]>([]);
-  const [isOcrLoading, setIsOcrLoading] = useState(false);
-
   /* ---- Imagen y Orientación ---- */
   const [referenceImage, setReferenceImage] = useState<string>('');
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -282,15 +277,12 @@ export function GridMappingPage() {
   }, [nominalThickness, valueStats]);
 
   const getLabels = useCallback(() => {
-    let rl = customRowLabels.length > 0 ? [...customRowLabels] : Array.from({ length: rows }, (_, i) => swapAxes ? colName(i) : String(i + 1));
-    let cl = customColLabels.length > 0 ? [...customColLabels] : Array.from({ length: cols }, (_, i) => swapAxes ? String(i + 1) : colName(i));
-    
-    // Solo aplicamos inversión si NO hay custom labels (porque las custom ya vienen en el orden de la foto)
-    if (customRowLabels.length === 0 && invertRows) rl.reverse();
-    if (customColLabels.length === 0 && invertCols) cl.reverse();
-    
+    const rl = Array.from({ length: rows }, (_, i) => swapAxes ? colName(i) : String(i + 1));
+    const cl = Array.from({ length: cols }, (_, i) => swapAxes ? String(i + 1) : colName(i));
+    if (invertRows) rl.reverse();
+    if (invertCols) cl.reverse();
     return { rowLabels: rl, colLabels: cl };
-  }, [rows, cols, swapAxes, invertRows, invertCols, customRowLabels, customColLabels]);
+  }, [rows, cols, swapAxes, invertRows, invertCols]);
 
   const { rowLabels, colLabels } = getLabels();
 
@@ -635,67 +627,6 @@ export function GridMappingPage() {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
-  /* ------------------ OCR Auto-Detect ------------------ */
-  const handleAutoDetect = async () => {
-    if (!referenceImage) return;
-    setIsOcrLoading(true);
-    setStatus('Analizando imagen con OCR...');
-
-    try {
-      if (!(window as any).Tesseract) {
-        await new Promise<void>((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-          s.onload = () => resolve();
-          s.onerror = () => reject(new Error('No se pudo cargar Tesseract'));
-          document.head.appendChild(s);
-        });
-      }
-
-      const worker = await (window as any).Tesseract.createWorker('eng');
-      const ret = await worker.recognize(referenceImage);
-      const words = ret.data.words;
-      const imgW = ret.data.width;
-      const imgH = ret.data.height;
-
-      // Filtrar letras en la franja superior (Top 20%)
-      const topWords = words
-        .filter((w: any) => w.bbox.y1 < imgH * 0.2)
-        .sort((a: any, b: any) => a.bbox.x0 - b.bbox.x0)
-        .map((w: any) => w.text.toUpperCase().replace(/[^A-Z']/g, ''))
-        .filter((t: string) => t.length > 0);
-
-      // Filtrar números en la franja izquierda (Left 20%)
-      const leftWords = words
-        .filter((w: any) => w.bbox.x1 < imgW * 0.2)
-        .sort((a: any, b: any) => a.bbox.y0 - b.bbox.y0)
-        .map((w: any) => w.text.replace(/[^0-9]/g, ''))
-        .filter((t: string) => t.length > 0);
-
-      await worker.terminate();
-
-      if (topWords.length > 0 && leftWords.length > 0) {
-        setCustomColLabels(topWords);
-        setCustomRowLabels(leftWords);
-        setCols(topWords.length);
-        setRows(leftWords.length);
-        setStatus(`✅ Ejes detectados: ${topWords.length} columnas, ${leftWords.length} filas.`);
-      } else {
-        setStatus('⚠️ No se detectaron ejes claros (letras arriba, números izquierda). Configura manualmente.');
-      }
-    } catch (err: any) {
-      setStatus('❌ Error OCR: ' + err.message);
-    } finally {
-      setIsOcrLoading(false);
-    }
-  };
-
-  const resetLabels = () => {
-    setCustomColLabels([]);
-    setCustomRowLabels([]);
-    setStatus('Ejes restablecidos al estándar (A, B, C... / 1, 2, 3...).');
-  };
-
   /* ------------------ Cargar equipos UT ------------------ */
   const loadEquiposUT = useCallback(async () => {
     setLoadingEquipos(true);
@@ -750,7 +681,6 @@ export function GridMappingPage() {
     setNominalThickness(''); setEquipoUtId('');
     setReferenceImage(''); setMarkers([]);
     setSwapAxes(false); setInvertRows(false); setInvertCols(false);
-    setCustomColLabels([]); setCustomRowLabels([]);
     setRows(4); setCols(4);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setMeta((m) => ({ ...m, fecha: todayISO(), operador: '' }));
@@ -994,11 +924,7 @@ export function GridMappingPage() {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    setReferenceImage(ev.target?.result as string);
-                    setCustomColLabels([]);
-                    setCustomRowLabels([]);
-                  };
+                  reader.onload = (ev) => setReferenceImage(ev.target?.result as string);
                   reader.readAsDataURL(file);
                 }}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-airbus-blue/10 file:text-airbus-blue hover:file:bg-airbus-blue/20"
@@ -1008,17 +934,6 @@ export function GridMappingPage() {
                 <div className="mt-3 relative inline-block border rounded-lg p-2 bg-gray-50">
                   <img src={referenceImage} alt="Referencia" className="max-h-48 object-contain" />
                   <button onClick={() => setReferenceImage('')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow hover:bg-red-600" title="Eliminar imagen">✕</button>
-                </div>
-              )}
-
-              {referenceImage && (
-                <div className="mt-3 flex gap-2">
-                  <button onClick={handleAutoDetect} disabled={isOcrLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-2">
-                    {isOcrLoading ? '⏳ Analizando...' : '🔍 Auto-detectar ejes de la imagen'}
-                  </button>
-                  {(customColLabels.length > 0 || customRowLabels.length > 0) && (
-                    <button onClick={resetLabels} className="btn-ghost text-xs py-1.5 px-3 text-red-500 border border-red-200">Restablecer</button>
-                  )}
                 </div>
               )}
             </div>
