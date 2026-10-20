@@ -827,15 +827,29 @@ export function GridMappingPage() {
 
   return (
     <>
-      {/* CSS para impresión */}
+      {/* CSS para impresión: oculta Header/Sidebar y quita márgenes del layout */}
       <style>{`
         @media print {
-          @page { margin: 15mm; size: A4 portrait; }
+          @page { margin: 12mm; size: A4 portrait; }
+          
+          /* Ocultar barra de navegación, header y sidebar globales */
+          header, aside, nav, .app-header, .app-sidebar { display: none !important; }
+          
+          /* Resetear contenedores Flexbox principales para que el informe ocupe todo el ancho */
+          body, #root, .min-h-screen, .flex-1, main { 
+            display: block !important; 
+            height: auto !important; 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            background: white !important;
+            overflow: visible !important;
+          }
+          
           body { 
             -webkit-print-color-adjust: exact; 
             print-color-adjust: exact; 
-            background: white;
           }
+          
           .print\\:hidden { display: none !important; }
           .print\\:block { display: block !important; }
         }
@@ -1182,7 +1196,7 @@ export function GridMappingPage() {
       {/* VISTA DE IMPRESIÓN (oculta en pantalla, visible al imprimir)        */}
       {/* ==================================================================== */}
       <div className="hidden print:block bg-white text-black" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
-        {/* Header */}
+        {/* Header del Informe */}
         <div className="flex justify-between items-start border-b-2 border-gray-800 pb-2 mb-4">
           <div>
             <h1 className="text-2xl font-bold uppercase tracking-wider text-gray-900 m-0">Informe de Grid Mapping</h1>
@@ -1194,7 +1208,7 @@ export function GridMappingPage() {
           </div>
         </div>
 
-        {/* Metadata Tables */}
+        {/* Tablas de Metadatos y Equipo */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <table className="w-full text-sm border-collapse border border-gray-400">
             <tbody>
