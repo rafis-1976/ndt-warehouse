@@ -66,12 +66,12 @@ function isNumeric(v: string): boolean {
 
 // 🎨 Escala de colores pastel para que los números negros se lean bien
 const COLOR_STOPS = [
-  { t: 0.00, r: 254, g: 202, b: 202 }, // red-200
-  { t: 0.20, r: 253, g: 230, b: 138 }, // yellow-200
-  { t: 0.40, r: 254, g: 240, b: 138 }, // yellow-200
-  { t: 0.60, r: 187, g: 247, b: 208 }, // green-200
-  { t: 0.80, r: 134, g: 239, b: 172 }, // green-300
-  { t: 1.00, r: 74,  g: 222, b: 128 }, // green-400
+  { t: 0.00, r: 254, g: 202, b: 202 },
+  { t: 0.20, r: 253, g: 230, b: 138 },
+  { t: 0.40, r: 254, g: 240, b: 138 },
+  { t: 0.60, r: 187, g: 247, b: 208 },
+  { t: 0.80, r: 134, g: 239, b: 172 },
+  { t: 1.00, r: 74,  g: 222, b: 128 },
 ];
 function colorForValue(v: number, min: number, max: number): string {
   if (max === min) return 'rgb(254, 240, 138)';
@@ -139,36 +139,24 @@ function extractReadings(normalized: string, expectSingle: boolean): string[] {
   return values;
 }
 
-function parseCoordinates(s: string, rowsLimit: number, colsLimit: number) {
-  const re = /(^|[^a-z0-9])([a-z])\s*('*)\s*(\d{1,2})\s*[:=]?\s*(\d+(?:\.\d+)?)/g;
-  const out: Array<{ key: string; value: string }> = [];
+function parseCoordinates(s: string) {
+  const re = /(^|[^a-z0-9])(?:([a-z])\s*('*)\s*(\d{1,2})|(\d{1,2})\s*([a-z])\s*('*))\s*[:=]?\s*(\d+(?:\.\d+)?)/g;
+  const out: Array<{ rawCoord: string; value: string }> = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(s)) !== null) {
-    const row = parseInt(m[4], 10);
-    if (row < 1 || row > rowsLimit) continue;
-    const col = m[2].toUpperCase() + m[3];
-    const ci = colIndex(col);
-    if (ci < 0 || ci >= colsLimit) continue;
-    out.push({ key: col + row, value: m[5] });
+    let coord = '';
+    if (m[2]) coord = `${m[2].toUpperCase()}${m[3]}${m[4]}`;
+    else coord = `${m[5]}${m[6].toUpperCase()}${m[7]}`;
+    out.push({ rawCoord: coord, value: m[8] });
   }
   return out;
 }
+
 function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 function fmtFecha(iso: string | null | undefined): string {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');
   return y && m && d ? `${d}/${m}/${y}` : iso;
-}
-
-function nextKey(key: string, colsN: number, rowsN: number): string | null {
-  const m = key.match(/^([A-Z])('*)(\d+)$/);
-  if (!m) return null;
-  let ci = colIndex(m[1] + m[2]);
-  let ri = parseInt(m[3], 10);
-  ci += 1;
-  if (ci >= colsN) { ci = 0; ri += 1; }
-  if (ri > rowsN || ci >= colsN) return null;
-  return colName(ci) + ri;
 }
 
 /* --------------- Utilidades del selector de equipos UT --------------- */
@@ -213,6 +201,18 @@ export function GridMappingPage() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [nominalThickness, setNominalThickness] = useState<string>('');
 
+  /* ---- Tamaño y Ejes ---- */
+  const [rows, setRows] = useState(4);
+  const [cols, setCols] = useState(4);
+  const [swapAxes, setSwapAxes] = useState(false);
+  const [invertRows, setInvertRows] = useState(false);
+  const [invertCols, setInvertCols] = useState(false);
+
+  /* ---- OCR Auto-Detección ---- */
+  const [customColLabels, setCustomColLabels] = useState<string[]>([]);
+  const [customRowLabels, setCustomRowLabels] = useState<string[]>([]);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+
   /* ---- Imagen y Orientación ---- */
   const [referenceImage, setReferenceImage] = useState<string>('');
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -232,8 +232,6 @@ export function GridMappingPage() {
   const [listenMode, setListenMode] = useState<ListenMode>('none');
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
 
-  const [rows, setRows] = useState(10);
-  const [cols, setCols] = useState(10);
   const rowsRef = useRef(rows);
   const colsRef = useRef(cols);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
@@ -283,6 +281,19 @@ export function GridMappingPage() {
     return Math.max(0, Math.min(100, t * 100));
   }, [nominalThickness, valueStats]);
 
+  const getLabels = useCallback(() => {
+    let rl = customRowLabels.length > 0 ? [...customRowLabels] : Array.from({ length: rows }, (_, i) => swapAxes ? colName(i) : String(i + 1));
+    let cl = customColLabels.length > 0 ? [...customColLabels] : Array.from({ length: cols }, (_, i) => swapAxes ? String(i + 1) : colName(i));
+    
+    // Solo aplicamos inversión si NO hay custom labels (porque las custom ya vienen en el orden de la foto)
+    if (customRowLabels.length === 0 && invertRows) rl.reverse();
+    if (customColLabels.length === 0 && invertCols) cl.reverse();
+    
+    return { rowLabels: rl, colLabels: cl };
+  }, [rows, cols, swapAxes, invertRows, invertCols, customRowLabels, customColLabels]);
+
+  const { rowLabels, colLabels } = getLabels();
+
   useEffect(() => {
     let needsUpdate = false;
     const next: GridData = { ...grid };
@@ -323,22 +334,74 @@ export function GridMappingPage() {
     });
   }, []);
 
-  const detectRow = (s: string): number => {
-    const m1 = s.match(/\bfila\b[^0-9]*?(\d+)/);
-    if (m1) return parseInt(m1[1], 10);
+  const advanceFromKey = useCallback((currentKey: string) => {
+    const { rowLabels, colLabels } = getLabels();
+    let rIdx = -1, cIdx = -1;
+    for (let r = 0; r < rowLabels.length; r++) {
+      for (let c = 0; c < colLabels.length; c++) {
+        if (`${colLabels[c]}${rowLabels[r]}` === currentKey) {
+          rIdx = r; cIdx = c; break;
+        }
+      }
+    }
+    if (rIdx === -1) return null;
+    cIdx++;
+    if (cIdx >= colLabels.length) { cIdx = 0; rIdx++; }
+    if (rIdx >= rowLabels.length) {
+      setSelected(null);
+      return null;
+    }
+    const next = `${colLabels[cIdx]}${rowLabels[rIdx]}`;
+    setSelected(next);
+    return next;
+  }, [getLabels]);
+
+  const normalizeCoordKey = (rawCoord: string, cLabels: string[], rLabels: string[]): string => {
+    const matchA1 = rawCoord.match(/^([A-Z])('*)(\d+)$/);
+    const match1A = rawCoord.match(/^(\d+)([A-Z])('*)$/);
+    if (matchA1) {
+      const c = matchA1[1] + matchA1[2];
+      const r = matchA1[3];
+      if (cLabels.includes(c) && rLabels.includes(r)) return `${c}${r}`;
+      if (cLabels.includes(r) && rLabels.includes(c)) return `${r}${c}`;
+    } else if (match1A) {
+      const r = match1A[1];
+      const c = match1A[2] + match1A[3];
+      if (cLabels.includes(c) && rLabels.includes(r)) return `${c}${r}`;
+      if (cLabels.includes(r) && rLabels.includes(c)) return `${r}${c}`;
+    }
+    return rawCoord;
+  };
+
+  const detectRow = (s: string, labels: string[]): number => {
+    const m1 = s.match(/\bfila\b[^a-z0-9]*?([a-z0-9])/);
+    if (m1) {
+      const val = m1[1].toUpperCase();
+      const idx = labels.indexOf(val);
+      if (idx !== -1) return idx;
+    }
     for (const [word, num] of Object.entries(ORDINALS)) {
-      if (new RegExp(`\\b${word}\\s+fila\\b`).test(s) || new RegExp(`\\bfila\\s+${word}\\b`).test(s)) return num;
+      const m2 = new RegExp(`\\b${word}\\s+fila\\b`).test(s) || new RegExp(`\\bfila\\s+${word}\\b`).test(s);
+      if (m2) {
+        const idx = labels.indexOf(String(num));
+        if (idx !== -1) return idx;
+      }
     }
     return -1;
   };
+
   const isFin = (s: string) => /\b(fin|final|terminar|termine|finalizar|acabar|acabe)\b/.test(s);
   const isSiguienteFila = (s: string) =>
     /\b(siguiente|otra|proxima)\s+fila\b/.test(s) || /\bfila\s+(siguiente|proxima)\b/.test(s);
 
-  const firstEmptyCol = (rowNum: number): number => {
+  const firstEmptyCol = (rowIdx: number): number => {
     const g = gridRef.current;
-    for (let i = 0; i < colsRef.current; i++) if (!g[colName(i) + rowNum]) return i;
-    return colsRef.current;
+    const { rowLabels, colLabels } = getLabels();
+    const rowLabel = rowLabels[rowIdx];
+    for (let i = 0; i < colLabels.length; i++) {
+      if (!g[`${colLabels[i]}${rowLabel}`]) return i;
+    }
+    return colLabels.length;
   };
 
   /* ------------------ Procesamiento de texto ------------------ */
@@ -347,24 +410,25 @@ export function GridMappingPage() {
     setLastNormalized(s);
     if (!s) return;
 
+    const { rowLabels, colLabels } = getLabels();
+
     if (isSiguienteFila(s)) {
       const currentRow = rowModeRef.current.active ? rowModeRef.current.row : 0;
-      const nextRow = Math.min(rowsRef.current, currentRow + 1);
-      if (nextRow >= 1) {
+      const nextRow = Math.min(rowLabels.length - 1, currentRow + 1);
+      if (nextRow >= 0) {
         const startCol = firstEmptyCol(nextRow);
         updateRowMode({ active: true, row: nextRow, colIdx: startCol });
-        setStatus(`Fila ${nextRow} activa · siguiente: ${colName(startCol)}${nextRow}`);
+        setStatus(`Fila ${rowLabels[nextRow]} activa · siguiente: ${colLabels[startCol]}${rowLabels[nextRow]}`);
         return;
       }
     }
 
-    const targetRow = detectRow(s);
-    if (targetRow >= 1 && targetRow <= MAX_ROWS) {
-      if (targetRow > rowsRef.current) { setRows(targetRow); rowsRef.current = targetRow; }
+    const targetRow = detectRow(s, rowLabels);
+    if (targetRow !== -1) {
       const startCol = firstEmptyCol(targetRow);
       updateRowMode({ active: true, row: targetRow, colIdx: startCol });
-      setStatus(`Fila ${targetRow} activa · siguiente: ${colName(startCol)}${targetRow}`);
-      setHeard(`Fila ${targetRow}`);
+      setStatus(`Fila ${rowLabels[targetRow]} activa · siguiente: ${colLabels[startCol]}${rowLabels[targetRow]}`);
+      setHeard(`Fila ${rowLabels[targetRow]}`);
       return;
     }
 
@@ -372,7 +436,7 @@ export function GridMappingPage() {
       if (rowModeRef.current.active) {
         const r = rowModeRef.current.row;
         updateRowMode({ active: false, row: 0, colIdx: 0 });
-        setStatus(`Fila ${r} terminada · toca una celda o di «fila N»`);
+        setStatus(`Fila ${rowLabels[r]} terminada · toca una celda o di «fila N»`);
       } else {
         setStatus('No hay fila activa · di «fila N» primero');
       }
@@ -389,10 +453,8 @@ export function GridMappingPage() {
       const v = values[0];
       setCell(targetCell, v);
       flashCell(targetCell);
-      setStatus(`✔ ${targetCell} = ${format2(v)}`);
-
-      const nk = nextKey(targetCell, colsRef.current, rowsRef.current);
-      if (nk) setSelected(nk);
+      const nk = advanceFromKey(targetCell);
+      setStatus(`✔ ${targetCell} = ${format2(v)}` + (nk ? ` · siguiente: ${nk}` : ''));
       return;
     }
 
@@ -405,41 +467,46 @@ export function GridMappingPage() {
       }
 
       const { row } = rowModeRef.current;
-      const colsN = colsRef.current;
       let currentColIdx = rowModeRef.current.colIdx;
+      const rowLabel = rowLabels[row];
 
       for (const value of values) {
-        if (currentColIdx >= colsN) break;
-        const col = colName(currentColIdx);
-        setCell(col + row, value);
-        flashCell(col + row);
+        if (currentColIdx >= colLabels.length) break;
+        const col = colLabels[currentColIdx];
+        setCell(`${col}${rowLabel}`, value);
+        flashCell(`${col}${rowLabel}`);
         currentColIdx++;
       }
 
-      if (currentColIdx >= colsN) {
+      if (currentColIdx >= colLabels.length) {
         updateRowMode({ active: true, row, colIdx: currentColIdx });
-        setStatus(`Fila ${row} completa · di FIN`);
+        setStatus(`Fila ${rowLabel} completa · di FIN`);
       } else {
-        const nextCol = colName(currentColIdx);
+        const nextCol = colLabels[currentColIdx];
         updateRowMode({ active: true, row, colIdx: currentColIdx });
-        setStatus(`✔ Fila ${row} · siguiente: ${nextCol}${row}`);
+        setStatus(`✔ Fila ${rowLabel} · siguiente: ${nextCol}${rowLabel}`);
       }
       return;
     }
 
-    const coords = parseCoordinates(s, rowsRef.current, colsRef.current);
+    const coords = parseCoordinates(s);
     if (coords.length > 0) {
-      coords.forEach(({ key, value }) => { setCell(key, value); flashCell(key); });
-      const lastKey = coords[coords.length - 1].key;
-      const nk = nextKey(lastKey, colsRef.current, rowsRef.current);
-      setStatus(`✔ ${coords.map((c) => `${c.key}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
+      coords.forEach(({ rawCoord, value }) => {
+        const key = normalizeCoordKey(rawCoord, colLabels, rowLabels);
+        setCell(key, value);
+        flashCell(key);
+      });
+      const lastCoord = coords[coords.length - 1].rawCoord;
+      const lastKey = normalizeCoordKey(lastCoord, colLabels, rowLabels);
+      const nk = advanceFromKey(lastKey);
+      setStatus(`✔ ${coords.map((c) => `${c.rawCoord}=${format2(c.value)}`).join('  ')}` + (nk ? ` · siguiente: ${nk}` : ''));
       return;
     }
 
     if (/^\d+(\.\d+)?$/.test(s)) {
       setStatus('Toca una celda primero o di «fila N».');
     }
-  }, [setCell, flashCell, updateRowMode]);
+  }, [setCell, flashCell, updateRowMode, getLabels, advanceFromKey]);
 
   const handleVoiceRef = useRef(handleVoice);
   useEffect(() => { handleVoiceRef.current = handleVoice; }, [handleVoice]);
@@ -568,6 +635,67 @@ export function GridMappingPage() {
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
   }, []);
 
+  /* ------------------ OCR Auto-Detect ------------------ */
+  const handleAutoDetect = async () => {
+    if (!referenceImage) return;
+    setIsOcrLoading(true);
+    setStatus('Analizando imagen con OCR...');
+
+    try {
+      if (!(window as any).Tesseract) {
+        await new Promise<void>((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('No se pudo cargar Tesseract'));
+          document.head.appendChild(s);
+        });
+      }
+
+      const worker = await (window as any).Tesseract.createWorker('eng');
+      const ret = await worker.recognize(referenceImage);
+      const words = ret.data.words;
+      const imgW = ret.data.width;
+      const imgH = ret.data.height;
+
+      // Filtrar letras en la franja superior (Top 20%)
+      const topWords = words
+        .filter((w: any) => w.bbox.y1 < imgH * 0.2)
+        .sort((a: any, b: any) => a.bbox.x0 - b.bbox.x0)
+        .map((w: any) => w.text.toUpperCase().replace(/[^A-Z']/g, ''))
+        .filter((t: string) => t.length > 0);
+
+      // Filtrar números en la franja izquierda (Left 20%)
+      const leftWords = words
+        .filter((w: any) => w.bbox.x1 < imgW * 0.2)
+        .sort((a: any, b: any) => a.bbox.y0 - b.bbox.y0)
+        .map((w: any) => w.text.replace(/[^0-9]/g, ''))
+        .filter((t: string) => t.length > 0);
+
+      await worker.terminate();
+
+      if (topWords.length > 0 && leftWords.length > 0) {
+        setCustomColLabels(topWords);
+        setCustomRowLabels(leftWords);
+        setCols(topWords.length);
+        setRows(leftWords.length);
+        setStatus(`✅ Ejes detectados: ${topWords.length} columnas, ${leftWords.length} filas.`);
+      } else {
+        setStatus('⚠️ No se detectaron ejes claros (letras arriba, números izquierda). Configura manualmente.');
+      }
+    } catch (err: any) {
+      setStatus('❌ Error OCR: ' + err.message);
+    } finally {
+      setIsOcrLoading(false);
+    }
+  };
+
+  const resetLabels = () => {
+    setCustomColLabels([]);
+    setCustomRowLabels([]);
+    setStatus('Ejes restablecidos al estándar (A, B, C... / 1, 2, 3...).');
+  };
+
   /* ------------------ Cargar equipos UT ------------------ */
   const loadEquiposUT = useCallback(async () => {
     setLoadingEquipos(true);
@@ -577,108 +705,36 @@ export function GridMappingPage() {
       const { data, error } = await supabase
         .from('equipos')
         .select(`
-          id,
-          id_equipo,
-          nombre,
-          numero_serie,
-          codigo_barras,
-          estado,
-          proxima_calibracion,
-          tecnicas_ndt ( codigo, nombre )
+          id, id_equipo, nombre, numero_serie, codigo_barras, estado, proxima_calibracion, tecnicas_ndt ( codigo, nombre )
         `)
         .order('id_equipo', { ascending: true });
 
       if (error) {
-        console.error('[Equipos UT] Error consultando equipos:', error);
-        setDebugEquipos({
-          totalEnDB: 0, totalUT: 0, codigosEncontrados: [],
-          errorMsg: error.message,
-        });
+        setDebugEquipos({ totalEnDB: 0, totalUT: 0, codigosEncontrados: [], errorMsg: error.message });
         return;
       }
 
       const all = (data ?? []) as EquipoUT[];
-
       const codigosSet = new Set<string>();
-      all.forEach((eq) => {
-        const c = getTecnicaCodigo(eq);
-        if (c) codigosSet.add(c);
-      });
+      all.forEach((eq) => { const c = getTecnicaCodigo(eq); if (c) codigosSet.add(c); });
       const codigosEncontrados = Array.from(codigosSet).sort();
 
       const uts = all.filter((eq) => {
         const codigo = getTecnicaCodigo(eq);
-        if (!codigo) return false;
-        return codigo.toUpperCase().startsWith('UT');
+        return codigo ? codigo.toUpperCase().startsWith('UT') : false;
       });
 
       setEquiposUT(uts);
-      setDebugEquipos({
-        totalEnDB: all.length,
-        totalUT: uts.length,
-        codigosEncontrados,
-        errorMsg: null,
-      });
+      setDebugEquipos({ totalEnDB: all.length, totalUT: uts.length, codigosEncontrados, errorMsg: null });
 
     } catch (err: any) {
-      console.error('[Equipos UT] Error inesperado:', err);
-      setDebugEquipos({
-        totalEnDB: 0, totalUT: 0, codigosEncontrados: [],
-        errorMsg: err?.message ?? 'Error desconocido',
-      });
+      setDebugEquipos({ totalEnDB: 0, totalUT: 0, codigosEncontrados: [], errorMsg: err?.message ?? 'Error desconocido' });
     } finally {
       setLoadingEquipos(false);
     }
   }, []);
 
   useEffect(() => { void loadEquiposUT(); }, [loadEquiposUT]);
-
-  /* ------------------ Cambiar tamaño ------------------ */
-  const setRowsCount = (n: number) => {
-    if (n < MIN_ROWS || n > MAX_ROWS) return;
-    if (n < rows) {
-      const lost = Object.keys(grid).some((k) => {
-        if (k.startsWith('_')) return false;
-        const m = k.match(/(\d+)$/); return m && parseInt(m[0], 10) > n;
-      });
-      if (lost && !confirm(`¿Eliminar las celdas de las filas ${n + 1}–${rows}?`)) return;
-      setGrid((prev) => {
-        const next: GridData = {};
-        Object.keys(prev).forEach((k) => {
-          if (k.startsWith('_')) { next[k] = prev[k]; return; }
-          const m = k.match(/(\d+)$/);
-          if (m && parseInt(m[0], 10) <= n) next[k] = prev[k];
-        });
-        return next;
-      });
-      if (selected) { const m = selected.match(/(\d+)$/); if (m && parseInt(m[0], 10) > n) setSelected(null); }
-      if (rowModeRef.current.active && rowModeRef.current.row > n) updateRowMode({ active: false, row: 0, colIdx: 0 });
-    }
-    setRows(n); rowsRef.current = n;
-  };
-  const setColsCount = (n: number) => {
-    if (n < MIN_COLS || n > MAX_COLS) return;
-    if (n < cols) {
-      const lost = Object.keys(grid).some((k) => {
-        if (k.startsWith('_')) return false;
-        const m = k.match(/^([A-Z]*)('*)(\d+)$/);
-        return m && colIndex(m[1] + m[2]) >= n;
-      });
-      if (lost && !confirm(`¿Eliminar las celdas más allá de la columna ${colName(n - 1)}?`)) return;
-      setGrid((prev) => {
-        const next: GridData = {};
-        Object.keys(prev).forEach((k) => {
-          if (k.startsWith('_')) { next[k] = prev[k]; return; }
-          const m = k.match(/^([A-Z]*)('*)(\d+)$/);
-          if (m && colIndex(m[1] + m[2]) < n) next[k] = prev[k];
-        });
-        return next;
-      });
-      if (selected) { const m = selected.match(/^([A-Z]*)('*)(\d+)$/); if (m && colIndex(m[1] + m[2]) >= n) setSelected(null); }
-      if (rowModeRef.current.active && rowModeRef.current.colIdx >= n) updateRowMode({ active: false, row: 0, colIdx: 0 });
-    }
-    setCols(n); colsRef.current = n;
-  };
 
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
@@ -687,13 +743,15 @@ export function GridMappingPage() {
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setStatus('Cuadrícula vacía.');
   };
+  
   const newMapping = () => {
     stopRecognition();
     setRecordId(null); setGrid({}); setSelected(null);
-    setNominalThickness('');
-    setEquipoUtId('');
-    setReferenceImage('');
-    setMarkers([]);
+    setNominalThickness(''); setEquipoUtId('');
+    setReferenceImage(''); setMarkers([]);
+    setSwapAxes(false); setInvertRows(false); setInvertCols(false);
+    setCustomColLabels([]); setCustomRowLabels([]);
+    setRows(4); setCols(4);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
     setMeta((m) => ({ ...m, fecha: todayISO(), operador: '' }));
     setStatus('Nueva cuadrícula lista.');
@@ -717,9 +775,7 @@ export function GridMappingPage() {
     const row = data as GridMappingRow;
     const rawData = row.grid_data ?? {};
     const normalized: GridData = {};
-    let nominalFromGrid = '';
-    let equipoIdFromGrid = '';
-    let operadorFromGrid = '';
+    let nominalFromGrid = '', equipoIdFromGrid = '', operadorFromGrid = '';
     
     Object.entries(rawData).forEach(([k, v]) => {
       if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
@@ -728,10 +784,7 @@ export function GridMappingPage() {
       if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
       if (k === '_operador') { operadorFromGrid = v ?? ''; return; }
       if (k === '_reference_image') { setReferenceImage(v); return; }
-      if (k === '_markers') { 
-        try { setMarkers(JSON.parse(v)); } catch { setMarkers([]); }
-        return; 
-      }
+      if (k === '_markers') { try { setMarkers(JSON.parse(v)); } catch { setMarkers([]); } return; }
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
     
@@ -754,18 +807,10 @@ export function GridMappingPage() {
         const v = grid[k];
         if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
       });
-      if (nominalThickness && isNumeric(nominalThickness)) {
-        cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
-      }
-      if (meta.operador.trim()) {
-        cleanGrid['_operador'] = meta.operador.trim();
-      }
-      if (referenceImage) {
-        cleanGrid['_reference_image'] = referenceImage;
-      }
-      if (markers.length > 0) {
-        cleanGrid['_markers'] = JSON.stringify(markers);
-      }
+      if (nominalThickness && isNumeric(nominalThickness)) cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
+      if (meta.operador.trim()) cleanGrid['_operador'] = meta.operador.trim();
+      if (referenceImage) cleanGrid['_reference_image'] = referenceImage;
+      if (markers.length > 0) cleanGrid['_markers'] = JSON.stringify(markers);
       if (equipoUtId) {
         cleanGrid[RESERVED_EQUIPO_ID_KEY] = equipoUtId;
         const eq = equiposUT.find((e) => e.id === equipoUtId);
@@ -811,14 +856,13 @@ export function GridMappingPage() {
       data.push([`EQUIPO UT: [${serial}] ${eqSel.nombre}${cb}`]);
     }
     if (meta.operador) data.push([`OPERADOR: ${meta.operador}`]);
-    if (nominalThickness && isNumeric(nominalThickness)) {
-      data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
-    }
+    if (nominalThickness && isNumeric(nominalThickness)) data.push([`ESPESOR NOMINAL: ${format2(nominalThickness)}`]);
     data.push([]);
-    data.push(['', ...Array.from({ length: cols }, (_, ci) => colName(ci))]);
-    for (let r = 1; r <= rows; r++) {
-      data.push([r, ...Array.from({ length: cols }, (_, ci) => {
-        const v = grid[`${colName(ci)}${r}`] ?? '';
+    data.push(['', ...colLabels]);
+    for (let r = 0; r < rowLabels.length; r++) {
+      const rowLabel = rowLabels[r];
+      data.push([rowLabel, ...colLabels.map(c => {
+        const v = grid[`${c}${rowLabel}`] ?? '';
         return v ? (isNumeric(v) ? format2(v) : v) : '';
       })]);
     }
@@ -831,14 +875,13 @@ export function GridMappingPage() {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
 
-  const nextCellLabel = rowMode.active && rowMode.colIdx < cols ? `${colName(rowMode.colIdx)}${rowMode.row}` : null;
+  const nextCellLabel = rowMode.active && rowMode.colIdx < colLabels.length ? `${colLabels[rowMode.colIdx]}${rowLabels[rowMode.row]}` : null;
   const displayValue = (key: string, raw: string): string => {
     if (focusedKey === key) return raw;
     if (raw && isNumeric(raw)) return format2(raw);
     return raw;
   };
-  const nominalNum = nominalThickness && isNumeric(nominalThickness)
-    ? parseFloat(String(nominalThickness).replace(',', '.')) : null;
+  const nominalNum = nominalThickness && isNumeric(nominalThickness) ? parseFloat(String(nominalThickness).replace(',', '.')) : null;
   const equipoSeleccionado = equiposUT.find((e) => e.id === equipoUtId) ?? null;
 
   return (
@@ -846,23 +889,11 @@ export function GridMappingPage() {
       <style>{`
         @media print {
           @page { margin: 12mm; size: A4 portrait; }
-          
           header, aside, nav, .app-header, .app-sidebar { display: none !important; }
-          
           body, #root, .min-h-screen, .flex-1, main { 
-            display: block !important; 
-            height: auto !important; 
-            margin: 0 !important; 
-            padding: 0 !important; 
-            background: white !important;
-            overflow: visible !important;
+            display: block !important; height: auto !important; margin: 0 !important; padding: 0 !important; background: white !important; overflow: visible !important;
           }
-          
-          body { 
-            -webkit-print-color-adjust: exact; 
-            print-color-adjust: exact; 
-          }
-          
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .print\\:hidden { display: none !important; }
           .print\\:block { display: block !important; }
         }
@@ -911,31 +942,14 @@ export function GridMappingPage() {
                 Equipo de medición UT
                 {loadingEquipos && <span className="ml-2 text-airbus-sky font-normal normal-case">(cargando…)</span>}
                 {!loadingEquipos && (
-                  <span className="ml-2 text-gray-400 font-normal normal-case">
-                    ({equiposUT.length} disponible{equiposUT.length !== 1 ? 's' : ''})
-                  </span>
+                  <span className="ml-2 text-gray-400 font-normal normal-case">({equiposUT.length} disponible{equiposUT.length !== 1 ? 's' : ''})</span>
                 )}
               </label>
-              <select
-                className="input text-base"
-                value={equipoUtId}
-                onChange={(e) => setEquipoUtId(e.target.value)}
-                disabled={loadingEquipos}
-              >
-                <option value="">
-                  {loadingEquipos
-                    ? 'Cargando equipos…'
-                    : equiposUT.length === 0
-                    ? '— No hay equipos UT disponibles —'
-                    : '— Selecciona un equipo UT —'}
-                </option>
+              <select className="input text-base" value={equipoUtId} onChange={(e) => setEquipoUtId(e.target.value)} disabled={loadingEquipos}>
+                <option value="">{loadingEquipos ? 'Cargando…' : equiposUT.length === 0 ? '— No hay equipos UT —' : '— Selecciona equipo UT —'}</option>
                 {equiposUT.map((eq) => {
                   const baja = (eq.estado ?? '').toLowerCase() === 'baja';
-                  return (
-                    <option key={eq.id} value={eq.id} disabled={baja}>
-                      {equipoLabel(eq)}
-                    </option>
-                  );
+                  return <option key={eq.id} value={eq.id} disabled={baja}>{equipoLabel(eq)}</option>;
                 })}
               </select>
 
@@ -945,65 +959,25 @@ export function GridMappingPage() {
                     {equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo}
                   </span>
                   <span className="text-gray-700 font-medium">{equipoSeleccionado.nombre}</span>
-                  {equipoSeleccionado.codigo_barras && (
-                    <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>
-                  )}
-                  {equipoSeleccionado.estado && equipoSeleccionado.estado !== 'disponible' && (
-                    <span className="px-2 py-0.5 rounded-full bg-airbus-orange/15 text-airbus-orange font-medium">
-                      {equipoSeleccionado.estado}
-                    </span>
-                  )}
+                  {equipoSeleccionado.codigo_barras && <span className="text-gray-400 font-mono">· CB: {equipoSeleccionado.codigo_barras}</span>}
                 </div>
               )}
 
               <div className="mt-2 text-[10px] font-mono bg-white border border-dashed border-gray-300 rounded px-2 py-1 text-gray-500">
                 <b>DEBUG:</b> equipos en BD: <b>{debugEquipos.totalEnDB}</b> · UT: <b>{debugEquipos.totalUT}</b>
-                {debugEquipos.codigosEncontrados.length > 0 && (
-                  <> · códigos: <b>{debugEquipos.codigosEncontrados.join(', ')}</b></>
-                )}
-                {debugEquipos.errorMsg && (
-                  <> · <span className="text-red-600">ERROR: {debugEquipos.errorMsg}</span></>
-                )}
+                {debugEquipos.codigosEncontrados.length > 0 && <> · códigos: <b>{debugEquipos.codigosEncontrados.join(', ')}</b></>}
+                {debugEquipos.errorMsg && <> · <span className="text-red-600">ERROR: {debugEquipos.errorMsg}</span></>}
               </div>
             </div>
 
             <div>
-              <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">
-                Espesor nominal (mm)
-              </label>
+              <label className="block text-xs uppercase tracking-wide text-airbus-blue mb-1 font-semibold">Espesor nominal (mm)</label>
               <input className="input text-base" type="text" inputMode="decimal" placeholder="0.00"
                 value={nominalThickness}
                 onChange={(e) => setNominalThickness(e.target.value)}
                 onBlur={() => { if (nominalThickness && isNumeric(nominalThickness)) setNominalThickness(format2(nominalThickness)); }} />
             </div>
           </div>
-
-          {!loadingEquipos && equiposUT.length === 0 && debugEquipos.totalEnDB > 0 && (
-            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
-              <p className="text-xs text-red-700 font-semibold">
-                ⚠️ Hay {debugEquipos.totalEnDB} equipos en BD, pero ninguno tiene técnica UT.
-              </p>
-            </div>
-          )}
-          {!loadingEquipos && debugEquipos.totalEnDB === 0 && !debugEquipos.errorMsg && (
-            <div className="mt-3 bg-yellow-50 border border-yellow-300 rounded-lg px-3 py-2">
-              <p className="text-xs text-yellow-800">
-                ⚠️ La consulta no ha devuelto ningún equipo. Revisa permisos (RLS) o que la tabla no esté vacía.
-              </p>
-            </div>
-          )}
-          {debugEquipos.errorMsg && (
-            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg px-3 py-2">
-              <p className="text-xs text-red-700 font-semibold">❌ Error de consulta:</p>
-              <p className="text-xs text-red-600 font-mono mt-1">{debugEquipos.errorMsg}</p>
-            </div>
-          )}
-
-          {nominalNum !== null && valueStats.hasData && (
-            <p className="text-xs text-airbus-blue mt-2">
-              ℹ️ Referencia: nominal <b>{format2(nominalNum)}</b> · rango medido <b>{format2(valueStats.min)}</b> – <b>{format2(valueStats.max)}</b>
-            </p>
-          )}
         </div>
 
         {/* ========== TARJETA 3: IMAGEN Y ORIENTACIÓN ========== */}
@@ -1015,27 +989,36 @@ export function GridMappingPage() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2">Imagen de Referencia</label>
               <input 
-                type="file" 
-                accept="image/*" 
+                type="file" accept="image/*" 
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   const reader = new FileReader();
-                  reader.onload = (ev) => setReferenceImage(ev.target?.result as string);
+                  reader.onload = (ev) => {
+                    setReferenceImage(ev.target?.result as string);
+                    setCustomColLabels([]);
+                    setCustomRowLabels([]);
+                  };
                   reader.readAsDataURL(file);
                 }}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-airbus-blue/10 file:text-airbus-blue hover:file:bg-airbus-blue/20"
               />
+              
               {referenceImage && (
                 <div className="mt-3 relative inline-block border rounded-lg p-2 bg-gray-50">
                   <img src={referenceImage} alt="Referencia" className="max-h-48 object-contain" />
-                  <button 
-                    onClick={() => setReferenceImage('')}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow hover:bg-red-600"
-                    title="Eliminar imagen"
-                  >
-                    ✕
+                  <button onClick={() => setReferenceImage('')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow hover:bg-red-600" title="Eliminar imagen">✕</button>
+                </div>
+              )}
+
+              {referenceImage && (
+                <div className="mt-3 flex gap-2">
+                  <button onClick={handleAutoDetect} disabled={isOcrLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-2">
+                    {isOcrLoading ? '⏳ Analizando...' : '🔍 Auto-detectar ejes de la imagen'}
                   </button>
+                  {(customColLabels.length > 0 || customRowLabels.length > 0) && (
+                    <button onClick={resetLabels} className="btn-ghost text-xs py-1.5 px-3 text-red-500 border border-red-200">Restablecer</button>
+                  )}
                 </div>
               )}
             </div>
@@ -1045,54 +1028,27 @@ export function GridMappingPage() {
               <label className="block text-xs font-semibold text-gray-700 mb-2">Flechas y Textos de Referencia</label>
               <div className="flex flex-wrap gap-2 mb-3">
                 {[
-                  { arrow: '↑', text: 'UP' },
-                  { arrow: '↓', text: 'DOWN' },
-                  { arrow: '←', text: 'INBOARD' },
-                  { arrow: '→', text: 'OUTBOARD' },
+                  { arrow: '↑', text: 'UP' }, { arrow: '↓', text: 'DOWN' },
+                  { arrow: '←', text: 'INBOARD' }, { arrow: '→', text: 'OUTBOARD' },
                   { arrow: '↖', text: 'FWD' },
                 ].map((preset) => (
-                  <button
-                    key={preset.text}
-                    onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), ...preset }])}
-                    className="px-2 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-semibold text-gray-700 transition"
-                  >
+                  <button key={preset.text} onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), ...preset }])} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-semibold text-gray-700 transition">
                     + {preset.arrow} {preset.text}
                   </button>
                 ))}
-                <button
-                  onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), arrow: '↑', text: '' }])}
-                  className="px-2 py-1 bg-airbus-blue text-white rounded text-xs font-semibold hover:bg-airbus-navy transition"
-                >
+                <button onClick={() => setMarkers([...markers, { id: crypto.randomUUID(), arrow: '↑', text: '' }])} className="px-2 py-1 bg-airbus-blue text-white rounded text-xs font-semibold hover:bg-airbus-navy transition">
                   + Personalizado
                 </button>
               </div>
 
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                 {markers.map((m) => (
                   <div key={m.id} className="flex items-center gap-2">
-                    <select
-                      value={m.arrow}
-                      onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, arrow: e.target.value } : x))}
-                      className="input text-sm w-16 text-center font-bold"
-                    >
-                      {['↑','↓','←','→','↖','↗','↘','↙'].map(a => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
+                    <select value={m.arrow} onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, arrow: e.target.value } : x))} className="input text-sm w-16 text-center font-bold">
+                      {['↑','↓','←','→','↖','↗','↘','↙'].map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
-                    <input
-                      type="text"
-                      value={m.text}
-                      onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, text: e.target.value } : x))}
-                      placeholder="Texto (ej. FWD)"
-                      className="input text-sm flex-1"
-                    />
-                    <button
-                      onClick={() => setMarkers(markers.filter(x => x.id !== m.id))}
-                      className="text-red-500 hover:text-red-700 p-1"
-                      title="Eliminar"
-                    >
-                      ✕
-                    </button>
+                    <input type="text" value={m.text} onChange={(e) => setMarkers(markers.map(x => x.id === m.id ? { ...x, text: e.target.value } : x))} placeholder="Texto (ej. FWD)" className="input text-sm flex-1" />
+                    <button onClick={() => setMarkers(markers.filter(x => x.id !== m.id))} className="text-red-500 hover:text-red-700 p-1" title="Eliminar">✕</button>
                   </div>
                 ))}
               </div>
@@ -1102,19 +1058,14 @@ export function GridMappingPage() {
 
         {/* Voz */}
         <div className="card space-y-3">
-          <button onClick={toggleCommandMic}
-            className={`w-full py-3 rounded-lg font-semibold text-white transition ${
-              listenMode === 'command'
-                ? 'bg-airbus-red animate-pulse'
-                : 'bg-airbus-blue hover:bg-airbus-navy'
-            }`}>
+          <button onClick={toggleCommandMic} className={`w-full py-3 rounded-lg font-semibold text-white transition ${listenMode === 'command' ? 'bg-airbus-red animate-pulse' : 'bg-airbus-blue hover:bg-airbus-navy'}`}>
             {listenMode === 'command' ? '⏹ Cancelar comando' : '🎤 Dictar fila N / FIN (comando)'}
           </button>
 
           <div className="flex items-center gap-2 flex-wrap">
             {rowMode.active ? (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-airbus-blue text-white text-sm font-medium">
-                📋 Fila {rowMode.row} <span className="text-xs opacity-90">{nextCellLabel ? `siguiente: ${nextCellLabel}` : 'completa · di FIN'}</span>
+                📋 Fila {rowLabels[rowMode.row]} <span className="text-xs opacity-90">{nextCellLabel ? `siguiente: ${nextCellLabel}` : 'completa · di FIN'}</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium">Sin fila activa</span>
@@ -1125,11 +1076,7 @@ export function GridMappingPage() {
           <div className="min-h-[38px] text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700">
             {heard ? (
               <>
-                {listenMode === 'cell' && activeCellKey && (
-                  <span className="mr-2 text-[11px] px-2 py-0.5 rounded bg-airbus-blue text-white font-mono">
-                    {activeCellKey}
-                  </span>
-                )}
+                {listenMode === 'cell' && activeCellKey && <span className="mr-2 text-[11px] px-2 py-0.5 rounded bg-airbus-blue text-white font-mono">{activeCellKey}</span>}
                 {heard}
               </>
             ) : (
@@ -1140,9 +1087,7 @@ export function GridMappingPage() {
           {(lastNormalized || lastReadings.length > 0) && (
             <div className="text-[11px] text-gray-400 bg-white border border-dashed border-gray-200 rounded-lg px-3 py-1.5 font-mono">
               Normalizado: <b className="text-gray-600">{lastNormalized || '—'}</b>
-              {lastReadings.length > 0 && (
-                <> · Valores: <b className="text-gray-600">[{lastReadings.map((v) => format2(v)).join(', ')}]</b></>
-              )}
+              {lastReadings.length > 0 && <> · Valores: <b className="text-gray-600">[{lastReadings.map((v) => format2(v)).join(', ')}]</b></>}
             </div>
           )}
 
@@ -1153,20 +1098,31 @@ export function GridMappingPage() {
           <div className="flex gap-5 items-center flex-wrap pt-2 border-t border-gray-100 text-sm">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Filas</span>
-              <button type="button" onClick={() => setRowsCount(rows - 1)} disabled={rows <= MIN_ROWS}
-                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+              <button type="button" onClick={() => setRowsCount(rows - 1)} disabled={rows <= MIN_ROWS} className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
               <span className="w-8 text-center font-mono text-sm">{rows}</span>
-              <button type="button" onClick={() => setRowsCount(rows + 1)} disabled={rows >= MAX_ROWS}
-                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+              <button type="button" onClick={() => setRowsCount(rows + 1)} disabled={rows >= MAX_ROWS} className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
             </div>
             <div className="flex items-center gap-2">
               <span className="font-semibold text-gray-600 text-xs uppercase tracking-wide">Columnas</span>
-              <button type="button" onClick={() => setColsCount(cols - 1)} disabled={cols <= MIN_COLS}
-                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
-              <span className="w-14 text-center font-mono text-sm">{colName(cols - 1)}</span>
-              <button type="button" onClick={() => setColsCount(cols + 1)} disabled={cols >= MAX_COLS}
-                className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+              <button type="button" onClick={() => setColsCount(cols - 1)} disabled={cols <= MIN_COLS} className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+              <span className="w-14 text-center font-mono text-sm">{colLabels[colLabels.length - 1] || '—'}</span>
+              <button type="button" onClick={() => setColsCount(cols + 1)} disabled={cols >= MAX_COLS} className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-bold text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
             </div>
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap pt-2 border-t border-gray-100 text-xs font-medium text-gray-700">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={swapAxes} onChange={(e) => setSwapAxes(e.target.checked)} className="rounded text-airbus-blue focus:ring-airbus-blue" />
+              Cambiar Ejes (Letras ↔ Números)
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={invertRows} onChange={(e) => setInvertRows(e.target.checked)} className="rounded text-airbus-blue focus:ring-airbus-blue" />
+              Invertir Filas
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={invertCols} onChange={(e) => setInvertCols(e.target.checked)} className="rounded text-airbus-blue focus:ring-airbus-blue" />
+              Invertir Columnas
+            </label>
           </div>
 
           <div className="flex gap-2 flex-wrap items-center pt-2">
@@ -1174,9 +1130,7 @@ export function GridMappingPage() {
             <button className="btn-ghost text-airbus-red" onClick={clearAll}>Borrar todo</button>
             <button className="btn-ghost" onClick={exportCSV}>CSV</button>
             <button className="btn-ghost flex items-center gap-2 text-airbus-blue font-semibold" onClick={() => window.print()}>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
               Generar PDF
             </button>
           </div>
@@ -1188,34 +1142,28 @@ export function GridMappingPage() {
             <thead>
               <tr>
                 <th className="bg-airbus-navy text-white w-9 h-9 border border-gray-200" />
-                {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
+                {colLabels.map((c) => (
                   <th key={c} className="bg-airbus-navy text-white font-semibold h-9 border border-gray-200 min-w-[44px] whitespace-nowrap">{c}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: rows }, (_, i) => i + 1).map((r) => {
-                const isCurrentRow = rowMode.active && rowMode.row === r;
+              {rowLabels.map((rLabel, rIdx) => {
+                const isCurrentRow = rowMode.active && rowLabels[rowMode.row] === rLabel;
                 return (
-                  <tr key={r}>
-                    <th className={`font-bold text-xs border border-gray-200 h-10 transition-colors ${isCurrentRow ? 'bg-airbus-blue text-white' : 'bg-gray-100 text-gray-600'}`}>{r}</th>
-                    {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => {
-                      const key = `${c}${r}`;
+                  <tr key={rLabel}>
+                    <th className={`font-bold text-xs border border-gray-200 h-10 transition-colors ${isCurrentRow ? 'bg-airbus-blue text-white' : 'bg-gray-100 text-gray-600'}`}>{rLabel}</th>
+                    {colLabels.map((cLabel, cIdx) => {
+                      const key = `${cLabel}${rLabel}`;
                       const v = grid[key] ?? '';
                       const display = displayValue(key, v);
                       const active = selected === key;
                       const listening = listenMode === 'cell' && activeCellKey === key;
                       const flashing = flashKey === key;
                       const numeric = isNumeric(v);
-                      const bg = numeric && valueStats.hasData
-                        ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
-                        : undefined;
+                      const bg = numeric && valueStats.hasData ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max) : undefined;
                       return (
-                        <td
-                          key={key}
-                          className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${listening ? 'outline outline-2 outline-red-500' : ''}`}
-                          style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}
-                        >
+                        <td key={key} className={`border border-gray-200 h-10 p-0 transition-colors duration-300 ${active ? 'outline outline-2 outline-airbus-sky' : ''} ${listening ? 'outline outline-2 outline-red-500' : ''}`} style={{ backgroundColor: bg, boxShadow: flashing ? 'inset 0 0 0 3px rgb(251, 146, 60)' : undefined }}>
                           <input
                             className="w-full h-full text-center bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-airbus-sky font-medium tabular-nums px-1"
                             inputMode="decimal"
@@ -1223,15 +1171,8 @@ export function GridMappingPage() {
                             onClick={() => onCellClick(key)}
                             onChange={(e) => setCellRaw(key, e.target.value)}
                             onFocus={() => { setFocusedKey(key); setSelected(key); }}
-                            onBlur={(e) => {
-                              setFocusedKey(null);
-                              const val = e.target.value.trim();
-                              if (val && isNumeric(val)) setCell(key, val);
-                              else if (val) setCellRaw(key, val);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
-                            }}
+                            onBlur={(e) => { setFocusedKey(null); const val = e.target.value.trim(); if (val && isNumeric(val)) setCell(key, val); else if (val) setCellRaw(key, val); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
                           />
                         </td>
                       );
@@ -1252,17 +1193,11 @@ export function GridMappingPage() {
                 <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.min)}</span>
                 <div className="flex-1 relative py-2">
                   <div className="h-4 rounded-full border border-gray-200" style={{ background: LEGEND_GRADIENT }} />
-                  {nominalPct !== null && (
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow"
-                      style={{ left: `${nominalPct}%`, transform: 'translateX(-50%)' }}
-                      title={`Nominal: ${format2(nominalNum ?? 0)}`} />
-                  )}
+                  {nominalPct !== null && <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600 shadow" style={{ left: `${nominalPct}%`, transform: 'translateX(-50%)' }} title={`Nominal: ${format2(nominalNum ?? 0)}`} />}
                 </div>
                 <span className="font-mono text-gray-700 tabular-nums">{format2(valueStats.max)}</span>
               </div>
-            ) : (
-              <span className="text-xs text-gray-400">Introduce valores numéricos para ver el gradiente</span>
-            )}
+            ) : <span className="text-xs text-gray-400">Introduce valores numéricos para ver el gradiente</span>}
           </div>
         </div>
 
@@ -1270,9 +1205,7 @@ export function GridMappingPage() {
         <div className="card">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
-            <button className="btn-ghost text-sm" onClick={loadHistory} disabled={loadingHistory}>
-              {loadingHistory ? 'Cargando…' : 'Refrescar'}
-            </button>
+            <button className="btn-ghost text-sm" onClick={loadHistory} disabled={loadingHistory}>{loadingHistory ? 'Cargando…' : 'Refrescar'}</button>
           </div>
           {history.length === 0 ? (
             <p className="text-sm text-gray-500">Aún no hay cuadrículas guardadas.</p>
@@ -1281,12 +1214,8 @@ export function GridMappingPage() {
               {history.map((h) => (
                 <li key={h.id} className="py-2 flex items-center justify-between gap-3 text-sm">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-800 truncate">
-                      {h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}
-                    </div>
+                    <div className="font-medium text-gray-800 truncate">{h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}</div>
+                    <div className="text-xs text-gray-500">{fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}</div>
                   </div>
                   <button className="btn-ghost text-airbus-blue text-sm" onClick={() => loadRecord(h.id)}>Cargar</button>
                 </li>
@@ -1300,7 +1229,6 @@ export function GridMappingPage() {
       {/* VISTA DE IMPRESIÓN (oculta en pantalla, visible al imprimir)        */}
       {/* ==================================================================== */}
       <div className="hidden print:block bg-white text-black" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
-        {/* Header del Informe */}
         <div className="flex justify-between items-start border-b-2 border-gray-800 pb-2 mb-4">
           <div>
             <h1 className="text-2xl font-bold uppercase tracking-wider text-gray-900 m-0">Informe de Grid Mapping</h1>
@@ -1312,105 +1240,63 @@ export function GridMappingPage() {
           </div>
         </div>
 
-        {/* Tablas de Metadatos y Equipo */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <table className="w-full text-sm border-collapse border border-gray-400">
             <tbody>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Matrícula</td>
-                <td className="border border-gray-400 px-2 py-1">{meta.matricula}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">WO / SAP</td>
-                <td className="border border-gray-400 px-2 py-1">{meta.wo_sap || '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">FR</td>
-                <td className="border border-gray-400 px-2 py-1">{meta.fr || '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Operador</td>
-                <td className="border border-gray-400 px-2 py-1">{meta.operador || '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Espesor Nominal</td>
-                <td className="border border-gray-400 px-2 py-1">{nominalThickness ? format2(nominalThickness) + ' mm' : '—'}</td>
-              </tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Matrícula</td><td className="border border-gray-400 px-2 py-1">{meta.matricula}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">WO / SAP</td><td className="border border-gray-400 px-2 py-1">{meta.wo_sap || '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">FR</td><td className="border border-gray-400 px-2 py-1">{meta.fr || '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Operador</td><td className="border border-gray-400 px-2 py-1">{meta.operador || '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Espesor Nominal</td><td className="border border-gray-400 px-2 py-1">{nominalThickness ? format2(nominalThickness) + ' mm' : '—'}</td></tr>
             </tbody>
           </table>
 
           <table className="w-full text-sm border-collapse border border-gray-400">
             <tbody>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Equipo UT</td>
-                <td className="border border-gray-400 px-2 py-1">{equipoSeleccionado ? equipoSeleccionado.nombre : '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Nº Serie / ID</td>
-                <td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo) : '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Código de Barras</td>
-                <td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.codigo_barras || '—') : '—'}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Próx. Calibración</td>
-                <td className="border border-gray-400 px-2 py-1 font-medium text-gray-800">{equipoSeleccionado?.proxima_calibracion ? fmtFecha(equipoSeleccionado.proxima_calibracion) : '—'}</td>
-              </tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Equipo UT</td><td className="border border-gray-400 px-2 py-1">{equipoSeleccionado ? equipoSeleccionado.nombre : '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Nº Serie / ID</td><td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo) : '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Código de Barras</td><td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.codigo_barras || '—') : '—'}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Próx. Calibración</td><td className="border border-gray-400 px-2 py-1 font-medium text-gray-800">{equipoSeleccionado?.proxima_calibracion ? fmtFecha(equipoSeleccionado.proxima_calibracion) : '—'}</td></tr>
             </tbody>
           </table>
         </div>
 
-        {/* Imagen de referencia */}
         {referenceImage && (
           <div className="mb-6 flex justify-center">
             <img src={referenceImage} alt="Referencia" className="max-h-64 object-contain border border-gray-300 p-1" />
           </div>
         )}
 
-        {/* Flechas y textos */}
         {markers.length > 0 && (
           <div className="mb-6 p-3 bg-gray-50 border border-gray-300 rounded">
             <div className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Indicaciones de Orientación:</div>
             <div className="flex flex-wrap gap-6">
               {markers.map(m => (
-                <div key={m.id} className="flex items-center gap-2 text-sm font-bold">
-                  <span className="text-lg">{m.arrow}</span>
-                  <span>{m.text}</span>
-                </div>
+                <div key={m.id} className="flex items-center gap-2 text-sm font-bold"><span className="text-lg">{m.arrow}</span><span>{m.text}</span></div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Grid */}
         <h2 className="text-lg font-bold mb-2 border-l-4 border-gray-800 pl-2 mt-6">Resultados de la Medición</h2>
         <table className="w-full border-collapse border border-gray-800 text-xs text-center">
           <thead>
             <tr>
               <th className="border border-gray-800 bg-gray-200 px-1 py-1 w-8"></th>
-              {Array.from({ length: cols }, (_, ci) => colName(ci)).map((c) => (
-                <th key={c} className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{c}</th>
-              ))}
+              {colLabels.map((c) => <th key={c} className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{c}</th>)}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: rows }, (_, i) => i + 1).map((r) => (
-              <tr key={r}>
-                <th className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{r}</th>
-                {Array.from({ length: cols }, (_, ci) => {
-                  const c = colName(ci);
-                  const v = grid[`${c}${r}`] ?? '';
+            {rowLabels.map((rLabel) => (
+              <tr key={rLabel}>
+                <th className="border border-gray-800 bg-gray-200 px-1 py-1 font-bold">{rLabel}</th>
+                {colLabels.map((cLabel) => {
+                  const key = `${cLabel}${rLabel}`;
+                  const v = grid[key] ?? '';
                   const numeric = isNumeric(v);
-                  const bg = numeric && valueStats.hasData 
-                    ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max)
-                    : undefined;
+                  const bg = numeric && valueStats.hasData ? colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max) : undefined;
                   return (
-                    <td 
-                      key={c} 
-                      className="border border-gray-800 px-1 py-1 font-mono font-medium"
-                      style={{ backgroundColor: bg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
-                    >
+                    <td key={cLabel} className="border border-gray-800 px-1 py-1 font-mono font-medium" style={{ backgroundColor: bg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                       {v}
                     </td>
                   );
@@ -1420,7 +1306,6 @@ export function GridMappingPage() {
           </tbody>
         </table>
 
-        {/* Legend */}
         {valueStats.hasData && (
           <div className="mt-4 flex items-center gap-4 text-xs">
             <span className="font-bold uppercase text-gray-700">Escala de medición:</span>
@@ -1429,13 +1314,10 @@ export function GridMappingPage() {
               <div className="w-48 h-3 border border-gray-400" style={{ background: LEGEND_GRADIENT, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} />
               <span>{format2(valueStats.max)}</span>
             </div>
-            {nominalNum !== null && (
-              <span className="ml-4"><strong>Espesor nominal:</strong> {format2(nominalNum)} mm</span>
-            )}
+            {nominalNum !== null && <span className="ml-4"><strong>Espesor nominal:</strong> {format2(nominalNum)} mm</span>}
           </div>
         )}
 
-        {/* Footer */}
         <div className="mt-8 pt-4 border-t border-gray-400 text-[10px] text-gray-500 text-center">
           Este documento ha sido generado automáticamente por el sistema NDT Warehouse.
         </div>
