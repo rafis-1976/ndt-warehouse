@@ -667,6 +667,49 @@ export function GridMappingPage() {
 
   useEffect(() => { void loadEquiposUT(); }, [loadEquiposUT]);
 
+  /* ------------------ Cambiar tamaño ------------------ */
+  const setRowsCount = (n: number) => {
+    if (n < MIN_ROWS || n > MAX_ROWS) return;
+    if (n < rows) {
+      const { rowLabels } = getLabels();
+      const lost = Object.keys(grid).some((k) => {
+        if (k.startsWith('_')) return false;
+        return rowLabels.slice(n).some(r => k.endsWith(r));
+      });
+      if (lost && !confirm(`¿Eliminar las celdas de las filas sobrantes?`)) return;
+      setGrid((prev) => {
+        const next: GridData = {};
+        Object.keys(prev).forEach((k) => {
+          if (k.startsWith('_')) { next[k] = prev[k]; return; }
+          if (!rowLabels.slice(n).some(r => k.endsWith(r))) next[k] = prev[k];
+        });
+        return next;
+      });
+    }
+    setRows(n); rowsRef.current = n;
+  };
+
+  const setColsCount = (n: number) => {
+    if (n < MIN_COLS || n > MAX_COLS) return;
+    if (n < cols) {
+      const { colLabels } = getLabels();
+      const lost = Object.keys(grid).some((k) => {
+        if (k.startsWith('_')) return false;
+        return colLabels.slice(n).some(c => k.startsWith(c));
+      });
+      if (lost && !confirm(`¿Eliminar las celdas de las columnas sobrantes?`)) return;
+      setGrid((prev) => {
+        const next: GridData = {};
+        Object.keys(prev).forEach((k) => {
+          if (k.startsWith('_')) { next[k] = prev[k]; return; }
+          if (!colLabels.slice(n).some(c => k.startsWith(c))) next[k] = prev[k];
+        });
+        return next;
+      });
+    }
+    setCols(n); colsRef.current = n;
+  };
+
   const clearAll = () => {
     if (!confirm('¿Borrar todos los valores de la cuadrícula?')) return;
     stopRecognition();
