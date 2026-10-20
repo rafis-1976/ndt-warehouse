@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
@@ -209,6 +210,7 @@ export function GridMappingPage() {
   const [recordId, setRecordId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
   const [nominalThickness, setNominalThickness] = useState<string>('');
 
   /* ---- Tamaño y Ejes ---- */
@@ -746,11 +748,22 @@ export function GridMappingPage() {
     const { data, error } = await supabase
       .from('grid_mappings')
       .select('id, matricula, wo_sap, fr, fecha, updated_at')
-      .order('updated_at', { ascending: false }).limit(20);
+      .order('updated_at', { ascending: false }).limit(50);
     if (!error && data) setHistory(data as HistoryRow[]);
     setLoadingHistory(false);
   }, []);
   useEffect(() => { void loadHistory(); }, [loadHistory]);
+
+  const filteredHistory = useMemo(() => {
+    if (!historySearch.trim()) return history;
+    const q = historySearch.toLowerCase();
+    return history.filter(h =>
+      (h.matricula && h.matricula.toLowerCase().includes(q)) ||
+      (h.wo_sap && h.wo_sap.toLowerCase().includes(q)) ||
+      (h.fr && h.fr.toLowerCase().includes(q)) ||
+      (h.fecha && h.fecha.includes(q))
+    );
+  }, [history, historySearch]);
 
   const loadRecord = async (id: string) => {
     const { data, error } = await supabase.from('grid_mappings').select('*').eq('id', id).single();
@@ -831,7 +844,6 @@ export function GridMappingPage() {
     setStatus('Generando Excel...');
 
     try {
-      // Cargar ExcelJS desde CDN
       if (!(window as any).ExcelJS) {
         await new Promise<void>((resolve, reject) => {
           const s = document.createElement('script');
@@ -845,7 +857,6 @@ export function GridMappingPage() {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Informe Grid Mapping');
 
-      // Ancho de columnas
       worksheet.columns = [
         { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
         { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
@@ -853,7 +864,6 @@ export function GridMappingPage() {
 
       let currentRow = 1;
 
-      // 1. Título
       worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
       const titleCell = worksheet.getCell(`A${currentRow}`);
       titleCell.value = 'INFORME DE GRID MAPPING';
@@ -862,7 +872,6 @@ export function GridMappingPage() {
       titleCell.alignment = { horizontal: 'center' };
       currentRow += 2;
 
-      // 2. Metadatos
       const addMeta = (label: string, value: string) => {
         worksheet.getCell(`A${currentRow}`).value = label;
         worksheet.getCell(`A${currentRow}`).font = { bold: true };
@@ -878,7 +887,6 @@ export function GridMappingPage() {
       addMeta('Operador:', meta.operador);
       currentRow++;
 
-      // 3. Equipo
       const eqSel = equiposUT.find((e) => e.id === equipoUtId);
       if (eqSel) {
         addMeta('Equipo UT:', eqSel.nombre);
@@ -888,7 +896,6 @@ export function GridMappingPage() {
       if (nominalThickness) addMeta('Espesor Nominal:', nominalThickness + ' mm');
       currentRow++;
 
-      // 4. Flechas
       if (markers.length > 0) {
         worksheet.getCell(`A${currentRow}`).value = 'Flechas y Orientación:';
         worksheet.getCell(`A${currentRow}`).font = { bold: true };
@@ -902,14 +909,12 @@ export function GridMappingPage() {
         currentRow++;
       }
 
-      // 5. Imagen
       if (referenceImage) {
         worksheet.getCell(`A${currentRow}`).value = 'Imagen de Referencia:';
         worksheet.getCell(`A${currentRow}`).font = { bold: true };
         currentRow++;
 
         try {
-          // Convertir DataURL a ArrayBuffer
           const base64Data = referenceImage.split(',')[1];
           const binaryString = window.atob(base64Data);
           const len = binaryString.length;
@@ -925,7 +930,7 @@ export function GridMappingPage() {
             tl: { col: 0, row: currentRow - 1 },
             ext: { width: 300, height: 200 },
           });
-          currentRow += 10; // Dejar espacio para la imagen
+          currentRow += 10;
         } catch (err) {
           console.warn('No se pudo incrustar la imagen:', err);
           worksheet.getCell(`A${currentRow}`).value = '[Error al cargar imagen]';
@@ -933,12 +938,10 @@ export function GridMappingPage() {
         }
       }
 
-      // 6. Cuadrícula
       worksheet.getCell(`A${currentRow}`).value = 'Resultados de la Medición:';
       worksheet.getCell(`A${currentRow}`).font = { bold: true };
       currentRow++;
 
-      // Cabecera
       worksheet.getCell(`A${currentRow}`).border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
       colLabels.forEach((c, i) => {
         const cell = worksheet.getCell(currentRow, i + 2);
@@ -950,7 +953,6 @@ export function GridMappingPage() {
       });
       currentRow++;
 
-      // Filas
       rowLabels.forEach(rLabel => {
         const cellR = worksheet.getCell(`A${currentRow}`);
         cellR.value = rLabel;
@@ -976,14 +978,12 @@ export function GridMappingPage() {
         currentRow++;
       });
 
-      // 7. Leyenda
       if (valueStats.hasData) {
         currentRow++;
         worksheet.getCell(`A${currentRow}`).value = `Escala: MIN=${format2(valueStats.min)} | MAX=${format2(valueStats.max)}`;
         worksheet.getCell(`A${currentRow}`).font = { italic: true };
       }
 
-      // Descargar
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = document.createElement('a');
@@ -1310,23 +1310,45 @@ export function GridMappingPage() {
           </div>
         </div>
 
-        {/* Historial */}
+        {/* Historial con Buscador */}
         <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-airbus-navy">Últimas cuadrículas</h2>
-            <button className="btn-ghost text-sm" onClick={loadHistory} disabled={loadingHistory}>{loadingHistory ? 'Cargando…' : 'Refrescar'}</button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <h2 className="font-semibold text-airbus-navy">Cuadrículas guardadas</h2>
+            <div className="flex gap-2 items-center flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="input pl-9 py-1.5 text-sm"
+                  placeholder="Buscar por matrícula, WO, FR..."
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                />
+              </div>
+              <button className="btn-ghost text-sm py-1.5 whitespace-nowrap" onClick={loadHistory} disabled={loadingHistory}>
+                {loadingHistory ? 'Cargando…' : 'Refrescar'}
+              </button>
+            </div>
           </div>
-          {history.length === 0 ? (
-            <p className="text-sm text-gray-500">Aún no hay cuadrículas guardadas.</p>
+
+          {filteredHistory.length === 0 ? (
+            <p className="text-sm text-gray-500 py-4 text-center">
+              {history.length === 0
+                ? 'Aún no hay cuadrículas guardadas.'
+                : 'No se encontraron resultados para tu búsqueda.'}
+            </p>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {history.map((h) => (
-                <li key={h.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+            <ul className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto pr-2">
+              {filteredHistory.map((h) => (
+                <li key={h.id} className="py-2 flex items-center justify-between gap-3 text-sm hover:bg-gray-50 px-2 rounded transition">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-800 truncate">{h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}</div>
-                    <div className="text-xs text-gray-500">{fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}</div>
+                    <div className="font-medium text-gray-800 truncate">
+                      {h.matricula} · WO {h.wo_sap ?? '—'} · FR {h.fr ?? '—'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {fmtFecha(h.fecha)} · {new Date(h.updated_at).toLocaleString('es-ES')}
+                    </div>
                   </div>
-                  <button className="btn-ghost text-airbus-blue text-sm" onClick={() => loadRecord(h.id)}>Cargar</button>
+                  <button className="btn-ghost text-airbus-blue text-sm whitespace-nowrap" onClick={() => loadRecord(h.id)}>Cargar</button>
                 </li>
               ))}
             </ul>
