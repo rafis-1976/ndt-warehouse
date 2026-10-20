@@ -90,6 +90,16 @@ const LEGEND_GRADIENT =
   COLOR_STOPS.map((s) => `rgb(${s.r},${s.g},${s.b}) ${(s.t * 100).toFixed(0)}%`).join(', ') +
   ')';
 
+// Utilidad para convertir RGB string a Hex (ARGBN) para Excel
+function rgbToHex(rgbStr: string): string {
+  const match = rgbStr.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+  if (!match) return 'FFFFFFFF';
+  const r = parseInt(match[1]).toString(16).padStart(2, '0');
+  const g = parseInt(match[2]).toString(16).padStart(2, '0');
+  const b = parseInt(match[3]).toString(16).padStart(2, '0');
+  return `FF${r}${g}${b}`.toUpperCase();
+}
+
 /* ------------------------- Voz ------------------------- */
 
 const NUM_WORDS: Record<string, number> = {
@@ -816,88 +826,177 @@ export function GridMappingPage() {
     } finally { setSaving(false); }
   };
 
-  const exportCSV = () => {
-    const sep = ';';
-    const data: (string | number)[][] = [];
+  /* ------------------ Exportar a EXCEL ------------------ */
+  const exportExcel = async () => {
+    setStatus('Generando Excel...');
 
-    // --- 1. METADATOS (Cabecera) ---
-    data.push(['INFORME DE GRID MAPPING']);
-    data.push([`MATRICULA:`, meta.matricula]);
-    data.push([`WO / SAP:`, meta.wo_sap || '—']);
-    data.push([`FR:`, meta.fr || '—']);
-    data.push([`FECHA EMISIÓN:`, fmtFecha(meta.fecha)]);
-    data.push([`OPERADOR:`, meta.operador || '—']);
-
-    // --- 2. EQUIPO UT ---
-    const eqSel = equiposUT.find((e) => e.id === equipoUtId);
-    if (eqSel) {
-      const serial = eqSel.numero_serie || eqSel.id_equipo;
-      const cb = eqSel.codigo_barras ? ` · CB: ${eqSel.codigo_barras}` : '';
-      data.push([`EQUIPO UT:`, `[${serial}] ${eqSel.nombre}${cb}`]);
-      data.push([`PRÓX. CALIBRACIÓN:`, eqSel.proxima_calibracion ? fmtFecha(eqSel.proxima_calibracion) : '—']);
-    } else {
-      data.push([`EQUIPO UT:`, '—']);
-    }
-
-    // --- 3. CONDICIONANTE DE COLORES ---
-    if (nominalThickness && isNumeric(nominalThickness)) {
-      data.push([`ESPESOR NOMINAL:`, format2(nominalThickness) + ' mm']);
-    }
-    if (valueStats.hasData) {
-      data.push([`ESCALA DE COLOR (MIN/MAX):`, `MIN=${format2(valueStats.min)} | MAX=${format2(valueStats.max)}`]);
-    }
-
-    // --- 4. FLECHAS Y ORIENTACIÓN ---
-    if (markers.length > 0) {
-      data.push([]);
-      data.push(['FLECHAS Y ORIENTACIÓN:']);
-      markers.forEach((m) => {
-        data.push([`  ${m.text}:`, m.arrow]);
-      });
-    }
-
-    // --- 5. IMAGEN (Base64) ---
-    if (referenceImage) {
-      data.push([]);
-      data.push(['IMAGEN DE REFERENCIA (Copiar y pegar en visor Base64):']);
-      data.push([referenceImage]);
-    }
-
-    // --- 6. TABLA DE VALORES ---
-    data.push([]);
-    data.push(['CUADRICULA DE MEDICIÓN:']);
-    data.push(['', ...colLabels]);
-    for (let r = 0; r < rowLabels.length; r++) {
-      const rowLabel = rowLabels[r];
-      data.push([rowLabel, ...colLabels.map(c => {
-        const v = grid[`${c}${rowLabel}`] ?? '';
-        return v ? (isNumeric(v) ? format2(v) : v) : '';
-      })]);
-    }
-
-    // --- 7. TABLA DE COLORES (RGB por celda) ---
-    if (valueStats.hasData) {
-      data.push([]);
-      data.push(['COLORES DE FONDO POR CELDA (Para validación visual):']);
-      data.push(['', ...colLabels]);
-      for (let r = 0; r < rowLabels.length; r++) {
-        const rowLabel = rowLabels[r];
-        data.push([rowLabel, ...colLabels.map(c => {
-          const v = grid[`${c}${rowLabel}`] ?? '';
-          if (!v || !isNumeric(v)) return '';
-          return colorForValue(parseFloat(String(v).replace(',', '.')), valueStats.min, valueStats.max);
-        })]);
+    try {
+      // Cargar ExcelJS desde CDN
+      if (!(window as any).ExcelJS) {
+        await new Promise<void>((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('No se pudo cargar ExcelJS'));
+          document.head.appendChild(s);
+        });
       }
-    }
+      const ExcelJS = (window as any).ExcelJS;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Informe Grid Mapping');
 
-    // Generar y descargar archivo
-    const csv = '\uFEFF' + data.map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(sep)).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `GRID_${meta.matricula || 'EC-NAV'}_FR${meta.fr || ''}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      // Ancho de columnas
+      worksheet.columns = [
+        { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
+        { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
+      ];
+
+      let currentRow = 1;
+
+      // 1. Título
+      worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
+      const titleCell = worksheet.getCell(`A${currentRow}`);
+      titleCell.value = 'INFORME DE GRID MAPPING';
+      titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      titleCell.alignment = { horizontal: 'center' };
+      currentRow += 2;
+
+      // 2. Metadatos
+      const addMeta = (label: string, value: string) => {
+        worksheet.getCell(`A${currentRow}`).value = label;
+        worksheet.getCell(`A${currentRow}`).font = { bold: true };
+        worksheet.mergeCells(`B${currentRow}:D${currentRow}`);
+        worksheet.getCell(`B${currentRow}`).value = value;
+        currentRow++;
+      };
+
+      addMeta('Matrícula:', meta.matricula);
+      addMeta('WO / SAP:', meta.wo_sap);
+      addMeta('FR:', meta.fr);
+      addMeta('Fecha:', fmtFecha(meta.fecha));
+      addMeta('Operador:', meta.operador);
+      currentRow++;
+
+      // 3. Equipo
+      const eqSel = equiposUT.find((e) => e.id === equipoUtId);
+      if (eqSel) {
+        addMeta('Equipo UT:', eqSel.nombre);
+        addMeta('Nº Serie:', eqSel.numero_serie || eqSel.id_equipo);
+        addMeta('Calibración:', eqSel.proxima_calibracion ? fmtFecha(eqSel.proxima_calibracion) : '—');
+      }
+      if (nominalThickness) addMeta('Espesor Nominal:', nominalThickness + ' mm');
+      currentRow++;
+
+      // 4. Flechas
+      if (markers.length > 0) {
+        worksheet.getCell(`A${currentRow}`).value = 'Flechas y Orientación:';
+        worksheet.getCell(`A${currentRow}`).font = { bold: true };
+        currentRow++;
+        markers.forEach(m => {
+          worksheet.getCell(`A${currentRow}`).value = m.arrow;
+          worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+          worksheet.getCell(`B${currentRow}`).value = m.text;
+          currentRow++;
+        });
+        currentRow++;
+      }
+
+      // 5. Imagen
+      if (referenceImage) {
+        worksheet.getCell(`A${currentRow}`).value = 'Imagen de Referencia:';
+        worksheet.getCell(`A${currentRow}`).font = { bold: true };
+        currentRow++;
+
+        try {
+          // Convertir DataURL a ArrayBuffer
+          const base64Data = referenceImage.split(',')[1];
+          const binaryString = window.atob(base64Data);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+          const imageId = workbook.addImage({
+            buffer: bytes.buffer,
+            extension: 'png',
+          });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 0, row: currentRow - 1 },
+            ext: { width: 300, height: 200 },
+          });
+          currentRow += 10; // Dejar espacio para la imagen
+        } catch (err) {
+          console.warn('No se pudo incrustar la imagen:', err);
+          worksheet.getCell(`A${currentRow}`).value = '[Error al cargar imagen]';
+          currentRow++;
+        }
+      }
+
+      // 6. Cuadrícula
+      worksheet.getCell(`A${currentRow}`).value = 'Resultados de la Medición:';
+      worksheet.getCell(`A${currentRow}`).font = { bold: true };
+      currentRow++;
+
+      // Cabecera
+      worksheet.getCell(`A${currentRow}`).border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+      colLabels.forEach((c, i) => {
+        const cell = worksheet.getCell(currentRow, i + 2);
+        cell.value = c;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'center' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+      });
+      currentRow++;
+
+      // Filas
+      rowLabels.forEach(rLabel => {
+        const cellR = worksheet.getCell(`A${currentRow}`);
+        cellR.value = rLabel;
+        cellR.font = { bold: true };
+        cellR.alignment = { horizontal: 'center' };
+        cellR.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        cellR.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+
+        colLabels.forEach((cLabel, cIdx) => {
+          const key = `${cLabel}${rLabel}`;
+          const v = grid[key] ?? '';
+          const numeric = isNumeric(v);
+          const bg = numeric && valueStats.hasData ? colorForValue(parseFloat(v), valueStats.min, valueStats.max) : undefined;
+          
+          const cell = worksheet.getCell(currentRow, cIdx + 2);
+          cell.value = v;
+          cell.alignment = { horizontal: 'center' };
+          cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+          if (bg) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rgbToHex(bg) } };
+          }
+        });
+        currentRow++;
+      });
+
+      // 7. Leyenda
+      if (valueStats.hasData) {
+        currentRow++;
+        worksheet.getCell(`A${currentRow}`).value = `Escala: MIN=${format2(valueStats.min)} | MAX=${format2(valueStats.max)}`;
+        worksheet.getCell(`A${currentRow}`).font = { italic: true };
+      }
+
+      // Descargar
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `GRID_${meta.matricula || 'EC-NAV'}_FR${meta.fr || ''}.xlsx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      
+      setStatus('✔ Excel generado correctamente.');
+    } catch (err: any) {
+      console.error(err);
+      setStatus('❌ Error generando Excel: ' + err.message);
+    }
   };
 
   const nextCellLabel = rowMode.active && rowMode.colIdx < colLabels.length ? `${colLabels[rowMode.colIdx]}${rowLabels[rowMode.row]}` : null;
@@ -1138,7 +1237,7 @@ export function GridMappingPage() {
           <div className="flex gap-2 flex-wrap items-center pt-2">
             <span className="badge badge-gray">{filled} / {rows * cols}</span>
             <button className="btn-ghost text-airbus-red" onClick={clearAll}>Borrar todo</button>
-            <button className="btn-ghost" onClick={exportCSV}>CSV</button>
+            <button className="btn-ghost" onClick={exportExcel}>Exportar a Excel</button>
             <button className="btn-ghost flex items-center gap-2 text-airbus-blue font-semibold" onClick={() => window.print()}>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
               Generar PDF
