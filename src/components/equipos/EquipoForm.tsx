@@ -8,6 +8,7 @@ import BarcodeLib from 'react-barcode';
 import { estadoCalibracion } from '../../lib/calibracion';
 import { DocumentosUpload } from './DocumentosUpload';
 import { CamaraEquipo } from './CamaraEquipo';
+import { QRCodeSVG } from '../ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import type { DocumentoEquipo } from '../../lib/storage';
 import type { FotoEquipo } from '../../lib/storageFotos';
 
@@ -423,12 +424,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
                   lineColor="#00205B"
                 />
                 <div className="border-t border-gray-100 w-full pt-2 flex justify-center">
-                  {/* API externa para QR sin instalar nada */}
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(form.codigo_barras)}`} 
-                    alt="QR Code" 
-                    className="w-20 h-20"
-                  />
+                  <QRCodeSVG value={form.codigo_barras} size={64} />
                 </div>
               </div>
             )}
