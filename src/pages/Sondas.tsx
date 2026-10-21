@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Activity, RefreshCw, Printer, ScanBarcode,
-  CheckCircle2, Wrench, XCircle
+  CheckCircle2, Wrench, XCircle, X
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { SondaForm } from '../components/sondas/SondaForm';
@@ -85,22 +85,30 @@ export function Sondas() {
   };
 
   const imprimirEtiqueta = (sonda: any) => {
-    const win = window.open('', '_blank', 'width=500,height=400');
+    const win = window.open('', '_blank', 'width=500,height=500');
     if (!win) return;
     win.document.write(`
       <!DOCTYPE html><html><head><title>Etiqueta ${sonda.id_sonda}</title>
-      <style>body { font-family: Helvetica, sans-serif; padding: 20px; text-align: center; }
-      .etiqueta { border: 1px solid #ccc; padding: 16px; border-radius: 8px; max-width: 300px; margin: 0 auto; }
-      .id { font-family: monospace; font-size: 20px; font-weight: bold; color: #00205B; }
+      <style>
+        body { font-family: Helvetica, sans-serif; padding: 20px; display: flex; justify-content: center; }
+        .etiqueta { border: 1px solid #ccc; padding: 16px; border-radius: 8px; max-width: 300px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .id { font-family: monospace; font-size: 20px; font-weight: bold; color: #00205B; margin-bottom: 4px; }
+        .nombre { font-size: 13px; margin-bottom: 4px; }
+        .tecnica { font-size: 11px; color: #666; margin-bottom: 8px; }
+        .codes { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; border-top: 1px dashed #ddd; padding-top: 8px; }
+        @media print { body { padding: 0; } }
       </style></head><body>
       <div class="etiqueta">
         <div class="id">${sonda.id_sonda ?? '—'}</div>
-        <div style="font-size: 13px;">${sonda.nombre}</div>
-        <div style="font-size: 11px; color: #666;">${sonda.tecnicas_ndt?.codigo ?? ''}</div>
-        <div id="barcode"></div>
+        <div class="nombre">${sonda.nombre}</div>
+        <div class="tecnica">${sonda.tecnicas_ndt?.codigo ?? ''}</div>
+        <div class="codes">
+          <div id="barcode"></div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(sonda.codigo_barras)}" alt="QR" />
+        </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-      <script>JsBarcode("#barcode", "${sonda.codigo_barras}", { format: "CODE128", displayValue: false, height: 60 }); setTimeout(() => window.print(), 300);</script>
+      <script>JsBarcode("#barcode", "${sonda.codigo_barras}", { format: "CODE128", displayValue: false, height: 50, width: 2, margin: 0 }); setTimeout(() => window.print(), 500);</script>
       </body></html>
     `);
     win.document.close();
@@ -165,7 +173,7 @@ export function Sondas() {
               <thead className="bg-gray-50 border-b text-left text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Códigos</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3">Técnica</th>
                   <th className="px-4 py-3">Estado</th>
@@ -177,8 +185,20 @@ export function Sondas() {
                   <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(s.id)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">{s.id_sonda}</td>
                     <td className="px-4 py-3">
-                      <button onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(s.codigo_barras); }}>
-                        <Barcode value={s.codigo_barras} format="CODE128" displayValue={false} height={30} width={1} margin={0} background="transparent" />
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setBarcodeAbierto(s.codigo_barras);
+                        }}
+                        className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1"
+                        title="Clic para ampliar"
+                      >
+                        <Barcode value={s.codigo_barras} format="CODE128" displayValue={false} height={25} width={1} margin={0} background="transparent" lineColor="#00205B" />
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(s.codigo_barras)}`}
+                          alt="QR"
+                          className="w-10 h-10 rounded-sm"
+                        />
                       </button>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-800">{s.nombre}</td>
@@ -202,8 +222,21 @@ export function Sondas() {
         )}
       </div>
 
-      <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Código de barras" size="sm">
-        {barcodeAbierto && <div className="flex justify-center p-4"><Barcode value={barcodeAbierto} format="CODE128" displayValue={true} height={60} width={2} /></div>}
+      <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Códigos de identificación" size="sm">
+        {barcodeAbierto && (
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
+              <Barcode value={barcodeAbierto} format="CODE128" displayValue={true} height={60} width={2} margin={0} lineColor="#00205B" />
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-gray-200">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(barcodeAbierto)}`}
+                alt="QR Code"
+                className="w-48 h-48"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar sonda' : 'Nueva sonda'} size="lg">
