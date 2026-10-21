@@ -11,7 +11,7 @@ import { EquipoForm } from '../components/equipos/EquipoForm';
 import { KitForm } from '../components/kits/KitForm';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import Barcode from 'react-barcode';
-import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
+import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL DEL QR
 import {
   estadoCalibracion,
   estadoEfectivoEquipo,
@@ -791,7 +791,7 @@ export function Equipos() {
                                   ev.stopPropagation();
                                   setBarcodeAbierto(e.codigo_barras);
                                 }}
-                                className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1.5"
+                                className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-row items-center gap-3"
                                 title="Clic para ampliar"
                               >
                                 <Barcode
