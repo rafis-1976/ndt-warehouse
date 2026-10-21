@@ -12,7 +12,7 @@ import type { FotoEquipo } from '../../lib/storageFotos';
 interface CableFormProps {
   onSuccess: () => void;
   onCancel: () => void;
-  cableId?: string; // UUID
+  cableId?: string;
 }
 
 const initialState = {
@@ -36,7 +36,6 @@ export function CableForm({ onSuccess, onCancel, cableId }: CableFormProps) {
   const [error, setError] = useState('');
   const [barcodeTocado, setBarcodeTocado] = useState(false);
 
-  // Auto-sincronizar código de barras con ID
   useEffect(() => {
     if (barcodeTocado) return;
     if (form.id_cable) {
@@ -44,7 +43,6 @@ export function CableForm({ onSuccess, onCancel, cableId }: CableFormProps) {
     }
   }, [form.id_cable, barcodeTocado]);
 
-  // Cargar técnicas
   useEffect(() => {
     let cancelled = false;
     async function loadTecnicas() {
@@ -66,7 +64,6 @@ export function CableForm({ onSuccess, onCancel, cableId }: CableFormProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // Cargar cable si es edición
   useEffect(() => {
     if (!cableId) {
       setUploadKey(`tmp-cbl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -250,7 +247,7 @@ export function CableForm({ onSuccess, onCancel, cableId }: CableFormProps) {
               </p>
             )}
             {form.codigo_barras && (
-              <div className="mt-2 flex justify-center bg-white border border-gray-200 rounded-lg p-2">
+              <div className="mt-2 flex flex-col items-center bg-white border border-gray-200 rounded-lg p-2 gap-3">
                 <BarcodeLib
                   value={form.codigo_barras}
                   format="CODE128"
@@ -260,6 +257,13 @@ export function CableForm({ onSuccess, onCancel, cableId }: CableFormProps) {
                   margin={0}
                   lineColor="#00205B"
                 />
+                <div className="border-t border-gray-100 w-full pt-2 flex justify-center">
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(form.codigo_barras)}`} 
+                    alt="QR Code" 
+                    className="w-20 h-20"
+                  />
+                </div>
               </div>
             )}
           </Field>
