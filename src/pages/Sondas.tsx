@@ -7,6 +7,7 @@ import {
 import { Modal } from '../components/ui/Modal';
 import { SondaForm } from '../components/sondas/SondaForm';
 import Barcode from 'react-barcode';
+import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
 
 const estadoBadge: Record<string, string> = {
   disponible: 'badge badge-green',
@@ -185,21 +186,21 @@ export function Sondas() {
                   <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(s.id)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">{s.id_sonda}</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setBarcodeAbierto(s.codigo_barras);
-                        }}
-                        className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1"
-                        title="Clic para ampliar"
-                      >
-                        <Barcode value={s.codigo_barras} format="CODE128" displayValue={false} height={25} width={1} margin={0} background="transparent" lineColor="#00205B" />
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(s.codigo_barras)}`}
-                          alt="QR"
-                          className="w-10 h-10 rounded-sm"
-                        />
-                      </button>
+                      {s.codigo_barras ? (
+                        <button
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            setBarcodeAbierto(s.codigo_barras);
+                          }}
+                          className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-row items-center gap-3"
+                          title="Clic para ampliar"
+                        >
+                          <Barcode value={s.codigo_barras} format="CODE128" displayValue={false} height={25} width={1} margin={0} background="transparent" lineColor="#00205B" />
+                          <QRCodeSVG value={s.codigo_barras} size={40} />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-800">{s.nombre}</td>
                     <td className="px-4 py-3"><span className="badge badge-blue">{s.tecnicas_ndt?.codigo ?? '—'}</span></td>
@@ -228,12 +229,8 @@ export function Sondas() {
             <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
               <Barcode value={barcodeAbierto} format="CODE128" displayValue={true} height={60} width={2} margin={0} lineColor="#00205B" />
             </div>
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(barcodeAbierto)}`}
-                alt="QR Code"
-                className="w-48 h-48"
-              />
+            <div className="bg-white p-4 rounded-lg border border-gray-200 flex justify-center">
+              <QRCodeSVG value={barcodeAbierto} size={200} />
             </div>
           </div>
         )}
