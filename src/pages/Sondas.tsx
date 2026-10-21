@@ -2,11 +2,12 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Activity, RefreshCw, Printer, ScanBarcode,
-  CheckCircle2, Wrench, XCircle, X, Eye, Edit3, Trash2
+  CheckCircle2, Wrench, XCircle, X, Eye, Edit3
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { SondaForm } from '../components/sondas/SondaForm';
 import { SondaDetalle } from '../components/sondas/SondaDetalle';
+import { BarcodeScanner } from '../components/BarcodeScanner'; // <-- IMPORT CORREGIDO
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from '../components/ui/QRCodeSVG';
 
