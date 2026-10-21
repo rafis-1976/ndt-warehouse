@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Cable, RefreshCw, Printer, ScanBarcode,
-  CheckCircle2, Wrench, XCircle
+  CheckCircle2, Wrench, XCircle, Eye, Edit3
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { CableForm } from '../components/cables/CableForm';
+import { CableDetalle } from '../components/cables/CableDetalle';
 import Barcode from 'react-barcode';
-import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
+import { QRCodeSVG } from '../components/ui/QRCodeSVG';
 
 const estadoBadge: Record<string, string> = {
   disponible: 'badge badge-green',
@@ -35,17 +36,29 @@ export function Cables() {
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
 
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalFormOpen, setModalFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  // Estados para el Detalle
+  const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
+  const [cableDetalle, setCableDetalle] = useState<any | null>(null);
+  const [carroDetalle, setCarroDetalle] = useState<any | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     const [cbl, tec] = await Promise.all([
-      supabase.from('cables').select('*, tecnicas_ndt(codigo, nombre)').order('id_cable', { ascending: true }),
-      supabase.from('tecnicas_ndt').select('id, codigo, nombre').eq('activa', true).order('codigo'),
+      supabase
+        .from('cables')
+        .select('*, tecnicas_ndt(codigo, nombre), carros(codigo, nombre, ubicacion, num_bandejas, posiciones_por_bandeja, bandejas_fotos)')
+        .order('id_cable', { ascending: true }),
+      supabase
+        .from('tecnicas_ndt')
+        .select('id, codigo, nombre')
+        .eq('activa', true)
+        .order('codigo'),
     ]);
     if (cbl.error) console.error(cbl.error);
     setCables(cbl.data ?? []);
@@ -58,21 +71,30 @@ export function Cables() {
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return cables.filter((c) => {
-      const coincideBusqueda =
-        qLower === '' ||
-        [c.nombre, c.codigo_barras, c.id_cable].join(' ').toLowerCase().includes(qLower);
-      if (!coincideBusqueda) return false;
+      const campos = [
+        c.nombre, c.codigo_barras, c.id_cable,
+        c.carros?.codigo, c.tecnicas_ndt?.codigo,
+        c.num_bandeja != null ? `bandeja ${c.num_bandeja}` : '',
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      if (qLower && !campos.includes(qLower)) return false;
       if (filtroTecnica !== 'todas' && c.tecnicas_ndt?.codigo !== filtroTecnica) return false;
       if (filtroEstado !== 'todos' && c.estado !== filtroEstado) return false;
       return true;
     });
   }, [cables, q, filtroTecnica, filtroEstado]);
 
-  const openNew = () => { setEditingId(null); setModalOpen(true); };
-  const openEdit = (id: string) => { setEditingId(id); setModalOpen(true); };
+  const openNew = () => { setEditingId(null); setModalFormOpen(true); };
+  const openEdit = (id: string) => { setEditingId(id); setModalFormOpen(true); };
+
+  const abrirDetalle = (c: any) => {
+    setCableDetalle(c);
+    setCarroDetalle(c.carros ?? null);
+    setModalDetalleOpen(true);
+  };
 
   const handleSuccess = () => {
-    setModalOpen(false);
+    setModalFormOpen(false);
     setToast(editingId ? 'Cable actualizado' : 'Cable creado');
     setTimeout(() => setToast(null), 3000);
     load();
@@ -82,7 +104,7 @@ export function Cables() {
     setQ(code.trim());
     setScannerOpen(false);
     const match = cables.find((c) => c.codigo_barras?.toLowerCase() === code.trim().toLowerCase() || c.id_cable?.toLowerCase() === code.trim().toLowerCase());
-    if (match) setTimeout(() => openEdit(match.id), 150);
+    if (match) setTimeout(() => abrirDetalle(match), 150);
   };
 
   const imprimirEtiqueta = (cable: any) => {
@@ -177,13 +199,14 @@ export function Cables() {
                   <th className="px-4 py-3">Códigos</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3">Técnica</th>
+                  <th className="px-4 py-3">Ubicación</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(c.id)}>
+                  <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => abrirDetalle(c)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">{c.id_cable}</td>
                     <td className="px-4 py-3">
                       {c.codigo_barras ? (
@@ -205,6 +228,15 @@ export function Cables() {
                     <td className="px-4 py-3 font-medium text-gray-800">{c.nombre}</td>
                     <td className="px-4 py-3"><span className="badge badge-blue">{c.tecnicas_ndt?.codigo ?? '—'}</span></td>
                     <td className="px-4 py-3">
+                      {c.carros?.codigo ? (
+                        <span className="text-xs text-gray-600">
+                          {c.carros.codigo} {c.num_bandeja ? `(B${c.num_bandeja})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Sin carro</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={estadoBadge[c.estado] ?? 'badge badge-gray'}>
                         {c.estado === 'disponible' && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
                         {c.estado === 'mantenimiento' && <Wrench className="w-3 h-3 inline mr-1" />}
@@ -213,7 +245,17 @@ export function Cables() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={(e) => { e.stopPropagation(); imprimirEtiqueta(c); }} className="p-1.5 text-gray-400 hover:text-airbus-blue"><Printer className="w-4 h-4" /></button>
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => abrirDetalle(c)} className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition" title="Ver detalle">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => imprimirEtiqueta(c)} className="p-1.5 text-gray-400 hover:text-airbus-blue hover:bg-airbus-light/10 rounded transition" title="Imprimir etiqueta">
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => openEdit(c.id)} className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition" title="Editar">
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -223,6 +265,7 @@ export function Cables() {
         )}
       </div>
 
+      {/* Modal barcode */}
       <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Códigos de identificación" size="sm">
         {barcodeAbierto && (
           <div className="flex flex-col items-center gap-6 py-4">
@@ -236,8 +279,44 @@ export function Cables() {
         )}
       </Modal>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar cable' : 'Nuevo cable'} size="lg">
-        <CableForm cableId={editingId ?? undefined} onSuccess={handleSuccess} onCancel={() => setModalOpen(false)} />
+      {/* Modal Formulario */}
+      <Modal open={modalFormOpen} onClose={() => setModalFormOpen(false)} title={editingId ? 'Editar cable' : 'Nuevo cable'} size="lg">
+        <CableForm cableId={editingId ?? undefined} onSuccess={handleSuccess} onCancel={() => setModalFormOpen(false)} />
+      </Modal>
+
+      {/* Modal Detalle */}
+      <Modal
+        open={modalDetalleOpen}
+        onClose={() => { setModalDetalleOpen(false); setCableDetalle(null); setCarroDetalle(null); }}
+        title={cableDetalle ? `Cable ${cableDetalle.id_cable}` : 'Detalle'}
+        size="lg"
+      >
+        {cableDetalle && (
+          <CableDetalle
+            cable={cableDetalle}
+            carro={carroDetalle}
+            onClose={() => { setModalDetalleOpen(false); setCableDetalle(null); setCarroDetalle(null); }}
+            cablesEnBandeja={
+              cableDetalle.carro_id && cableDetalle.num_bandeja
+                ? cables.filter(
+                    (p) =>
+                      p.carro_id === cableDetalle.carro_id &&
+                      p.num_bandeja === cableDetalle.num_bandeja
+                  )
+                : []
+            }
+          />
+        )}
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras" size="md">
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara al código de barras. El código se usará como término de búsqueda y, si coincide, se abrirá el detalle automáticamente.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
