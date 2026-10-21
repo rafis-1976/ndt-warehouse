@@ -70,7 +70,6 @@ export function Equipos() {
   const [avisoProximasCerrado, setAvisoProximasCerrado] = useState(false);
   const [avisoFueraCerrado, setAvisoFueraCerrado] = useState(false);
 
-  // Escáner
   const [scannerOpen, setScannerOpen] = useState(false);
   const [ultimoEscaneo, setUltimoEscaneo] = useState<string | null>(null);
 
@@ -196,9 +195,6 @@ export function Equipos() {
     load();
   };
 
-  // ============================================================
-  // Escáner
-  // ============================================================
   const handleScan = (code: string) => {
     const limpio = code.trim();
     setQ(limpio);
@@ -216,30 +212,34 @@ export function Equipos() {
   };
 
   const imprimirEtiqueta = (equipo: any) => {
-    const win = window.open('', '_blank', 'width=500,height=400');
+    const win = window.open('', '_blank', 'width=500,height=500');
     if (!win) return;
     win.document.write(`
       <!DOCTYPE html><html><head><title>Etiqueta ${equipo.id_equipo}</title>
       <style>
         body { font-family: Helvetica, Arial, sans-serif; padding: 20px; display: flex; justify-content: center; }
-        .etiqueta { border: 1px solid #ccc; border-radius: 8px; padding: 16px 24px; text-align: center; max-width: 320px; }
+        .etiqueta { border: 1px solid #ccc; border-radius: 8px; padding: 16px 24px; text-align: center; max-width: 320px; display: flex; flex-direction: column; align-items: center; }
         .id { font-family: monospace; font-size: 20px; font-weight: bold; color: #00205B; margin-bottom: 4px; }
         .nombre { font-size: 13px; color: #333; margin-bottom: 2px; }
-        .tecnica { font-size: 11px; color: #666; margin-bottom: 12px; }
+        .tecnica { font-size: 11px; color: #666; margin-bottom: 8px; }
+        .codes { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; border-top: 1px dashed #ddd; padding-top: 8px; }
         @media print { body { padding: 0; } }
       </style></head><body>
       <div class="etiqueta">
         <div class="id">${equipo.id_equipo ?? '—'}</div>
         <div class="nombre">${equipo.nombre}</div>
         <div class="tecnica">${equipo.tecnicas_ndt?.codigo ?? ''}</div>
-        <div id="barcode"></div>
+        <div class="codes">
+          <div id="barcode"></div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(equipo.codigo_barras)}" alt="QR" />
+        </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
       <script>
         JsBarcode("#barcode", "${equipo.codigo_barras}", {
-          format: "CODE128", displayValue: false, height: 60, width: 2, margin: 0
+          format: "CODE128", displayValue: false, height: 50, width: 2, margin: 0
         });
-        setTimeout(() => window.print(), 300);
+        setTimeout(() => window.print(), 500);
       </script></body></html>
     `);
     win.document.close();
@@ -537,7 +537,6 @@ export function Equipos() {
               )}
             </div>
 
-            {/* Aviso de último escaneo */}
             {ultimoEscaneo && (
               <div className="flex items-center gap-2 text-xs bg-airbus-sky/10 border border-airbus-sky/30 text-airbus-blue px-3 py-1.5 rounded-lg">
                 <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
@@ -555,7 +554,6 @@ export function Equipos() {
               </div>
             )}
 
-            {/* Filtro rápido "fuera del almacén" */}
             {equiposFuera.length > 0 && (
               <div>
                 <button
@@ -581,7 +579,6 @@ export function Equipos() {
               </div>
             )}
 
-            {/* TÉCNICA */}
             <div>
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 <Filter className="w-3 h-3" />
@@ -609,7 +606,6 @@ export function Equipos() {
               </div>
             </div>
 
-            {/* ESTADO */}
             <div>
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 <Filter className="w-3 h-3" />
@@ -661,7 +657,6 @@ export function Equipos() {
               </div>
             </div>
 
-            {/* CALIBRACIÓN */}
             <div>
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                 <Filter className="w-3 h-3" />
@@ -750,7 +745,7 @@ export function Equipos() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
                       <th className="px-4 py-3">ID</th>
-                      <th className="px-4 py-3">Código de barras</th>
+                      <th className="px-4 py-3">Códigos</th>
                       <th className="px-4 py-3">Nombre</th>
                       <th className="px-4 py-3">Técnica</th>
                       <th className="px-4 py-3">Ubicación</th>
@@ -794,18 +789,23 @@ export function Equipos() {
                                 ev.stopPropagation();
                                 setBarcodeAbierto(e.codigo_barras);
                               }}
-                              className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition"
+                              className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1"
                               title="Clic para ampliar"
                             >
                               <Barcode
                                 value={e.codigo_barras}
                                 format="CODE128"
                                 displayValue={false}
-                                height={35}
-                                width={1.3}
+                                height={25}
+                                width={1}
                                 margin={0}
                                 background="transparent"
                                 lineColor="#00205B"
+                              />
+                              <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(e.codigo_barras)}`}
+                                alt="QR"
+                                className="w-10 h-10 rounded-sm"
                               />
                             </button>
                           </td>
@@ -943,23 +943,30 @@ export function Equipos() {
       <Modal
         open={!!barcodeAbierto}
         onClose={() => setBarcodeAbierto(null)}
-        title="Código de barras"
+        title="Códigos de identificación"
         size="sm"
       >
         {barcodeAbierto && (
-          <div className="flex flex-col items-center gap-4 py-4">
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
               <Barcode
                 value={barcodeAbierto}
                 format="CODE128"
-                displayValue={false}
-                height={80}
-                width={2.5}
+                displayValue={true}
+                height={60}
+                width={2}
                 margin={0}
                 lineColor="#00205B"
               />
             </div>
-            <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
+            
+            <div className="bg-white p-4 rounded-lg border border-gray-200">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(barcodeAbierto)}`}
+                alt="QR Code"
+                className="w-48 h-48"
+              />
+            </div>
           </div>
         )}
       </Modal>
