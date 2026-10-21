@@ -231,7 +231,7 @@ export function Equipos() {
         <div class="tecnica">${equipo.tecnicas_ndt?.codigo ?? ''}</div>
         <div class="codes">
           <div id="barcode"></div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(equipo.codigo_barras)}" alt="QR" />
+          <img src="https://quickchart.io/qr?text=${encodeURIComponent(equipo.codigo_barras)}&size=100" alt="QR" />
         </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -784,30 +784,35 @@ export function Equipos() {
                           </td>
 
                           <td className="px-4 py-3">
-                            <button
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                setBarcodeAbierto(e.codigo_barras);
-                              }}
-                              className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1"
-                              title="Clic para ampliar"
-                            >
-                              <Barcode
-                                value={e.codigo_barras}
-                                format="CODE128"
-                                displayValue={false}
-                                height={25}
-                                width={1}
-                                margin={0}
-                                background="transparent"
-                                lineColor="#00205B"
-                              />
-                              <img
-                                src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(e.codigo_barras)}`}
-                                alt="QR"
-                                className="w-10 h-10 rounded-sm"
-                              />
-                            </button>
+                            {e.codigo_barras ? (
+                              <button
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setBarcodeAbierto(e.codigo_barras);
+                                }}
+                                className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1.5"
+                                title="Clic para ampliar"
+                              >
+                                <Barcode
+                                  value={e.codigo_barras}
+                                  format="CODE128"
+                                  displayValue={false}
+                                  height={25}
+                                  width={1}
+                                  margin={0}
+                                  background="transparent"
+                                  lineColor="#00205B"
+                                />
+                                <img
+                                  src={`https://quickchart.io/qr?text=${encodeURIComponent(e.codigo_barras)}&size=100`}
+                                  alt="QR"
+                                  className="w-10 h-10 object-contain"
+                                  loading="lazy"
+                                />
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
                           </td>
 
                           <td className="px-4 py-3">
@@ -962,7 +967,7 @@ export function Equipos() {
             
             <div className="bg-white p-4 rounded-lg border border-gray-200">
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(barcodeAbierto)}`}
+                src={`https://quickchart.io/qr?text=${encodeURIComponent(barcodeAbierto)}&size=200`}
                 alt="QR Code"
                 className="w-48 h-48"
               />
