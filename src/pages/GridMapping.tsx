@@ -857,62 +857,119 @@ export function GridMappingPage() {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Informe Grid Mapping');
 
-      worksheet.columns = [
-        { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
-        { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 5 },
-      ];
+      // Ancho de columnas
+      for (let i = 1; i <= 30; i++) {
+        worksheet.getColumn(i).width = i === 1 ? 18 : 10;
+      }
 
-      let currentRow = 1;
-
-      worksheet.mergeCells(`A${currentRow}:H${currentRow}`);
-      const titleCell = worksheet.getCell(`A${currentRow}`);
+      // --- 1. TÍTULO ---
+      worksheet.mergeCells('A1:H1');
+      const titleCell = worksheet.getCell('A1');
       titleCell.value = 'INFORME DE GRID MAPPING';
       titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
       titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
       titleCell.alignment = { horizontal: 'center' };
-      currentRow += 2;
 
-      const addMeta = (label: string, value: string) => {
-        worksheet.getCell(`A${currentRow}`).value = label;
-        worksheet.getCell(`A${currentRow}`).font = { bold: true };
-        worksheet.mergeCells(`B${currentRow}:D${currentRow}`);
-        worksheet.getCell(`B${currentRow}`).value = value;
-        currentRow++;
-      };
-
-      addMeta('Matrícula:', meta.matricula);
-      addMeta('WO / SAP:', meta.wo_sap);
-      addMeta('FR:', meta.fr);
-      addMeta('Fecha:', fmtFecha(meta.fecha));
-      addMeta('Operador:', meta.operador);
-      currentRow++;
-
+      // --- 2. CABECERA (Metadatos y Equipo) ---
       const eqSel = equiposUT.find((e) => e.id === equipoUtId);
-      if (eqSel) {
-        addMeta('Equipo UT:', eqSel.nombre);
-        addMeta('Nº Serie:', eqSel.numero_serie || eqSel.id_equipo);
-        addMeta('Calibración:', eqSel.proxima_calibracion ? fmtFecha(eqSel.proxima_calibracion) : '—');
-      }
-      if (nominalThickness) addMeta('Espesor Nominal:', nominalThickness + ' mm');
-      currentRow++;
+      const metaRows = [
+        ['Matrícula:', meta.matricula],
+        ['WO / SAP:', meta.wo_sap || '—'],
+        ['FR:', meta.fr || '—'],
+        ['Fecha:', fmtFecha(meta.fecha)],
+        ['Operador:', meta.operador || '—']
+      ];
+      const eqRows = [
+        ['Equipo UT:', eqSel ? eqSel.nombre : '—'],
+        ['Nº Serie:', eqSel ? (eqSel.numero_serie || eqSel.id_equipo) : '—'],
+        ['Próx. Calibración:', eqSel?.proxima_calibracion ? fmtFecha(eqSel.proxima_calibracion) : '—'],
+        ['Espesor Nominal:', nominalThickness ? format2(nominalThickness) + ' mm' : '—']
+      ];
 
-      if (markers.length > 0) {
-        worksheet.getCell(`A${currentRow}`).value = 'Flechas y Orientación:';
-        worksheet.getCell(`A${currentRow}`).font = { bold: true };
-        currentRow++;
-        markers.forEach(m => {
-          worksheet.getCell(`A${currentRow}`).value = m.arrow;
-          worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
-          worksheet.getCell(`B${currentRow}`).value = m.text;
-          currentRow++;
+      for (let i = 0; i < Math.max(metaRows.length, eqRows.length); i++) {
+        const row = 3 + i;
+        if (metaRows[i]) {
+          worksheet.getCell(`A${row}`).value = metaRows[i][0];
+          worksheet.getCell(`A${row}`).font = { bold: true };
+          worksheet.mergeCells(`B${row}:C${row}`);
+          worksheet.getCell(`B${row}`).value = metaRows[i][1];
+        }
+        if (eqRows[i]) {
+          worksheet.getCell(`E${row}`).value = eqRows[i][0];
+          worksheet.getCell(`E${row}`).font = { bold: true };
+          worksheet.mergeCells(`F${row}:G${row}`);
+          worksheet.getCell(`F${row}`).value = eqRows[i][1];
+        }
+      }
+
+      // --- 3. GRID MAPPING ---
+      let gridStartRow = 10;
+      worksheet.getCell(`A${gridStartRow - 1}`).value = 'RESULTADOS DE LA MEDICIÓN';
+      worksheet.getCell(`A${gridStartRow - 1}`).font = { bold: true, size: 12 };
+
+      // Header
+      worksheet.getCell(gridStartRow, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+      worksheet.getCell(gridStartRow, 1).border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+      
+      colLabels.forEach((c, i) => {
+        const cell = worksheet.getCell(gridStartRow, i + 2);
+        cell.value = c;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'center' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+      });
+      gridStartRow++;
+
+      // Rows
+      rowLabels.forEach(rLabel => {
+        const cellR = worksheet.getCell(gridStartRow, 1);
+        cellR.value = rLabel;
+        cellR.font = { bold: true };
+        cellR.alignment = { horizontal: 'center' };
+        cellR.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        cellR.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+
+        colLabels.forEach((cLabel, cIdx) => {
+          const key = `${cLabel}${rLabel}`;
+          const v = grid[key] ?? '';
+          const numeric = isNumeric(v);
+          const bg = numeric && valueStats.hasData ? colorForValue(parseFloat(v), valueStats.min, valueStats.max) : undefined;
+          
+          const cell = worksheet.getCell(gridStartRow, cIdx + 2);
+          cell.value = v;
+          cell.alignment = { horizontal: 'center' };
+          cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
+          if (bg) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rgbToHex(bg) } };
+          }
         });
-        currentRow++;
+        gridStartRow++;
+      });
+
+      // --- 4. FLECHAS Y ORIENTACIÓN ---
+      if (markers.length > 0) {
+        const arrowStartCol = Math.max(cols + 3, 10); // Al menos en la columna J
+        
+        worksheet.getCell(10, arrowStartCol).value = 'FLECHAS Y ORIENTACIÓN';
+        worksheet.getCell(10, arrowStartCol).font = { bold: true, size: 12 };
+
+        let arrowRow = 11;
+        markers.forEach(m => {
+          worksheet.getCell(arrowRow, arrowStartCol).value = m.arrow;
+          worksheet.getCell(arrowRow, arrowStartCol).alignment = { horizontal: 'center' };
+          worksheet.getCell(arrowRow, arrowStartCol).font = { bold: true, size: 14 };
+          worksheet.getCell(arrowRow, arrowStartCol + 1).value = m.text;
+          arrowRow++;
+        });
       }
 
+      // --- 5. IMAGEN ---
+      let imageStartRow = gridStartRow + 2;
       if (referenceImage) {
-        worksheet.getCell(`A${currentRow}`).value = 'Imagen de Referencia:';
-        worksheet.getCell(`A${currentRow}`).font = { bold: true };
-        currentRow++;
+        worksheet.getCell(`A${imageStartRow}`).value = 'IMAGEN DE REFERENCIA';
+        worksheet.getCell(`A${imageStartRow}`).font = { bold: true, size: 12 };
+        imageStartRow++;
 
         try {
           const base64Data = referenceImage.split(',')[1];
@@ -927,61 +984,13 @@ export function GridMappingPage() {
           });
 
           worksheet.addImage(imageId, {
-            tl: { col: 0, row: currentRow - 1 },
-            ext: { width: 300, height: 200 },
+            tl: { col: 0, row: imageStartRow - 1 },
+            ext: { width: 400, height: 300 },
           });
-          currentRow += 10;
         } catch (err) {
           console.warn('No se pudo incrustar la imagen:', err);
-          worksheet.getCell(`A${currentRow}`).value = '[Error al cargar imagen]';
-          currentRow++;
+          worksheet.getCell(`A${imageStartRow}`).value = '[Error al cargar imagen]';
         }
-      }
-
-      worksheet.getCell(`A${currentRow}`).value = 'Resultados de la Medición:';
-      worksheet.getCell(`A${currentRow}`).font = { bold: true };
-      currentRow++;
-
-      worksheet.getCell(`A${currentRow}`).border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
-      colLabels.forEach((c, i) => {
-        const cell = worksheet.getCell(currentRow, i + 2);
-        cell.value = c;
-        cell.font = { bold: true };
-        cell.alignment = { horizontal: 'center' };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
-        cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
-      });
-      currentRow++;
-
-      rowLabels.forEach(rLabel => {
-        const cellR = worksheet.getCell(`A${currentRow}`);
-        cellR.value = rLabel;
-        cellR.font = { bold: true };
-        cellR.alignment = { horizontal: 'center' };
-        cellR.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
-        cellR.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
-
-        colLabels.forEach((cLabel, cIdx) => {
-          const key = `${cLabel}${rLabel}`;
-          const v = grid[key] ?? '';
-          const numeric = isNumeric(v);
-          const bg = numeric && valueStats.hasData ? colorForValue(parseFloat(v), valueStats.min, valueStats.max) : undefined;
-          
-          const cell = worksheet.getCell(currentRow, cIdx + 2);
-          cell.value = v;
-          cell.alignment = { horizontal: 'center' };
-          cell.border = { top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'} };
-          if (bg) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rgbToHex(bg) } };
-          }
-        });
-        currentRow++;
-      });
-
-      if (valueStats.hasData) {
-        currentRow++;
-        worksheet.getCell(`A${currentRow}`).value = `Escala: MIN=${format2(valueStats.min)} | MAX=${format2(valueStats.max)}`;
-        worksheet.getCell(`A${currentRow}`).font = { italic: true };
       }
 
       const buffer = await workbook.xlsx.writeBuffer();
