@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Search, Plus, Activity, RefreshCw, Printer, ScanBarcode,
-  CheckCircle2, Wrench, XCircle, X
+  CheckCircle2, Wrench, XCircle, X, Eye, Edit3, Trash2
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { SondaForm } from '../components/sondas/SondaForm';
+import { SondaDetalle } from '../components/sondas/SondaDetalle';
 import Barcode from 'react-barcode';
-import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
+import { QRCodeSVG } from '../components/ui/QRCodeSVG';
 
 const estadoBadge: Record<string, string> = {
   disponible: 'badge badge-green',
@@ -35,17 +36,29 @@ export function Sondas() {
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
 
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalFormOpen, setModalFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [barcodeAbierto, setBarcodeAbierto] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  // Estados para el Detalle
+  const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
+  const [sondaDetalle, setSondaDetalle] = useState<any | null>(null);
+  const [carroDetalle, setCarroDetalle] = useState<any | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     const [snd, tec] = await Promise.all([
-      supabase.from('sondas').select('*, tecnicas_ndt(codigo, nombre)').order('id_sonda', { ascending: true }),
-      supabase.from('tecnicas_ndt').select('id, codigo, nombre').eq('activa', true).order('codigo'),
+      supabase
+        .from('sondas')
+        .select('*, tecnicas_ndt(codigo, nombre), carros(codigo, nombre, ubicacion, num_bandejas, posiciones_por_bandeja, bandejas_fotos)')
+        .order('id_sonda', { ascending: true }),
+      supabase
+        .from('tecnicas_ndt')
+        .select('id, codigo, nombre')
+        .eq('activa', true)
+        .order('codigo'),
     ]);
     if (snd.error) console.error(snd.error);
     setSondas(snd.data ?? []);
@@ -58,21 +71,30 @@ export function Sondas() {
   const filtered = useMemo(() => {
     const qLower = q.toLowerCase();
     return sondas.filter((s) => {
-      const coincideBusqueda =
-        qLower === '' ||
-        [s.nombre, s.codigo_barras, s.id_sonda].join(' ').toLowerCase().includes(qLower);
-      if (!coincideBusqueda) return false;
+      const campos = [
+        s.nombre, s.codigo_barras, s.id_sonda,
+        s.carros?.codigo, s.tecnicas_ndt?.codigo,
+        s.num_bandeja != null ? `bandeja ${s.num_bandeja}` : '',
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      if (qLower && !campos.includes(qLower)) return false;
       if (filtroTecnica !== 'todas' && s.tecnicas_ndt?.codigo !== filtroTecnica) return false;
       if (filtroEstado !== 'todos' && s.estado !== filtroEstado) return false;
       return true;
     });
   }, [sondas, q, filtroTecnica, filtroEstado]);
 
-  const openNew = () => { setEditingId(null); setModalOpen(true); };
-  const openEdit = (id: string) => { setEditingId(id); setModalOpen(true); };
+  const openNew = () => { setEditingId(null); setModalFormOpen(true); };
+  const openEdit = (id: string) => { setEditingId(id); setModalFormOpen(true); };
+  
+  const abrirDetalle = (s: any) => {
+    setSondaDetalle(s);
+    setCarroDetalle(s.carros ?? null);
+    setModalDetalleOpen(true);
+  };
 
   const handleSuccess = () => {
-    setModalOpen(false);
+    setModalFormOpen(false);
     setToast(editingId ? 'Sonda actualizada' : 'Sonda creada');
     setTimeout(() => setToast(null), 3000);
     load();
@@ -82,7 +104,7 @@ export function Sondas() {
     setQ(code.trim());
     setScannerOpen(false);
     const match = sondas.find((s) => s.codigo_barras?.toLowerCase() === code.trim().toLowerCase() || s.id_sonda?.toLowerCase() === code.trim().toLowerCase());
-    if (match) setTimeout(() => openEdit(match.id), 150);
+    if (match) setTimeout(() => abrirDetalle(match), 150);
   };
 
   const imprimirEtiqueta = (sonda: any) => {
@@ -177,13 +199,14 @@ export function Sondas() {
                   <th className="px-4 py-3">Códigos</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3">Técnica</th>
+                  <th className="px-4 py-3">Ubicación</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(s.id)}>
+                  <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => abrirDetalle(s)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">{s.id_sonda}</td>
                     <td className="px-4 py-3">
                       {s.codigo_barras ? (
@@ -205,6 +228,15 @@ export function Sondas() {
                     <td className="px-4 py-3 font-medium text-gray-800">{s.nombre}</td>
                     <td className="px-4 py-3"><span className="badge badge-blue">{s.tecnicas_ndt?.codigo ?? '—'}</span></td>
                     <td className="px-4 py-3">
+                      {s.carros?.codigo ? (
+                        <span className="text-xs text-gray-600">
+                          {s.carros.codigo} {s.num_bandeja ? `(B${s.num_bandeja})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Sin carro</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={estadoBadge[s.estado] ?? 'badge badge-gray'}>
                         {s.estado === 'disponible' && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
                         {s.estado === 'mantenimiento' && <Wrench className="w-3 h-3 inline mr-1" />}
@@ -213,7 +245,17 @@ export function Sondas() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={(e) => { e.stopPropagation(); imprimirEtiqueta(s); }} className="p-1.5 text-gray-400 hover:text-airbus-blue"><Printer className="w-4 h-4" /></button>
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => abrirDetalle(s)} className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition" title="Ver detalle">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => imprimirEtiqueta(s)} className="p-1.5 text-gray-400 hover:text-airbus-blue hover:bg-airbus-light/10 rounded transition" title="Imprimir etiqueta">
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => openEdit(s.id)} className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition" title="Editar">
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -223,6 +265,7 @@ export function Sondas() {
         )}
       </div>
 
+      {/* Modal barcode */}
       <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Códigos de identificación" size="sm">
         {barcodeAbierto && (
           <div className="flex flex-col items-center gap-6 py-4">
@@ -236,8 +279,44 @@ export function Sondas() {
         )}
       </Modal>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar sonda' : 'Nueva sonda'} size="lg">
-        <SondaForm sondaId={editingId ?? undefined} onSuccess={handleSuccess} onCancel={() => setModalOpen(false)} />
+      {/* Modal Formulario */}
+      <Modal open={modalFormOpen} onClose={() => setModalFormOpen(false)} title={editingId ? 'Editar sonda' : 'Nueva sonda'} size="lg">
+        <SondaForm sondaId={editingId ?? undefined} onSuccess={handleSuccess} onCancel={() => setModalFormOpen(false)} />
+      </Modal>
+
+      {/* Modal Detalle */}
+      <Modal
+        open={modalDetalleOpen}
+        onClose={() => { setModalDetalleOpen(false); setSondaDetalle(null); setCarroDetalle(null); }}
+        title={sondaDetalle ? `Sonda ${sondaDetalle.id_sonda}` : 'Detalle'}
+        size="lg"
+      >
+        {sondaDetalle && (
+          <SondaDetalle
+            sonda={sondaDetalle}
+            carro={carroDetalle}
+            onClose={() => { setModalDetalleOpen(false); setSondaDetalle(null); setCarroDetalle(null); }}
+            sondasEnBandeja={
+              sondaDetalle.carro_id && sondaDetalle.num_bandeja
+                ? sondas.filter(
+                    (p) =>
+                      p.carro_id === sondaDetalle.carro_id &&
+                      p.num_bandeja === sondaDetalle.num_bandeja
+                  )
+                : []
+            }
+          />
+        )}
+      </Modal>
+
+      {/* Modal Escáner */}
+      <Modal open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras" size="md">
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            Apunta la cámara al código de barras. El código se usará como término de búsqueda y, si coincide, se abrirá el detalle automáticamente.
+          </p>
+          <BarcodeScanner onScan={handleScan} />
+        </div>
       </Modal>
     </div>
   );
