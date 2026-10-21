@@ -8,6 +8,7 @@ import {
 import BarcodeLib from 'react-barcode';
 import { CamaraEquipo } from '../equipos/CamaraEquipo';
 import { DocumentosUpload } from '../equipos/DocumentosUpload';
+import { QRCodeSVG } from '../ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import { BUCKET_PROBETAS, type FotoEquipo } from '../../lib/storageFotos';
 import { BUCKET_PROBETAS_CERT, type DocumentoEquipo } from '../../lib/storage';
 
@@ -323,7 +324,7 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
               )}
             </div>
             {form.codigo_barras && (
-              <div className="mt-2 flex justify-center bg-white border border-gray-200 rounded-lg p-2">
+              <div className="mt-2 flex flex-col items-center bg-white border border-gray-200 rounded-lg p-2 gap-3">
                 <BarcodeLib
                   value={form.codigo_barras}
                   format="CODE128"
@@ -333,6 +334,9 @@ export function ProbetaForm({ probeta, carroId, onSuccess, onCancel }: ProbetaFo
                   margin={0}
                   lineColor="#00205B"
                 />
+                <div className="border-t border-gray-100 w-full pt-2 flex justify-center">
+                  <QRCodeSVG value={form.codigo_barras} size={64} />
+                </div>
               </div>
             )}
           </Field>
