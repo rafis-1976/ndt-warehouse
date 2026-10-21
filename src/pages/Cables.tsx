@@ -85,22 +85,30 @@ export function Cables() {
   };
 
   const imprimirEtiqueta = (cable: any) => {
-    const win = window.open('', '_blank', 'width=500,height=400');
+    const win = window.open('', '_blank', 'width=500,height=500');
     if (!win) return;
     win.document.write(`
       <!DOCTYPE html><html><head><title>Etiqueta ${cable.id_cable}</title>
-      <style>body { font-family: Helvetica, sans-serif; padding: 20px; text-align: center; }
-      .etiqueta { border: 1px solid #ccc; padding: 16px; border-radius: 8px; max-width: 300px; margin: 0 auto; }
-      .id { font-family: monospace; font-size: 20px; font-weight: bold; color: #00205B; }
+      <style>
+        body { font-family: Helvetica, sans-serif; padding: 20px; display: flex; justify-content: center; }
+        .etiqueta { border: 1px solid #ccc; padding: 16px; border-radius: 8px; max-width: 300px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .id { font-family: monospace; font-size: 20px; font-weight: bold; color: #00205B; margin-bottom: 4px; }
+        .nombre { font-size: 13px; margin-bottom: 4px; }
+        .tecnica { font-size: 11px; color: #666; margin-bottom: 8px; }
+        .codes { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; border-top: 1px dashed #ddd; padding-top: 8px; }
+        @media print { body { padding: 0; } }
       </style></head><body>
       <div class="etiqueta">
         <div class="id">${cable.id_cable ?? '—'}</div>
-        <div style="font-size: 13px;">${cable.nombre}</div>
-        <div style="font-size: 11px; color: #666;">${cable.tecnicas_ndt?.codigo ?? ''}</div>
-        <div id="barcode"></div>
+        <div class="nombre">${cable.nombre}</div>
+        <div class="tecnica">${cable.tecnicas_ndt?.codigo ?? ''}</div>
+        <div class="codes">
+          <div id="barcode"></div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(cable.codigo_barras)}" alt="QR" />
+        </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-      <script>JsBarcode("#barcode", "${cable.codigo_barras}", { format: "CODE128", displayValue: false, height: 60 }); setTimeout(() => window.print(), 300);</script>
+      <script>JsBarcode("#barcode", "${cable.codigo_barras}", { format: "CODE128", displayValue: false, height: 50, width: 2, margin: 0 }); setTimeout(() => window.print(), 500);</script>
       </body></html>
     `);
     win.document.close();
@@ -165,7 +173,7 @@ export function Cables() {
               <thead className="bg-gray-50 border-b text-left text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Códigos</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3">Técnica</th>
                   <th className="px-4 py-3">Estado</th>
@@ -177,8 +185,20 @@ export function Cables() {
                   <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(c.id)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-airbus-blue">{c.id_cable}</td>
                     <td className="px-4 py-3">
-                      <button onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(c.codigo_barras); }}>
-                        <Barcode value={c.codigo_barras} format="CODE128" displayValue={false} height={30} width={1} margin={0} background="transparent" />
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setBarcodeAbierto(c.codigo_barras);
+                        }}
+                        className="hover:bg-airbus-light/10 rounded p-1 -m-1 transition flex flex-col items-center gap-1"
+                        title="Clic para ampliar"
+                      >
+                        <Barcode value={c.codigo_barras} format="CODE128" displayValue={false} height={25} width={1} margin={0} background="transparent" lineColor="#00205B" />
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(c.codigo_barras)}`}
+                          alt="QR"
+                          className="w-10 h-10 rounded-sm"
+                        />
                       </button>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-800">{c.nombre}</td>
@@ -202,8 +222,21 @@ export function Cables() {
         )}
       </div>
 
-      <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Código de barras" size="sm">
-        {barcodeAbierto && <div className="flex justify-center p-4"><Barcode value={barcodeAbierto} format="CODE128" displayValue={true} height={60} width={2} /></div>}
+      <Modal open={!!barcodeAbierto} onClose={() => setBarcodeAbierto(null)} title="Códigos de identificación" size="sm">
+        {barcodeAbierto && (
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
+              <Barcode value={barcodeAbierto} format="CODE128" displayValue={true} height={60} width={2} margin={0} lineColor="#00205B" />
+            </div>
+            <div className="bg-white p-4 rounded-lg border border-gray-200">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(barcodeAbierto)}`}
+                alt="QR Code"
+                className="w-48 h-48"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar cable' : 'Nuevo cable'} size="lg">
