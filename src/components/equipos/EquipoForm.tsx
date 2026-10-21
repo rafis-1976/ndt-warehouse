@@ -45,11 +45,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const [enviandoCalibrar, setEnviandoCalibrar] = useState(false);
   const [error, setError] = useState('');
   const [avisoExito, setAvisoExito] = useState('');
-
-  // ============================================================
-  // Auto-sincronizar código de barras con ID de equipo
-  // Solo cuando el usuario no ha modificado manualmente el barcode
-  // ============================================================
   const [barcodeTocado, setBarcodeTocado] = useState(false);
 
   useEffect(() => {
@@ -57,13 +52,11 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     if (form.id_equipo && !form.codigo_barras) {
       setForm((f) => ({ ...f, codigo_barras: form.id_equipo }));
     }
-    // Sincronizar continuamente mientras no se haya tocado el barcode
     if (form.id_equipo) {
       setForm((f) => ({ ...f, codigo_barras: form.id_equipo }));
     }
-  }, [form.id_equipo, barcodeTocado]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form.id_equipo, barcodeTocado]);
 
-  // Cargar técnicas
   useEffect(() => {
     let cancelled = false;
     async function loadTecnicas() {
@@ -89,7 +82,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // Cargar equipo si es edición
   useEffect(() => {
     if (!equipoId) {
       setUploadKey(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -120,7 +112,6 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
             proxima_calibracion: data.proxima_calibracion ?? '',
             observaciones: data.observaciones ?? '',
           });
-          // Al editar, no auto-sincronizamos por defecto
           setBarcodeTocado(true);
 
           const docs: DocumentoEquipo[] = Array.isArray(data.documentos_urls) ? data.documentos_urls : [];
@@ -135,11 +126,9 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
   const update = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
-  // Cambio manual del ID de equipo
   const cambiarIdEquipo = (valor: string) => {
     const upper = valor.toUpperCase();
     setForm((f) => {
-      // Si el barcode está vacío o era igual al id anterior, seguir sincronizando
       const debeSincronizar = !barcodeTocado || f.codigo_barras === f.id_equipo;
       return {
         ...f,
@@ -149,13 +138,11 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
     });
   };
 
-  // Cambio manual del código de barras
   const cambiarCodigoBarras = (valor: string) => {
     setBarcodeTocado(true);
     setForm((f) => ({ ...f, codigo_barras: valor }));
   };
 
-  // Botón "= Código": fuerza la sincronización
   const igualarAlCodigo = () => {
     if (!form.id_equipo) return;
     setForm((f) => ({ ...f, codigo_barras: f.id_equipo }));
@@ -425,7 +412,7 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
               </p>
             )}
             {form.codigo_barras && (
-              <div className="mt-2 flex justify-center bg-white border border-gray-200 rounded-lg p-2">
+              <div className="mt-2 flex flex-col items-center bg-white border border-gray-200 rounded-lg p-2 gap-3">
                 <BarcodeLib
                   value={form.codigo_barras}
                   format="CODE128"
@@ -435,6 +422,14 @@ export function EquipoForm({ onSuccess, onCancel, equipoId }: EquipoFormProps) {
                   margin={0}
                   lineColor="#00205B"
                 />
+                <div className="border-t border-gray-100 w-full pt-2 flex justify-center">
+                  {/* API externa para QR sin instalar nada */}
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(form.codigo_barras)}`} 
+                    alt="QR Code" 
+                    className="w-20 h-20"
+                  />
+                </div>
               </div>
             )}
           </Field>
