@@ -17,6 +17,8 @@ import { Carros } from './pages/Carros';
 import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
 import { GridMappingPage } from './pages/GridMapping';
+import { Sondas } from './pages/Sondas';
+import { Cables } from './pages/Cables';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -44,6 +46,8 @@ export default function App() {
         <Route path="/equipos" element={
           <ProtectedRoute><Layout><Equipos /></Layout></ProtectedRoute>
         } />
+	<Route path="/sondas" element={<ProtectedRoute><Layout><Sondas /></Layout></ProtectedRoute>} />
+	<Route path="/cables" element={<ProtectedRoute><Layout><Cables /></Layout></ProtectedRoute>} />
         <Route path="/carros" element={
           <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
         } />
