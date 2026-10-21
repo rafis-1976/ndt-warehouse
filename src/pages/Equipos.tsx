@@ -11,6 +11,7 @@ import { EquipoForm } from '../components/equipos/EquipoForm';
 import { KitForm } from '../components/kits/KitForm';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import Barcode from 'react-barcode';
+import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import {
   estadoCalibracion,
   estadoEfectivoEquipo,
@@ -231,7 +232,7 @@ export function Equipos() {
         <div class="tecnica">${equipo.tecnicas_ndt?.codigo ?? ''}</div>
         <div class="codes">
           <div id="barcode"></div>
-          <img src="https://quickchart.io/qr?text=${encodeURIComponent(equipo.codigo_barras)}&size=100" alt="QR" />
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(equipo.codigo_barras)}" alt="QR" />
         </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -803,12 +804,7 @@ export function Equipos() {
                                   background="transparent"
                                   lineColor="#00205B"
                                 />
-                                <img
-                                  src={`https://quickchart.io/qr?text=${encodeURIComponent(e.codigo_barras)}&size=100`}
-                                  alt="QR"
-                                  className="w-10 h-10 object-contain"
-                                  loading="lazy"
-                                />
+                                <QRCodeSVG value={e.codigo_barras} size={40} />
                               </button>
                             ) : (
                               <span className="text-xs text-gray-400">—</span>
@@ -965,12 +961,8 @@ export function Equipos() {
               />
             </div>
             
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <img
-                src={`https://quickchart.io/qr?text=${encodeURIComponent(barcodeAbierto)}&size=200`}
-                alt="QR Code"
-                className="w-48 h-48"
-              />
+            <div className="bg-white p-4 rounded-lg border border-gray-200 flex justify-center">
+              <QRCodeSVG value={barcodeAbierto} size={200} />
             </div>
           </div>
         )}
