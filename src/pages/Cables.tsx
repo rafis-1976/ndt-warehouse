@@ -7,6 +7,11 @@ import {
 import { Modal } from '../components/ui/Modal';
 import { CableForm } from '../components/cables/CableForm';
 import { CableDetalle } from '../components/cables/CableDetalle';
+
+// ⚠️ IMPORTANTE: Verifica que el archivo BarcodeScanner.tsx esté exactamente en esta ruta.
+// Si lo tienes en otra carpeta (ej. '../components/ui/BarcodeScanner'), cambia la ruta aquí:
+import { BarcodeScanner } from '../components/BarcodeScanner';
+
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from '../components/ui/QRCodeSVG';
 
