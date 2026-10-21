@@ -5,6 +5,7 @@ import {
   FileText, Download,
 } from 'lucide-react';
 import BarcodeLib from 'react-barcode';
+import { QRCodeSVG } from '../ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import { formatearTamano, iconoDocumento, type DocumentoEquipo } from '../../lib/storage';
 
 interface ProbetaDetalleProps {
@@ -372,9 +373,9 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Barcode className="w-3.5 h-3.5" />
-            Código de barras
+            Códigos de identificación
           </p>
-          <div className="flex flex-col items-center gap-2 py-2">
+          <div className="flex flex-col items-center gap-3 py-2">
             <div className="bg-white p-3 rounded-lg border border-gray-200">
               <BarcodeLib
                 value={probeta.codigo_barras}
@@ -389,6 +390,9 @@ export function ProbetaDetalle({ probeta, carro, onClose, probetasEnBandeja = []
             <p className="font-mono text-xs text-gray-500">
               {probeta.codigo_barras}
             </p>
+            <div className="bg-white p-3 rounded-lg border border-gray-200">
+              <QRCodeSVG value={probeta.codigo_barras} size={100} />
+            </div>
           </div>
         </div>
       )}
