@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { Activity, Cable } from 'lucide-react';
 import {
   LayoutDashboard, Package, Users, Calendar, BarChart3, Barcode,
   Settings, ArrowRightLeft, UserCog, Boxes, FileText, Hash, Grid3x3,
@@ -15,6 +16,8 @@ interface Item {
 const items: Item[] = [
   { to: '/dashboard',     label: 'Dashboard',      icon: LayoutDashboard },
   { to: '/equipos',       label: 'Equipos',        icon: Package },
+  { to: '/sondas',        label: 'Sondas',         icon: Activity },
+  { to: '/cables',        label: 'Cables',         icon: Cable },
   { to: '/carros',        label: 'Carros',         icon: Boxes },
   { to: '/probetas',      label: 'Probetas',       icon: Hash },
   { to: '/informes',      label: 'Informes',       icon: FileText },
