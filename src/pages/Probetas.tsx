@@ -11,6 +11,7 @@ import { Modal } from '../components/ui/Modal';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
 import { ProbetaDetalle } from '../components/carros/ProbetaDetalle';
 import { BarcodeScanner } from '../components/BarcodeScanner';
+import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
 
 const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
@@ -227,30 +228,34 @@ export function Probetas() {
   };
 
   const imprimirEtiqueta = (p: any) => {
-    const win = window.open('', '_blank', 'width=500,height=400');
+    const win = window.open('', '_blank', 'width=500,height=500');
     if (!win) return;
     win.document.write(`
       <!DOCTYPE html><html><head><title>Etiqueta ${p.pn}</title>
       <style>
         body { font-family: Helvetica, Arial, sans-serif; padding: 20px; display: flex; justify-content: center; }
-        .etiqueta { border: 1px solid #ccc; border-radius: 8px; padding: 16px 24px; text-align: center; max-width: 320px; }
+        .etiqueta { border: 1px solid #ccc; border-radius: 8px; padding: 16px 24px; text-align: center; max-width: 320px; display: flex; flex-direction: column; align-items: center; }
         .pn { font-family: monospace; font-size: 20px; font-weight: bold; color: #0085AD; margin-bottom: 4px; }
         .nombre { font-size: 13px; color: #333; margin-bottom: 2px; }
-        .sn { font-family: monospace; font-size: 10px; color: #666; margin-bottom: 12px; }
+        .sn { font-family: monospace; font-size: 10px; color: #666; margin-bottom: 8px; }
+        .codes { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; border-top: 1px dashed #ddd; padding-top: 8px; }
         @media print { body { padding: 0; } }
       </style></head><body>
       <div class="etiqueta">
         <div class="pn">${p.pn}</div>
         <div class="nombre">${p.nombre}</div>
         <div class="sn">${p.numero_serie ? 'S/N ' + p.numero_serie : ''}</div>
-        <div id="barcode"></div>
+        <div class="codes">
+          <div id="barcode"></div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(p.codigo_barras)}" alt="QR" />
+        </div>
       </div>
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
       <script>
         JsBarcode("#barcode", "${p.codigo_barras}", {
-          format: "CODE128", displayValue: false, height: 60, width: 2, margin: 0
+          format: "CODE128", displayValue: false, height: 50, width: 2, margin: 0
         });
-        setTimeout(() => window.print(), 300);
+        setTimeout(() => window.print(), 500);
       </script></body></html>
     `);
     win.document.close();
@@ -614,7 +619,7 @@ export function Probetas() {
                   <th className="px-4 py-3">Técnica</th>
                   <th className="px-4 py-3">Ubicación</th>
                   <th className="px-4 py-3">NTM</th>
-                  <th className="px-4 py-3">Código de barras</th>
+                  <th className="px-4 py-3">Códigos</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -742,7 +747,7 @@ export function Probetas() {
                         )}
                       </td>
 
-                      {/* Código de barras */}
+                      {/* Códigos (Barras + QR) */}
                       <td className="px-4 py-3">
                         {p.codigo_barras ? (
                           <button
@@ -750,19 +755,20 @@ export function Probetas() {
                               ev.stopPropagation();
                               setBarcodeAbierto(p.codigo_barras);
                             }}
-                            className="hover:bg-airbus-sky/10 rounded p-1 -m-1 transition"
+                            className="hover:bg-airbus-sky/10 rounded p-1 -m-1 transition flex flex-row items-center gap-3"
                             title="Clic para ampliar"
                           >
                             <BarcodeLib
                               value={p.codigo_barras}
                               format="CODE128"
                               displayValue={false}
-                              height={30}
-                              width={1.2}
+                              height={25}
+                              width={1}
                               margin={0}
                               background="transparent"
                               lineColor="#0085AD"
                             />
+                            <QRCodeSVG value={p.codigo_barras} size={40} />
                           </button>
                         ) : (
                           <span className="text-xs text-gray-400 italic">—</span>
@@ -839,23 +845,26 @@ export function Probetas() {
       <Modal
         open={!!barcodeAbierto}
         onClose={() => setBarcodeAbierto(null)}
-        title="Código de barras"
+        title="Códigos de identificación"
         size="sm"
       >
         {barcodeAbierto && (
-          <div className="flex flex-col items-center gap-4 py-4">
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
               <BarcodeLib
                 value={barcodeAbierto}
                 format="CODE128"
-                displayValue={false}
-                height={80}
-                width={2.5}
+                displayValue={true}
+                height={60}
+                width={2}
                 margin={0}
                 lineColor="#0085AD"
               />
             </div>
-            <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
+            
+            <div className="bg-white p-4 rounded-lg border border-gray-200 flex justify-center">
+              <QRCodeSVG value={barcodeAbierto} size={200} />
+            </div>
           </div>
         )}
       </Modal>
