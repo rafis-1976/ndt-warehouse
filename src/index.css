@@ -56,3 +56,150 @@
   0%, 100% { box-shadow: 0 0 30px rgba(116, 210, 231, 0.6); }
   50%      { box-shadow: 0 0 50px rgba(116, 210, 231, 0.9); }
 }
+
+/* ============================================================
+   AJUSTES DE USUARIO · Temas y acentos
+   ============================================================ */
+
+:root {
+  --accent-500: #2563eb;
+  --accent-700: #1e3a8a;
+  --accent-400: #0ea5e9;
+  --accent-200: #dbeafe;
+}
+
+[data-accent="green"] {
+  --accent-500: #10b981;
+  --accent-700: #065f46;
+  --accent-400: #34d399;
+  --accent-200: #a7f3d0;
+}
+[data-accent="purple"] {
+  --accent-500: #8b5cf6;
+  --accent-700: #5b21b6;
+  --accent-400: #a78bfa;
+  --accent-200: #ddd6fe;
+}
+[data-accent="orange"] {
+  --accent-500: #f97316;
+  --accent-700: #9a3412;
+  --accent-400: #fb923c;
+  --accent-200: #fed7aa;
+}
+[data-accent="rose"] {
+  --accent-500: #f43f5e;
+  --accent-700: #9f1239;
+  --accent-400: #fb7185;
+  --accent-200: #fecdd3;
+}
+[data-accent="teal"] {
+  --accent-500: #14b8a6;
+  --accent-700: #115e59;
+  --accent-400: #2dd4bf;
+  --accent-200: #99f6e4;
+}
+
+[data-accent] .bg-airbus-blue { background-color: var(--accent-500) !important; }
+[data-accent] .text-airbus-blue { color: var(--accent-500) !important; }
+[data-accent] .border-airbus-blue { border-color: var(--accent-500) !important; }
+[data-accent] .hover\:bg-airbus-blue:hover { background-color: var(--accent-500) !important; }
+[data-accent] .hover\:text-airbus-blue:hover { color: var(--accent-500) !important; }
+
+[data-accent] .bg-airbus-navy { background-color: var(--accent-700) !important; }
+[data-accent] .text-airbus-navy { color: var(--accent-700) !important; }
+[data-accent] .hover\:bg-airbus-navy:hover { background-color: var(--accent-700) !important; }
+[data-accent] .hover\:text-airbus-navy:hover { color: var(--accent-700) !important; }
+[data-accent] .from-airbus-navy { --tw-gradient-from: var(--accent-700) !important; }
+[data-accent] .to-airbus-navy { --tw-gradient-to: var(--accent-700) !important; }
+
+[data-accent] .bg-airbus-sky { background-color: var(--accent-400) !important; }
+[data-accent] .text-airbus-sky { color: var(--accent-400) !important; }
+[data-accent] .border-airbus-sky { border-color: var(--accent-400) !important; }
+[data-accent] .hover\:text-airbus-sky:hover { color: var(--accent-400) !important; }
+[data-accent] .bg-airbus-sky\/5 { background-color: color-mix(in srgb, var(--accent-400) 5%, transparent) !important; }
+[data-accent] .bg-airbus-sky\/10 { background-color: color-mix(in srgb, var(--accent-400) 10%, transparent) !important; }
+[data-accent] .bg-airbus-sky\/15 { background-color: color-mix(in srgb, var(--accent-400) 15%, transparent) !important; }
+[data-accent] .bg-airbus-sky\/20 { background-color: color-mix(in srgb, var(--accent-400) 20%, transparent) !important; }
+[data-accent] .border-airbus-sky\/30 { border-color: color-mix(in srgb, var(--accent-400) 30%, transparent) !important; }
+[data-accent] .border-airbus-sky\/40 { border-color: color-mix(in srgb, var(--accent-400) 40%, transparent) !important; }
+[data-accent] .border-airbus-sky\/50 { border-color: color-mix(in srgb, var(--accent-400) 50%, transparent) !important; }
+[data-accent] .focus\:ring-airbus-sky:focus { --tw-ring-color: var(--accent-400) !important; }
+
+[data-accent] .bg-airbus-light { background-color: var(--accent-200) !important; }
+[data-accent] .text-airbus-light { color: var(--accent-200) !important; }
+[data-accent] .border-airbus-light { border-color: var(--accent-200) !important; }
+[data-accent] .hover\:bg-airbus-light\/10:hover { background-color: color-mix(in srgb, var(--accent-200) 10%, transparent) !important; }
+
+[data-accent] .bg-airbus-blue\/5 { background-color: color-mix(in srgb, var(--accent-500) 5%, transparent) !important; }
+[data-accent] .bg-airbus-blue\/10 { background-color: color-mix(in srgb, var(--accent-500) 10%, transparent) !important; }
+[data-accent] .bg-airbus-blue\/20 { background-color: color-mix(in srgb, var(--accent-500) 20%, transparent) !important; }
+[data-accent] .border-airbus-blue\/30 { border-color: color-mix(in srgb, var(--accent-500) 30%, transparent) !important; }
+[data-accent] .border-airbus-blue\/40 { border-color: color-mix(in srgb, var(--accent-500) 40%, transparent) !important; }
+[data-accent] .outline-airbus-sky { outline-color: var(--accent-400) !important; }
+
+[data-accent] .bg-airbus-cream { background-color: var(--accent-200) !important; }
+[data-accent] .bg-airbus-cream\/40 { background-color: color-mix(in srgb, var(--accent-200) 40%, transparent) !important; }
+[data-accent] .border-airbus-light\/30 { border-color: color-mix(in srgb, var(--accent-200) 30%, transparent) !important; }
+
+[data-accent] .from-airbus-blue { --tw-gradient-from: var(--accent-500) !important; }
+[data-accent] .to-airbus-blue { --tw-gradient-to: var(--accent-500) !important; }
+[data-accent] .from-airbus-sky { --tw-gradient-from: var(--accent-400) !important; }
+[data-accent] .to-airbus-sky { --tw-gradient-to: var(--accent-400) !important; }
+
+/* ==== TEMA OSCURO ==== */
+html.theme-dark {
+  color-scheme: dark;
+}
+
+html.theme-dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+html.theme-dark .card {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+html.theme-dark .input {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+html.theme-dark .input::placeholder {
+  color: #64748b !important;
+}
+
+html.theme-dark .bg-white { background-color: #1e293b !important; }
+html.theme-dark .bg-gray-50 { background-color: #1e293b !important; }
+html.theme-dark .bg-gray-100 { background-color: #334155 !important; }
+html.theme-dark .bg-gray-200 { background-color: #475569 !important; }
+
+html.theme-dark .text-gray-900,
+html.theme-dark .text-gray-800 { color: #e2e8f0 !important; }
+html.theme-dark .text-gray-700 { color: #cbd5e1 !important; }
+html.theme-dark .text-gray-600 { color: #94a3b8 !important; }
+html.theme-dark .text-gray-500 { color: #94a3b8 !important; }
+html.theme-dark .text-gray-400 { color: #64748b !important; }
+
+html.theme-dark .border-gray-100,
+html.theme-dark .border-gray-200 { border-color: #334155 !important; }
+html.theme-dark .border-gray-300 { border-color: #475569 !important; }
+
+html.theme-dark .hover\:bg-gray-50:hover { background-color: #334155 !important; }
+html.theme-dark .hover\:bg-gray-100:hover { background-color: #475569 !important; }
+
+html.theme-dark .divide-gray-100 > * + * { border-color: #334155 !important; }
+html.theme-dark .divide-gray-200 > * + * { border-color: #334155 !important; }
+
+html.theme-dark thead.bg-gray-50 { background-color: #1e293b !important; }
+
+html.theme-dark .btn-ghost { color: #cbd5e1 !important; }
+html.theme-dark .btn-ghost:hover { background-color: #334155 !important; }
+
+html.theme-dark .bg-airbus-cream\/40 {
+  background-color: color-mix(in srgb, var(--accent-500) 10%, transparent) !important;
+}
+html.theme-dark .border-airbus-sky\/20 {
+  border-color: color-mix(in srgb, var(--accent-400) 30%, transparent) !important;
+}
