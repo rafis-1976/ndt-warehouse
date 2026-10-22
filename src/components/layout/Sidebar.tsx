@@ -21,7 +21,7 @@ const items: Item[] = [
   { to: '/carros',        label: 'Carros',         icon: Boxes },
   { to: '/probetas',      label: 'Probetas',       icon: Hash },
   { to: '/informes',      label: 'Informes',       icon: FileText },
-  { to: '/grid-mapping',  label: 'Grid Mapping',   icon: Grid3x3 },
+  { to: '/gridmapping',   label: 'Grid Mapping',   icon: Grid3x3 },
   { to: '/prestamos',     label: 'Préstamos',      icon: Users },
   { to: '/calibraciones', label: 'Calibraciones',  icon: Calendar },
   { to: '/movimientos',   label: 'Movimientos',    icon: ArrowRightLeft },
