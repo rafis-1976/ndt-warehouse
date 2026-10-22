@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { supabase } from '../lib/supabase';
 
+export type Accent = 'blue' | 'red' | 'green' | 'purple' | 'orange' | 'rose' | 'teal';
 export type Theme = 'light' | 'dark' | 'auto';
 export type Accent = 'blue' | 'green' | 'purple' | 'orange' | 'rose' | 'teal';
 export type FontSize = 'small' | 'normal' | 'large' | 'xlarge';
