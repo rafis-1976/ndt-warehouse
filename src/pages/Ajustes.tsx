@@ -13,19 +13,23 @@ const themeOptions: { value: Theme; label: string; icon: any; desc: string }[] =
 ];
 
 const accentOptions: { value: Accent; label: string; color: string }[] = [
-  { value: 'blue', label: 'Azul', color: '#2563eb' },
-  { value: 'red', label: 'Rojo', color: '#e4002b' },
-  { value: 'green', label: 'Verde', color: '#10b981' },
-  { value: 'purple', label: 'Morado', color: '#8b5cf6' },
-  { value: 'orange', label: 'Naranja', color: '#f97316' },
-  { value: 'rose', label: 'Rosa', color: '#f43f5e' },
-  { value: 'teal', label: 'Teal', color: '#14b8a6' },
+  // Principales
+  { value: 'blue',   label: 'Granate', color: '#780029' },
+  { value: 'rose',   label: 'Burdeos', color: '#A6002E' },
+  { value: 'red',    label: 'Rojo',    color: '#D7192D' },
+  // Secundarios
+  { value: 'orange', label: 'Naranja', color: '#F68400' },
+  { value: 'green',  label: 'Menta',   color: '#4BC59C' },
+  { value: 'teal',   label: 'Cian',    color: '#97E1E1' },
+  { value: 'purple', label: 'Magenta', color: '#A20067' },
+  { value: 'tan',    label: 'Arena',   color: '#9E8668' },
+  { value: 'gray',   label: 'Gris',    color: '#575757' },
 ];
 
 const fontSizeOptions: { value: FontSize; label: string; sample: string }[] = [
-  { value: 'small', label: 'Pequeño', sample: 'text-sm' },
-  { value: 'normal', label: 'Normal', sample: 'text-base' },
-  { value: 'large', label: 'Grande', sample: 'text-lg' },
+  { value: 'small',  label: 'Pequeño',    sample: 'text-sm' },
+  { value: 'normal', label: 'Normal',     sample: 'text-base' },
+  { value: 'large',  label: 'Grande',     sample: 'text-lg' },
   { value: 'xlarge', label: 'Muy grande', sample: 'text-xl' },
 ];
 
@@ -35,26 +39,26 @@ export function Ajustes() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-airbus-blue">Ajustes</h1>
+        <h1 className="text-2xl font-bold text-[#780029]">Ajustes</h1>
         <p className="text-sm text-gray-500">
           Personaliza tu experiencia en NDT Warehouse
         </p>
       </div>
 
       {saveStatus === 'saving' && (
-        <div className="flex items-center gap-2 text-xs text-airbus-sky bg-airbus-sky/10 border border-airbus-sky/30 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-[#A6002E] bg-[#A6002E]/10 border border-[#A6002E]/30 rounded-lg px-3 py-2">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           Guardando cambios...
         </div>
       )}
       {saveStatus === 'saved' && (
-        <div className="flex items-center gap-2 text-xs text-airbus-green bg-airbus-green/10 border border-airbus-green/30 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-[#4BC59C] bg-[#4BC59C]/10 border border-[#4BC59C]/30 rounded-lg px-3 py-2">
           <Check className="w-3.5 h-3.5" />
           Cambios guardados
         </div>
       )}
       {saveStatus === 'error' && (
-        <div className="flex items-center gap-2 text-xs text-airbus-red bg-airbus-red/10 border border-airbus-red/30 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-[#D7192D] bg-[#D7192D]/10 border border-[#D7192D]/30 rounded-lg px-3 py-2">
           Error al guardar en el servidor · guardado solo en este dispositivo
         </div>
       )}
@@ -62,8 +66,8 @@ export function Ajustes() {
       {/* TEMA */}
       <div className="card">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-airbus-blue/10 rounded-lg flex items-center justify-center">
-            <Palette className="w-5 h-5 text-airbus-blue" />
+          <div className="w-10 h-10 bg-[#780029]/10 rounded-lg flex items-center justify-center">
+            <Palette className="w-5 h-5 text-[#780029]" />
           </div>
           <div>
             <h2 className="font-semibold text-gray-800">Tema</h2>
@@ -80,23 +84,23 @@ export function Ajustes() {
                 onClick={() => updateSettings({ theme: opt.value })}
                 className={`relative p-4 rounded-lg border-2 text-left transition ${
                   active
-                    ? 'border-airbus-blue bg-airbus-blue/5'
-                    : 'border-gray-200 hover:border-airbus-sky/50 hover:bg-gray-50'
+                    ? 'border-[#780029] bg-[#780029]/5'
+                    : 'border-gray-200 hover:border-[#A6002E]/50 hover:bg-gray-50'
                 }`}
               >
                 {active && (
-                  <div className="absolute top-2 right-2 w-5 h-5 bg-airbus-blue rounded-full flex items-center justify-center">
+                  <div className="absolute top-2 right-2 w-5 h-5 bg-[#780029] rounded-full flex items-center justify-center">
                     <Check className="w-3 h-3 text-white" />
                   </div>
                 )}
                 <Icon
                   className={`w-6 h-6 mb-2 ${
-                    active ? 'text-airbus-blue' : 'text-gray-400'
+                    active ? 'text-[#780029]' : 'text-gray-400'
                   }`}
                 />
                 <p
                   className={`font-semibold ${
-                    active ? 'text-airbus-blue' : 'text-gray-800'
+                    active ? 'text-[#780029]' : 'text-gray-800'
                   }`}
                 >
                   {opt.label}
@@ -111,8 +115,8 @@ export function Ajustes() {
       {/* COLOR DE ACENTO */}
       <div className="card">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-airbus-blue/10 rounded-lg flex items-center justify-center">
-            <Palette className="w-5 h-5 text-airbus-blue" />
+          <div className="w-10 h-10 bg-[#780029]/10 rounded-lg flex items-center justify-center">
+            <Palette className="w-5 h-5 text-[#780029]" />
           </div>
           <div>
             <h2 className="font-semibold text-gray-800">Color de acento</h2>
@@ -121,7 +125,7 @@ export function Ajustes() {
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {accentOptions.map((opt) => {
             const active = settings.accent === opt.value;
             return (
@@ -157,8 +161,8 @@ export function Ajustes() {
       {/* TAMAÑO DE LETRA */}
       <div className="card">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-airbus-blue/10 rounded-lg flex items-center justify-center">
-            <Type className="w-5 h-5 text-airbus-blue" />
+          <div className="w-10 h-10 bg-[#780029]/10 rounded-lg flex items-center justify-center">
+            <Type className="w-5 h-5 text-[#780029]" />
           </div>
           <div>
             <h2 className="font-semibold text-gray-800">Tamaño de letra</h2>
@@ -174,25 +178,25 @@ export function Ajustes() {
                 onClick={() => updateSettings({ fontSize: opt.value })}
                 className={`relative p-4 rounded-lg border-2 transition ${
                   active
-                    ? 'border-airbus-blue bg-airbus-blue/5'
-                    : 'border-gray-200 hover:border-airbus-sky/50 hover:bg-gray-50'
+                    ? 'border-[#780029] bg-[#780029]/5'
+                    : 'border-gray-200 hover:border-[#A6002E]/50 hover:bg-gray-50'
                 }`}
               >
                 {active && (
-                  <div className="absolute top-2 right-2 w-5 h-5 bg-airbus-blue rounded-full flex items-center justify-center">
+                  <div className="absolute top-2 right-2 w-5 h-5 bg-[#780029] rounded-full flex items-center justify-center">
                     <Check className="w-3 h-3 text-white" />
                   </div>
                 )}
                 <span
                   className={`font-bold block mb-1 ${opt.sample} ${
-                    active ? 'text-airbus-blue' : 'text-gray-800'
+                    active ? 'text-[#780029]' : 'text-gray-800'
                   }`}
                 >
                   Aa
                 </span>
                 <p
                   className={`text-xs font-medium ${
-                    active ? 'text-airbus-blue' : 'text-gray-600'
+                    active ? 'text-[#780029]' : 'text-gray-600'
                   }`}
                 >
                   {opt.label}
