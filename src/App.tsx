@@ -64,6 +64,10 @@ export default function App() {
           <Route path="/informes" element={
             <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
           } />
+          {/* ✅ NUEVA RUTA — faltaba */}
+          <Route path="/gridmapping" element={
+            <ProtectedRoute><Layout><GridMapping /></Layout></ProtectedRoute>
+          } />
           <Route path="/prestamos" element={
             <ProtectedRoute><Layout><Prestamos /></Layout></ProtectedRoute>
           } />
