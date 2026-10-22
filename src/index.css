@@ -67,7 +67,12 @@
   --accent-400: #0ea5e9;
   --accent-200: #dbeafe;
 }
-
+[data-accent="red"] {
+  --accent-500: #e4002b;
+  --accent-700: #a40020;
+  --accent-400: #f87171;
+  --accent-200: #fecaca;
+}
 [data-accent="green"] {
   --accent-500: #10b981;
   --accent-700: #065f46;
