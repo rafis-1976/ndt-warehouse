@@ -196,7 +196,7 @@ function equipoLabel(eq: EquipoUT): string {
 
 /* ----------------------------- Componente ----------------------------- */
 
-export function GridMappingPage() {
+export function GridMapping() {
   const [meta, setMeta] = useState<Meta>({
     matricula: 'EC-NAV', wo_sap: '6567863537', fr: '248', fecha: todayISO(), operador: '',
   });
