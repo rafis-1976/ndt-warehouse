@@ -6,6 +6,16 @@ import {
   type FontSize,
 } from '../contexts/SettingsContext';
 
+const accentOptions: { value: Accent; label: string; color: string }[] = [
+  { value: 'blue', label: 'Azul', color: '#2563eb' },
+  { value: 'red', label: 'Rojo', color: '#e4002b' },   // ← NUEVO
+  { value: 'green', label: 'Verde', color: '#10b981' },
+  { value: 'purple', label: 'Morado', color: '#8b5cf6' },
+  { value: 'orange', label: 'Naranja', color: '#f97316' },
+  { value: 'rose', label: 'Rosa', color: '#f43f5e' },
+  { value: 'teal', label: 'Teal', color: '#14b8a6' },
+];
+
 const themeOptions: { value: Theme; label: string; icon: any; desc: string }[] = [
   { value: 'light', label: 'Claro', icon: Sun, desc: 'Fondo blanco clásico' },
   { value: 'dark', label: 'Oscuro', icon: Moon, desc: 'Fondo oscuro, ideal de noche' },
