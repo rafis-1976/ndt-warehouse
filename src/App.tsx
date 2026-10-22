@@ -20,7 +20,7 @@ import { Carros } from './pages/Carros';
 import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
 import { Ajustes } from './pages/Ajustes';
-import { Grid Mapping } from './pages/GridMapping';
+import { GridMapping } from './pages/GridMapping';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
