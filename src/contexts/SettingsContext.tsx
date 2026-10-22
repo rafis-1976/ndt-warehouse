@@ -9,10 +9,37 @@ import {
 } from 'react';
 import { supabase } from '../lib/supabase';
 
-export type Accent = 'blue' | 'red' | 'green' | 'purple' | 'orange' | 'rose' | 'teal';
 export type Theme = 'light' | 'dark' | 'auto';
-export type Accent = 'blue' | 'green' | 'purple' | 'orange' | 'rose' | 'teal';
 export type FontSize = 'small' | 'normal' | 'large' | 'xlarge';
+
+export type Accent =
+  | 'blue'    // Granate  #780029
+  | 'rose'    // Burdeos  #A6002E
+  | 'red'     // Rojo     #D7192D
+  | 'orange'  // Naranja  #F68400
+  | 'green'   // Menta    #4BC59C
+  | 'teal'    // Cian     #97E1E1
+  | 'purple'  // Magenta  #A20067
+  | 'tan'     // Arena    #9E8668
+  | 'gray';   // Gris     #575757
+
+const VALID_ACCENTS: Accent[] = [
+  'blue', 'rose', 'red', 'orange', 'green', 'teal', 'purple', 'tan', 'gray',
+];
+
+/** Paleta corporativa. Los nombres de `Accent` se mantienen por compatibilidad
+ *  con localStorage/CSS existente, pero el color real es el nuevo. */
+const ACCENT_COLORS: Record<Accent, string> = {
+  blue:   '#780029',
+  rose:   '#A6002E',
+  red:    '#D7192D',
+  orange: '#F68400',
+  green:  '#4BC59C',
+  teal:   '#97E1E1',
+  purple: '#A20067',
+  tan:    '#9E8668',
+  gray:   '#575757',
+};
 
 export interface Settings {
   theme: Theme;
@@ -41,8 +68,14 @@ function loadFromLocal(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULTS, ...parsed };
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return {
+      theme: parsed.theme ?? DEFAULTS.theme,
+      accent: VALID_ACCENTS.includes(parsed.accent as Accent)
+        ? (parsed.accent as Accent)
+        : DEFAULTS.accent,
+      fontSize: parsed.fontSize ?? DEFAULTS.fontSize,
+    };
   } catch {
     return DEFAULTS;
   }
@@ -51,6 +84,7 @@ function loadFromLocal(): Settings {
 function applyToDOM(settings: Settings) {
   const html = document.documentElement;
 
+  // Tamaño de letra
   const sizeMap: Record<FontSize, string> = {
     small: '87.5%',
     normal: '100%',
@@ -59,13 +93,22 @@ function applyToDOM(settings: Settings) {
   };
   html.style.fontSize = sizeMap[settings.fontSize] || '100%';
 
+  // Tema claro/oscuro
   const isDark =
     settings.theme === 'dark' ||
     (settings.theme === 'auto' &&
       window.matchMedia('(prefers-color-scheme: dark)').matches);
   html.classList.toggle('theme-dark', isDark);
 
+  // Color de acento (nueva paleta)
+  const accentColor = ACCENT_COLORS[settings.accent] ?? ACCENT_COLORS.blue;
   html.setAttribute('data-accent', settings.accent);
+  // Variables CSS para que cualquier estilo que las use recoja el color nuevo.
+  // Cubre los nombres más habituales; si tu CSS usa solo [data-accent] con
+  // colores hardcodeados, actualiza esas reglas a la nueva paleta.
+  html.style.setProperty('--accent', accentColor);
+  html.style.setProperty('--accent-color', accentColor);
+  html.style.setProperty('--airbus-blue', accentColor);
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -108,9 +151,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
         if (cancelled) return;
         if (data && !error) {
+          const remoteAccent = VALID_ACCENTS.includes(data.accent as Accent)
+            ? (data.accent as Accent)
+            : DEFAULTS.accent;
           const remote: Settings = {
             theme: (data.theme as Theme) || DEFAULTS.theme,
-            accent: (data.accent as Accent) || DEFAULTS.accent,
+            accent: remoteAccent,
             fontSize: (data.font_size as FontSize) || DEFAULTS.fontSize,
           };
           setSettings(remote);
