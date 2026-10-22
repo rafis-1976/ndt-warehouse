@@ -12,6 +12,7 @@ import { CarroForm } from '../components/carros/CarroForm';
 import { ProbetaForm } from '../components/carros/ProbetaForm';
 import { ProbetaDetalle } from '../components/carros/ProbetaDetalle';
 import { BarcodeScanner } from '../components/BarcodeScanner';
+import { QRCodeSVG } from '../components/ui/QRCodeSVG'; // <-- IMPORT LOCAL
 import { usePrestamosExternos } from '../hooks/usePrestamosExternos';
 
 const tipoDestinoConfig: Record<string, { label: string; icon: any }> = {
@@ -293,8 +294,6 @@ export function Carros() {
     setProbetaEditando(null);
     setCarroDestino(carroId ?? null);
     setModalProbetaOpen(true);
-    // Si se pulsa "+" en una bandeja concreta, se podría precargar el nº bandeja
-    // (queda como TODO si ProbetaForm lo soporta en el futuro)
     void numBandeja;
   };
 
@@ -1042,8 +1041,8 @@ export function Carros() {
                                                 <button
                                                   type="button"
                                                   onClick={(e) => { e.stopPropagation(); setBarcodeAbierto(probeta.codigo_barras); }}
-                                                  className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-airbus-sky/10 transition"
-                                                  title="Ver código de barras ampliado"
+                                                  className="mt-1 inline-flex items-center gap-3 px-1.5 py-0.5 rounded hover:bg-airbus-sky/10 transition"
+                                                  title="Ver códigos ampliados"
                                                 >
                                                   <Barcode className="w-3 h-3 text-airbus-sky" />
                                                   <BarcodeLib
@@ -1055,6 +1054,7 @@ export function Carros() {
                                                     margin={0}
                                                     lineColor="#00205B"
                                                   />
+                                                  <QRCodeSVG value={probeta.codigo_barras} size={20} />
                                                 </button>
                                               )}
 
@@ -1280,23 +1280,26 @@ export function Carros() {
       <Modal
         open={!!barcodeAbierto}
         onClose={() => setBarcodeAbierto(null)}
-        title="Código de barras"
+        title="Códigos de identificación"
         size="sm"
       >
         {barcodeAbierto && (
-          <div className="flex flex-col items-center gap-4 py-4">
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div className="bg-white p-4 rounded-lg border border-gray-200 w-full flex justify-center">
               <BarcodeLib
                 value={barcodeAbierto}
                 format="CODE128"
-                displayValue={false}
-                height={80}
-                width={2.5}
+                displayValue={true}
+                height={60}
+                width={2}
                 margin={0}
                 lineColor="#00205B"
               />
             </div>
-            <p className="font-mono text-xs text-gray-500">{barcodeAbierto}</p>
+            
+            <div className="bg-white p-4 rounded-lg border border-gray-200 flex justify-center">
+              <QRCodeSVG value={barcodeAbierto} size={200} />
+            </div>
           </div>
         )}
       </Modal>
