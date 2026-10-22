@@ -6,16 +6,6 @@ import {
   type FontSize,
 } from '../contexts/SettingsContext';
 
-const accentOptions: { value: Accent; label: string; color: string }[] = [
-  { value: 'blue', label: 'Azul', color: '#2563eb' },
-  { value: 'red', label: 'Rojo', color: '#e4002b' },   // ← NUEVO
-  { value: 'green', label: 'Verde', color: '#10b981' },
-  { value: 'purple', label: 'Morado', color: '#8b5cf6' },
-  { value: 'orange', label: 'Naranja', color: '#f97316' },
-  { value: 'rose', label: 'Rosa', color: '#f43f5e' },
-  { value: 'teal', label: 'Teal', color: '#14b8a6' },
-];
-
 const themeOptions: { value: Theme; label: string; icon: any; desc: string }[] = [
   { value: 'light', label: 'Claro', icon: Sun, desc: 'Fondo blanco clásico' },
   { value: 'dark', label: 'Oscuro', icon: Moon, desc: 'Fondo oscuro, ideal de noche' },
@@ -24,6 +14,7 @@ const themeOptions: { value: Theme; label: string; icon: any; desc: string }[] =
 
 const accentOptions: { value: Accent; label: string; color: string }[] = [
   { value: 'blue', label: 'Azul', color: '#2563eb' },
+  { value: 'red', label: 'Rojo', color: '#e4002b' },
   { value: 'green', label: 'Verde', color: '#10b981' },
   { value: 'purple', label: 'Morado', color: '#8b5cf6' },
   { value: 'orange', label: 'Naranja', color: '#f97316' },
@@ -50,7 +41,6 @@ export function Ajustes() {
         </p>
       </div>
 
-      {/* Estado de guardado */}
       {saveStatus === 'saving' && (
         <div className="flex items-center gap-2 text-xs text-airbus-sky bg-airbus-sky/10 border border-airbus-sky/30 rounded-lg px-3 py-2">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -131,7 +121,7 @@ export function Ajustes() {
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
           {accentOptions.map((opt) => {
             const active = settings.accent === opt.value;
             return (
