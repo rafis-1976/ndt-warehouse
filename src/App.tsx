@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Equipos } from './pages/Equipos';
+import { Sondas } from './pages/Sondas';
+import { Cables } from './pages/Cables';
 import { Prestamos } from './pages/Prestamos';
 import { Calibraciones } from './pages/Calibraciones';
 import { Estadisticas } from './pages/Estadisticas';
@@ -16,9 +19,7 @@ import { UsuarioNuevo } from './pages/UsuarioNuevo';
 import { Carros } from './pages/Carros';
 import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
-import { GridMappingPage } from './pages/GridMapping';
-import { Sondas } from './pages/Sondas';
-import { Cables } from './pages/Cables';
+import { Ajustes } from './pages/Ajustes';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,55 +36,61 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginForm />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    <SettingsProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-        <Route path="/dashboard" element={
-          <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
-        } />
-        <Route path="/equipos" element={
-          <ProtectedRoute><Layout><Equipos /></Layout></ProtectedRoute>
-        } />
-	<Route path="/sondas" element={<ProtectedRoute><Layout><Sondas /></Layout></ProtectedRoute>} />
-	<Route path="/cables" element={<ProtectedRoute><Layout><Cables /></Layout></ProtectedRoute>} />
-        <Route path="/carros" element={
-          <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
-        } />
-        <Route path="/probetas" element={
-          <ProtectedRoute><Layout><Probetas /></Layout></ProtectedRoute>
-        } />
-        <Route path="/informes" element={
-          <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
-        } />
-        <Route path="/grid-mapping" element={
-          <ProtectedRoute><Layout><GridMappingPage /></Layout></ProtectedRoute>
-        } />
-        <Route path="/prestamos" element={
-          <ProtectedRoute><Layout><Prestamos /></Layout></ProtectedRoute>
-        } />
-        <Route path="/calibraciones" element={
-          <ProtectedRoute><Layout><Calibraciones /></Layout></ProtectedRoute>
-        } />
-        <Route path="/movimientos" element={
-          <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
-        } />
-        <Route path="/scan" element={
-          <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
-        } />
-        <Route path="/estadisticas" element={
-          <ProtectedRoute><Layout><Estadisticas /></Layout></ProtectedRoute>
-        } />
-        <Route path="/usuarios" element={
-          <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
-        } />
-        <Route path="/usuarios/nuevo" element={
-          <ProtectedRoute><Layout><UsuarioNuevo /></Layout></ProtectedRoute>
-        } />
+          <Route path="/dashboard" element={
+            <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
+          } />
+          <Route path="/equipos" element={
+            <ProtectedRoute><Layout><Equipos /></Layout></ProtectedRoute>
+          } />
+          <Route path="/sondas" element={
+            <ProtectedRoute><Layout><Sondas /></Layout></ProtectedRoute>
+          } />
+          <Route path="/cables" element={
+            <ProtectedRoute><Layout><Cables /></Layout></ProtectedRoute>
+          } />
+          <Route path="/carros" element={
+            <ProtectedRoute><Layout><Carros /></Layout></ProtectedRoute>
+          } />
+          <Route path="/probetas" element={
+            <ProtectedRoute><Layout><Probetas /></Layout></ProtectedRoute>
+          } />
+          <Route path="/informes" element={
+            <ProtectedRoute><Layout><Informes /></Layout></ProtectedRoute>
+          } />
+          <Route path="/prestamos" element={
+            <ProtectedRoute><Layout><Prestamos /></Layout></ProtectedRoute>
+          } />
+          <Route path="/calibraciones" element={
+            <ProtectedRoute><Layout><Calibraciones /></Layout></ProtectedRoute>
+          } />
+          <Route path="/movimientos" element={
+            <ProtectedRoute><Layout><Movimientos /></Layout></ProtectedRoute>
+          } />
+          <Route path="/scan" element={
+            <ProtectedRoute><Layout><Scan /></Layout></ProtectedRoute>
+          } />
+          <Route path="/estadisticas" element={
+            <ProtectedRoute><Layout><Estadisticas /></Layout></ProtectedRoute>
+          } />
+          <Route path="/usuarios" element={
+            <ProtectedRoute><Layout><Usuarios /></Layout></ProtectedRoute>
+          } />
+          <Route path="/usuarios/nuevo" element={
+            <ProtectedRoute><Layout><UsuarioNuevo /></Layout></ProtectedRoute>
+          } />
+          <Route path="/ajustes" element={
+            <ProtectedRoute><Layout><Ajustes /></Layout></ProtectedRoute>
+          } />
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </BrowserRouter>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </SettingsProvider>
   );
 }
