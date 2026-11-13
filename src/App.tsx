@@ -21,6 +21,7 @@ import { Probetas } from './pages/Probetas';
 import { Informes } from './pages/Informes';
 import { Ajustes } from './pages/Ajustes';
 import { GridMapping } from './pages/GridMapping';
+import { MiPerfil } from './pages/MiPerfil';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -42,7 +43,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginForm />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
+	  <Route path="/mi-perfil" element={<ProtectedRoute><Layout><MiPerfil /></Layout></ProtectedRoute>} />
           <Route path="/dashboard" element={
             <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
           } />
