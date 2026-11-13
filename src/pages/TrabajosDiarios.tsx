@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, Loader2, Edit3, Trash2 } from 'lucide-react';
+import { Search, Plus, Loader2, Edit3, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 
 // ============================================================
 // Tipos
@@ -14,7 +14,7 @@ type Trabajo = {
   orden_sap: string | null;
   descripcion: string | null;
   ndt_meth_tech: string | null;
-  insp_ndt_acomplished: string | null; // Ahora representa a los Inspectores
+  insp_ndt_acomplished: string | null;
   fecha_cierre_inspeccion: string | null;
   resultado_inspeccion: string | null;
   flota: string | null;
@@ -27,19 +27,21 @@ type Trabajo = {
   turno: string;
   fecha_turno: string;
   is_fod: boolean;
+  orden: number; // <-- NUEVO CAMPO
 };
 
+// Datos mock (para que se vea algo si la tabla está vacía)
 const MOCK_DATA: Trabajo[] = [
   {
     id: '1', matricula: 'V16957', ibe_doc_ref_nr: 'NP619010', doc_ref_nr: 'R0008710', orden_sap: '41429769',
     descripcion: 'ENGINE TUBE', ndt_meth_tech: 'RT', insp_ndt_acomplished: '653892', fecha_cierre_inspeccion: '2026-11-12',
     resultado_inspeccion: 'NIL', flota: 'V2500-A5', lugar: 'LAB', equipo_pn: null, equipo_sn: null, palpador_pn: null,
-    palpador_sn: null, ref_standard_pn: null, turno: 'TURNO DE NOCHE 12/11/2026', fecha_turno: '2026-11-12', is_fod: false
+    palpador_sn: null, ref_standard_pn: null, turno: 'TURNO DE NOCHE 12/11/2026', fecha_turno: '2026-11-12', is_fod: false, orden: 1
   },
   {
     id: '4', matricula: 'EC-LUO', ibe_doc_ref_nr: 'FR00116', doc_ref_nr: '51-10-08', orden_sap: '6700501671',
-    descripcion: 'MET.64283227 WING LH - CORROSION IN STA3059/RIB06 LH INBOARD FLAP AT TRACK 2. SEE DMR.', ndt_meth_tech: 'ET/UT', insp_ndt_acomplished: '756464\n972921\n471693', fecha_cierre_inspeccion: '2026-11-13',
-    resultado_inspeccion: 'NIL', flota: 'A32X', lugar: 'H6', equipo_pn: 'ELOTEST M2-5 DAKOTA CMX DL+', equipo_sn: 'A019WF\n10011', palpador_pn: '314P24 ,187 10MHz', palpador_sn: '17F00ANZ\n432A2', ref_standard_pn: '29A029\n511004PB4', turno: 'TURNO DE MAÑANA 13/11/2026', fecha_turno: '2026-11-13', is_fod: false
+    descripcion: 'MET.64283227 WING LH - CORROSION...', ndt_meth_tech: 'ET/UT', insp_ndt_acomplished: '756464\n972921', fecha_cierre_inspeccion: '2026-11-13',
+    resultado_inspeccion: 'NIL', flota: 'A32X', lugar: 'H6', equipo_pn: 'ELOTEST M2-5', equipo_sn: 'A019WF', palpador_pn: '314P24', palpador_sn: '17F00ANZ', ref_standard_pn: '29A029', turno: 'TURNO DE MAÑANA 13/11/2026', fecha_turno: '2026-11-13', is_fod: false, orden: 1
   },
 ];
 
@@ -62,6 +64,7 @@ export function TrabajosDiarios() {
         .from('trabajos_diarios')
         .select('*')
         .order('fecha_turno', { ascending: false })
+        .order('orden', { ascending: true }) // <-- Ordenamos por el nuevo campo
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -98,6 +101,10 @@ export function TrabajosDiarios() {
       if (!groups[t.turno]) groups[t.turno] = [];
       groups[t.turno].push(t);
     });
+    // Aseguramos que dentro de cada grupo estén ordenados por 'orden'
+    Object.keys(groups).forEach((key) => {
+      groups[key].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    });
     return groups;
   }, [filtered]);
 
@@ -105,8 +112,7 @@ export function TrabajosDiarios() {
   // Eliminar Trabajo
   // --------------------------------------------------------
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este trabajo diario? Esta acción no se puede deshacer.')) return;
-    
+    if (!confirm('¿Estás seguro de que deseas eliminar este trabajo diario?')) return;
     try {
       const { error } = await supabase.from('trabajos_diarios').delete().eq('id', id);
       if (error) throw error;
@@ -114,6 +120,43 @@ export function TrabajosDiarios() {
     } catch (err: any) {
       alert('Error al eliminar: ' + err.message);
     }
+  };
+
+  // --------------------------------------------------------
+  // Subir / Bajar Línea
+  // --------------------------------------------------------
+  const handleMove = async (e: React.MouseEvent, trabajo: Trabajo, direction: 'up' | 'down', groupItems: Trabajo[]) => {
+    e.stopPropagation(); // Evita que se abra el editor al hacer clic en la flecha
+    
+    const index = groupItems.findIndex(t => t.id === trabajo.id);
+    if (direction === 'up' && index > 0) {
+      const target = groupItems[index - 1];
+      await swapOrder(trabajo, target);
+    } else if (direction === 'down' && index < groupItems.length - 1) {
+      const target = groupItems[index + 1];
+      await swapOrder(trabajo, target);
+    }
+  };
+
+  const swapOrder = async (a: Trabajo, b: Trabajo) => {
+    // Si por lo que sea no tienen orden, usamos 0
+    const aOrden = a.orden ?? 0;
+    const bOrden = b.orden ?? 0;
+    
+    // Actualizamos en Supabase (intercambiamos valores)
+    await Promise.all([
+      supabase.from('trabajos_diarios').update({ orden: bOrden }).eq('id', a.id),
+      supabase.from('trabajos_diarios').update({ orden: aOrden }).eq('id', b.id)
+    ]);
+    
+    // Actualizamos el estado local para que se mueva visualmente al instante
+    setTrabajos((prev) => 
+      prev.map(t => {
+        if (t.id === a.id) return { ...t, orden: bOrden };
+        if (t.id === b.id) return { ...t, orden: aOrden };
+        return t;
+      })
+    );
   };
 
   return (
@@ -165,7 +208,6 @@ export function TrabajosDiarios() {
                 <th className="border border-gray-400 px-2 py-1 text-left font-semibold">Orden SAP</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold w-1/4">Description</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">NDT<br/>Meth./Tech.</th>
-                {/* CAMBIO DE NOMBRE AQUÍ */}
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">INSPECTORES<br/>NDT</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Fecha Cierre<br/>Inspeccion</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Resultado inspeccion</th>
@@ -176,21 +218,23 @@ export function TrabajosDiarios() {
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Palpador P/N</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Palpador S/N</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Ref Standard P/N</th>
-                <th className="border border-gray-400 px-2 py-1 text-center font-semibold bg-[#425b91] w-24">Acciones</th>
+                <th className="border border-gray-400 px-2 py-1 text-center font-semibold bg-[#425b91] w-32">Acciones</th>
               </tr>
             </thead>
             
             {Object.entries(grouped).map(([turno, rows]) => (
               <tbody key={turno} className="divide-y divide-gray-300 border-b-2 border-gray-400">
                 <tr>
-                  {/* Colspan ajustado a 17 columnas */}
                   <td colSpan={17} className="bg-white text-center font-bold text-[#2563eb] py-2 border border-gray-300 text-xs">
                     {turno}
                   </td>
                 </tr>
                 
-                {rows.map((t) => {
+                {rows.map((t, idx) => {
                   const bgRow = t.is_fod ? 'bg-[#ffff00]' : 'bg-white hover:bg-gray-50';
+                  const isFirst = idx === 0;
+                  const isLast = idx === rows.length - 1;
+
                   return (
                     <tr 
                       key={t.id} 
@@ -217,9 +261,31 @@ export function TrabajosDiarios() {
                       <td className="border border-gray-300 px-2 py-1 text-center whitespace-pre-wrap">{t.palpador_sn || ''}</td>
                       <td className="border border-gray-300 px-2 py-1 text-center whitespace-pre-wrap">{t.ref_standard_pn || ''}</td>
                       
-                      {/* BOTONES DE ACCIÓN: EDITAR Y ELIMINAR */}
+                      {/* BOTONES DE ACCIÓN */}
                       <td className="border border-gray-300 px-2 py-1 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-0.5">
+                          
+                          {/* FLECHAS DE ORDENACIÓN */}
+                          <div className="flex flex-col mr-1">
+                            <button
+                              onClick={(e) => handleMove(e, t, 'up', rows)}
+                              disabled={isFirst}
+                              className={`p-0.5 rounded transition-colors ${isFirst ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-200 hover:text-airbus-blue'}`}
+                              title="Subir línea"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => handleMove(e, t, 'down', rows)}
+                              disabled={isLast}
+                              className={`p-0.5 rounded transition-colors ${isLast ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-200 hover:text-airbus-blue'}`}
+                              title="Bajar línea"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* EDITAR Y ELIMINAR */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
