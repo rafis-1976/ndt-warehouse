@@ -1,221 +1,230 @@
 import {
-  createContext, useContext, useEffect, useState, useCallback, useMemo, useRef,
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  ReactNode,
 } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../hooks/useAuth';
 
-// ============================================================
-// Tipos
-// ============================================================
-export type Tema = 'claro' | 'oscuro' | 'auto';
+export type Theme = 'light' | 'dark' | 'auto';
+export type FontSize = 'small' | 'normal' | 'large' | 'xlarge';
+
+export type Accent =
+  | 'blue'    // Granate  #780029
+  | 'rose'    // Burdeos  #A6002E
+  | 'red'     // Rojo     #D7192D
+  | 'orange'  // Naranja  #F68400
+  | 'green'   // Menta    #4BC59C
+  | 'teal'    // Cian     #97E1E1
+  | 'purple'  // Magenta  #A20067
+  | 'tan'     // Arena    #9E8668
+  | 'gray';   // Gris     #575757
+
+const VALID_ACCENTS: Accent[] = [
+  'blue', 'rose', 'red', 'orange', 'green', 'teal', 'purple', 'tan', 'gray',
+];
+
+/** Paleta corporativa. Los nombres de `Accent` se mantienen por compatibilidad
+ *  con localStorage/CSS existente, pero el color real es el nuevo. */
+const ACCENT_COLORS: Record<Accent, string> = {
+  blue:   '#780029',
+  rose:   '#A6002E',
+  red:    '#D7192D',
+  orange: '#F68400',
+  green:  '#4BC59C',
+  teal:   '#97E1E1',
+  purple: '#A20067',
+  tan:    '#9E8668',
+  gray:   '#575757',
+};
 
 export interface Settings {
-  colorPrimario: string;
-  colorSecundario: string;
-  colorAcento: string;
-  colorFondo: string;
-  tema: Tema;
-  densidad: 'compacta' | 'normal' | 'comoda';
-  mostrarAnimaciones: boolean;
+  theme: Theme;
+  accent: Accent;
+  fontSize: FontSize;
 }
 
 const DEFAULTS: Settings = {
-  colorPrimario: '#0033a0',
-  colorSecundario: '#ff6b00',
-  colorAcento: '#00a651',
-  colorFondo: '#f9fafb',
-  tema: 'auto',
-  densidad: 'normal',
-  mostrarAnimaciones: true,
+  theme: 'auto',
+  accent: 'blue',
+  fontSize: 'normal',
 };
 
-// ============================================================
-// Contexto
-// ============================================================
-interface SettingsContextValue {
+const STORAGE_KEY = 'ndt:user-settings';
+
+interface SettingsContextType {
   settings: Settings;
-  loading: boolean;
-  updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
-  updateSettings: (patch: Partial<Settings>) => void;
-  resetSettings: () => Promise<void>;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+  updateSettings: (partial: Partial<Settings>) => void;
+  resetSettings: () => void;
 }
 
-const SettingsContext = createContext<SettingsContextValue | null>(null);
+const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
-// ============================================================
-// Provider
-// ============================================================
-export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const { user, loading: authLoading } = useAuth();
-  const [settings, setSettings] = useState<Settings>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
+function loadFromLocal(): Settings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULTS;
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return {
+      theme: parsed.theme ?? DEFAULTS.theme,
+      accent: VALID_ACCENTS.includes(parsed.accent as Accent)
+        ? (parsed.accent as Accent)
+        : DEFAULTS.accent,
+      fontSize: parsed.fontSize ?? DEFAULTS.fontSize,
+    };
+  } catch {
+    return DEFAULTS;
+  }
+}
 
-  // 🔧 FIX: guardamos el id del usuario cargado para detectar cambios
-  // y evitar condiciones de carrera con peticiones en vuelo.
-  const loadedForUserRef = useRef<string | null>(null);
+function applyToDOM(settings: Settings) {
+  const html = document.documentElement;
 
-  // ----------------------------------------------------------
-  // 🔧 FIX: efecto que se dispara SIEMPRE que cambia user
-  //    1. Al logout → defaults + limpia cache del usuario anterior
-  //    2. Al login → carga del usuario nuevo (cache local + Supabase)
-  // ----------------------------------------------------------
+  // Tamaño de letra
+  const sizeMap: Record<FontSize, string> = {
+    small: '87.5%',
+    normal: '100%',
+    large: '112.5%',
+    xlarge: '125%',
+  };
+  html.style.fontSize = sizeMap[settings.fontSize] || '100%';
+
+  // Tema claro/oscuro
+  const isDark =
+    settings.theme === 'dark' ||
+    (settings.theme === 'auto' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  html.classList.toggle('theme-dark', isDark);
+
+  // Color de acento (nueva paleta)
+  const accentColor = ACCENT_COLORS[settings.accent] ?? ACCENT_COLORS.blue;
+  html.setAttribute('data-accent', settings.accent);
+  // Variables CSS para que cualquier estilo que las use recoja el color nuevo.
+  // Cubre los nombres más habituales; si tu CSS usa solo [data-accent] con
+  // colores hardcodeados, actualiza esas reglas a la nueva paleta.
+  html.style.setProperty('--accent', accentColor);
+  html.style.setProperty('--accent-color', accentColor);
+  html.style.setProperty('--airbus-blue', accentColor);
+}
+
+export function SettingsProvider({ children }: { children: ReactNode }) {
+  const [settings, setSettings] = useState<Settings>(() => loadFromLocal());
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [loaded, setLoaded] = useState(false);
+
+  // Aplica al DOM antes del primer paint (evita flash)
+  useLayoutEffect(() => {
+    applyToDOM(settings);
+  }, [settings]);
+
+  // Re-aplica cuando cambia el tema del sistema (solo en modo auto)
   useEffect(() => {
-    if (authLoading) return;
+    if (settings.theme !== 'auto') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => applyToDOM(settings);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [settings]);
 
-    // CASO 1: sin usuario → limpiar TODO estado del anterior
-    if (!user) {
-      // 🔧 FIX: forzar reset a defaults aunque sea el primer render
-      setSettings(DEFAULTS);
-      setLoading(false);
-      loadedForUserRef.current = null;
-      return;
-    }
-
-    // CASO 2: usuario distinto del que ya está cargado → recargar
-    if (loadedForUserRef.current === user.id) {
-      // Mismo usuario, no hacemos nada (evita re-render y parpadeo)
-      return;
-    }
-
-    // 🔧 FIX: ANTES de cargar el nuevo usuario, reseteamos a defaults
-    // Esto evita que durante el fetch se vean los colores del anterior
-    setSettings(DEFAULTS);
-    setLoading(true);
-
-    const cacheKey = `settings:${user.id}`;
+  // Carga desde Supabase al iniciar
+  useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      // 1. Hidratación rápida desde cache del usuario ACTUAL
       try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached && !cancelled) {
-          const parsed = JSON.parse(cached);
-          setSettings({ ...DEFAULTS, ...parsed });
-          setLoading(false);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user || cancelled) {
+          setLoaded(true);
+          return;
         }
-      } catch (_) {
-        /* cache corrupta → ignorar */
+
+        const { data, error } = await supabase
+          .from('user_settings')
+          .select('theme, accent, font_size')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (data && !error) {
+          const remoteAccent = VALID_ACCENTS.includes(data.accent as Accent)
+            ? (data.accent as Accent)
+            : DEFAULTS.accent;
+          const remote: Settings = {
+            theme: (data.theme as Theme) || DEFAULTS.theme,
+            accent: remoteAccent,
+            fontSize: (data.font_size as FontSize) || DEFAULTS.fontSize,
+          };
+          setSettings(remote);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+        }
+      } catch (e) {
+        console.warn('No se pudo cargar configuración remota', e);
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
-
-      // 2. Fuente de verdad: Supabase
-      const { data, error } = await supabase
-        .from('perfiles')
-        .select('ajustes')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      if (error) {
-        console.error('[SettingsContext] Error cargando ajustes:', error);
-        setLoading(false);
-        return;
-      }
-
-      const merged = {
-        ...DEFAULTS,
-        ...((data?.ajustes as Partial<Settings> | null) ?? {}),
-      };
-
-      setSettings(merged);
-      setLoading(false);
-
-      // Cachear para la próxima
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify(merged));
-      } catch (_) {}
-
-      loadedForUserRef.current = user.id;
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading]);
+  }, []);
 
-  // ----------------------------------------------------------
-  // Aplicar CSS variables al :root
-  // ----------------------------------------------------------
+  // Guarda cuando cambian los ajustes (local inmediato + Supabase con debounce)
   useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--color-primary', settings.colorPrimario);
-    root.style.setProperty('--color-secondary', settings.colorSecundario);
-    root.style.setProperty('--color-accent', settings.colorAcento);
-    root.style.setProperty('--color-bg', settings.colorFondo);
+    if (!loaded) return;
 
-    const temaResuelto =
-      settings.tema === 'auto'
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'oscuro'
-          : 'claro'
-        : settings.tema;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 
-    root.classList.toggle('theme-dark', temaResuelto === 'oscuro');
-    root.classList.toggle('theme-light', temaResuelto === 'claro');
-    root.dataset.densidad = settings.densidad;
-    root.classList.toggle('no-animations', !settings.mostrarAnimaciones);
-  }, [settings]);
-
-  // ----------------------------------------------------------
-  // Persistir cambios
-  // ----------------------------------------------------------
-  const persist = useCallback(
-    async (next: Settings) => {
-      if (!user) return;
+    const timeout = setTimeout(async () => {
       try {
-        localStorage.setItem(`settings:${user.id}`, JSON.stringify(next));
-      } catch (_) {}
-      const { error } = await supabase
-        .from('perfiles')
-        .update({ ajustes: next })
-        .eq('id', user.id);
-      if (error) {
-        console.error('[SettingsContext] Error guardando ajustes:', error);
+        setSaveStatus('saving');
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setSaveStatus('idle');
+          return;
+        }
+
+        const { error } = await supabase.from('user_settings').upsert(
+          {
+            user_id: user.id,
+            theme: settings.theme,
+            accent: settings.accent,
+            font_size: settings.fontSize,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        );
+        if (error) throw error;
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (e) {
+        console.warn('No se pudo guardar configuración remota', e);
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
       }
-    },
-    [user]
-  );
+    }, 600);
 
-  const updateSettings = useCallback(
-    (patch: Partial<Settings>) => {
-      setSettings((prev) => {
-        const next = { ...prev, ...patch };
-        persist(next);
-        return next;
-      });
-    },
-    [persist]
-  );
+    return () => clearTimeout(timeout);
+  }, [settings, loaded]);
 
-  const updateSetting = useCallback(
-    <K extends keyof Settings>(key: K, value: Settings[K]) => {
-      setSettings((prev) => {
-        const next = { ...prev, [key]: value };
-        persist(next);
-        return next;
-      });
-    },
-    [persist]
-  );
+  const updateSettings = useCallback((partial: Partial<Settings>) => {
+    setSettings((prev) => ({ ...prev, ...partial }));
+  }, []);
 
-  const resetSettings = useCallback(async () => {
+  const resetSettings = useCallback(() => {
     setSettings(DEFAULTS);
-    if (user) {
-      try {
-        localStorage.removeItem(`settings:${user.id}`);
-      } catch (_) {}
-      await supabase.from('perfiles').update({ ajustes: {} }).eq('id', user.id);
-    }
-  }, [user]);
-
-  const value = useMemo(
-    () => ({ settings, loading, updateSetting, updateSettings, resetSettings }),
-    [settings, loading, updateSetting, updateSettings, resetSettings]
-  );
+  }, []);
 
   return (
-    <SettingsContext.Provider value={value}>
+    <SettingsContext.Provider
+      value={{ settings, saveStatus, updateSettings, resetSettings }}
+    >
       {children}
     </SettingsContext.Provider>
   );
@@ -223,8 +232,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
 export function useSettings() {
   const ctx = useContext(SettingsContext);
-  if (!ctx) {
-    throw new Error('useSettings debe usarse dentro de <SettingsProvider>');
-  }
+  if (!ctx) throw new Error('useSettings must be used within SettingsProvider');
   return ctx;
 }
