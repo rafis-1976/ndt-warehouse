@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import Barcode from 'react-barcode';
 import { supabase } from '../lib/supabase';
+import { usePerfil } from '../hooks/usePerfil';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
 
@@ -203,8 +204,16 @@ function equipoLabel(eq: EquipoUT): string {
 /* ----------------------------- Componente ----------------------------- */
 
 export function GridMapping() {
+  // Perfil del usuario para prellenar el nº de operador
+  const { perfil } = usePerfil();
+
+  // 🔧 Datos del informe VACÍOS por defecto (solo la fecha es hoy)
   const [meta, setMeta] = useState<Meta>({
-    matricula: 'EC-NAV', wo_sap: '6567863537', fr: '248', fecha: todayISO(), operador: '',
+    matricula: '',
+    wo_sap: '',
+    fr: '',
+    fecha: todayISO(),
+    operador: '',
   });
   const [grid, setGrid] = useState<GridData>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -244,6 +253,17 @@ export function GridMapping() {
   /* ---- Escucha ---- */
   const [listenMode, setListenMode] = useState<ListenMode>('none');
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
+
+  /* ---- Rellenar operador con el nº de nómina del perfil (solo si está vacío) ---- */
+  useEffect(() => {
+    if (perfil?.num_nomina) {
+      setMeta((m) =>
+        m.operador.trim()
+          ? m
+          : { ...m, operador: perfil.num_nomina!.replace(/^#/, '') }
+      );
+    }
+  }, [perfil?.num_nomina]);
 
   const rowsRef = useRef(rows);
   const colsRef = useRef(cols);
@@ -744,7 +764,17 @@ export function GridMapping() {
     setSwapAxes(false); setInvertRows(false); setInvertCols(false);
     setRows(4); setCols(4);
     updateRowMode({ active: false, row: 0, colIdx: 0 });
-    setMeta((m) => ({ ...m, fecha: todayISO(), operador: '' }));
+    // 🔧 Reset completo de los datos del informe
+    //    - Resto de campos vacíos
+    //    - Fecha = hoy
+    //    - Operador = nº de nómina del usuario logueado
+    setMeta({
+      matricula: '',
+      wo_sap: '',
+      fr: '',
+      fecha: todayISO(),
+      operador: perfil?.num_nomina?.replace(/^#/, '') ?? '',
+    });
     setStatus('Nueva cuadrícula lista.');
   };
 
@@ -826,7 +856,10 @@ export function GridMapping() {
       wo_sap: row.wo_sap ?? '',
       fr: row.fr ?? '',
       fecha: row.fecha,
-      operador: operadorFromGrid,
+      // 🔧 Si el registro guardado no tiene operador, usar el del usuario actual
+      operador:
+        operadorFromGrid ||
+        (perfil?.num_nomina ? perfil.num_nomina.replace(/^#/, '') : ''),
     });
     setGrid(normalized);
     setNominalThickness(nominalFromGrid);
@@ -1110,7 +1143,7 @@ export function GridMapping() {
           <h3 className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">Datos del informe</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">Matrícula</label>
-              <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} /></div>
+              <input className="input" value={meta.matricula} onChange={(e) => setMeta({ ...meta, matricula: e.target.value })} placeholder="Ej. EC-NAV" /></div>
             <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">WO / SAP</label>
               <input className="input" value={meta.wo_sap} onChange={(e) => setMeta({ ...meta, wo_sap: e.target.value })} /></div>
             <div><label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">FR</label>
@@ -1441,7 +1474,7 @@ export function GridMapping() {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <table className="w-full text-sm border-collapse border border-gray-400">
             <tbody>
-              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Matrícula</td><td className="border border-gray-400 px-2 py-1">{meta.matricula}</td></tr>
+              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Matrícula</td><td className="border border-gray-400 px-2 py-1">{meta.matricula || '—'}</td></tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">WO / SAP</td><td className="border border-gray-400 px-2 py-1">{meta.wo_sap || '—'}</td></tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">FR</td><td className="border border-gray-400 px-2 py-1">{meta.fr || '—'}</td></tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Operador</td><td className="border border-gray-400 px-2 py-1">{meta.operador || '—'}</td></tr>
@@ -1571,11 +1604,9 @@ function inferGridSizeFromKeys(keys: string[], swapAxes: boolean): { rows: numbe
       if (colIdx < 0 || isNaN(rowNum)) continue;
 
       if (!swapAxes) {
-        // Letras = columnas, números = filas
         maxCol = Math.max(maxCol, colIdx + 1);
         maxRow = Math.max(maxRow, rowNum);
       } else {
-        // Letras = filas, números = columnas
         maxRow = Math.max(maxRow, colIdx + 1);
         maxCol = Math.max(maxCol, rowNum);
       }
@@ -1585,11 +1616,9 @@ function inferGridSizeFromKeys(keys: string[], swapAxes: boolean): { rows: numbe
       if (colIdx < 0 || isNaN(rowNum)) continue;
 
       if (!swapAxes) {
-        // Letras = columnas, números = filas
         maxRow = Math.max(maxRow, rowNum);
         maxCol = Math.max(maxCol, colIdx + 1);
       } else {
-        // Letras = filas, números = columnas
         maxRow = Math.max(maxRow, colIdx + 1);
         maxCol = Math.max(maxCol, rowNum);
       }
