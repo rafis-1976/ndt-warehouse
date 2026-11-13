@@ -23,6 +23,11 @@ const RESERVED_NOMINAL_KEY = '_nominal';
 const RESERVED_EQUIPO_ID_KEY = '_equipo_ut_id';
 const RESERVED_EQUIPO_SERIAL_KEY = '_equipo_ut_serial';
 const RESERVED_EQUIPO_NOMBRE_KEY = '_equipo_ut_nombre';
+const RESERVED_ROWS_KEY = '_rows';
+const RESERVED_COLS_KEY = '_cols';
+const RESERVED_SWAP_AXES_KEY = '_swap_axes';
+const RESERVED_INVERT_ROWS_KEY = '_invert_rows';
+const RESERVED_INVERT_COLS_KEY = '_invert_cols';
 const LISTEN_TIMEOUT_MS = 10000;
 
 type GridData = Record<string, string>;
@@ -772,20 +777,57 @@ export function GridMapping() {
     const row = data as GridMappingRow;
     const rawData = row.grid_data ?? {};
     const normalized: GridData = {};
-    let nominalFromGrid = '', equipoIdFromGrid = '', operadorFromGrid = '';
-    
+
+    let nominalFromGrid = '';
+    let equipoIdFromGrid = '';
+    let operadorFromGrid = '';
+
+    // Metadatos de la cuadrícula (nuevos)
+    let rowsFromGrid = 0;
+    let colsFromGrid = 0;
+    let swapFromGrid = false;
+    let invertRowsFromGrid = false;
+    let invertColsFromGrid = false;
+    let hasSizeMeta = false;
+
     Object.entries(rawData).forEach(([k, v]) => {
       if (k === RESERVED_NOMINAL_KEY) { nominalFromGrid = v ?? ''; return; }
       if (k === RESERVED_EQUIPO_ID_KEY) { equipoIdFromGrid = v ?? ''; return; }
       if (k === RESERVED_EQUIPO_SERIAL_KEY) return;
       if (k === RESERVED_EQUIPO_NOMBRE_KEY) return;
+      if (k === RESERVED_ROWS_KEY) { rowsFromGrid = parseInt(v, 10) || 0; hasSizeMeta = true; return; }
+      if (k === RESERVED_COLS_KEY) { colsFromGrid = parseInt(v, 10) || 0; hasSizeMeta = true; return; }
+      if (k === RESERVED_SWAP_AXES_KEY) { swapFromGrid = v === 'true'; return; }
+      if (k === RESERVED_INVERT_ROWS_KEY) { invertRowsFromGrid = v === 'true'; return; }
+      if (k === RESERVED_INVERT_COLS_KEY) { invertColsFromGrid = v === 'true'; return; }
       if (k === '_operador') { operadorFromGrid = v ?? ''; return; }
       if (k === '_reference_image') { setReferenceImage(v); return; }
       if (k === '_markers') { try { setMarkers(JSON.parse(v)); } catch { setMarkers([]); } return; }
       normalized[k] = v && isNumeric(v) ? format2(v) : v;
     });
-    
-    setMeta({ matricula: row.matricula, wo_sap: row.wo_sap ?? '', fr: row.fr ?? '', fecha: row.fecha, operador: operadorFromGrid });
+
+    // Aplicar ejes guardados (necesario para interpretar claves al inferir)
+    setSwapAxes(swapFromGrid);
+    setInvertRows(invertRowsFromGrid);
+    setInvertCols(invertColsFromGrid);
+
+    // Si no hay tamaño guardado, inferir desde las claves de las celdas
+    if (!hasSizeMeta || rowsFromGrid <= 0 || colsFromGrid <= 0) {
+      const inferred = inferGridSizeFromKeys(Object.keys(normalized), swapFromGrid);
+      rowsFromGrid = inferred.rows || 4;
+      colsFromGrid = inferred.cols || 4;
+    }
+
+    setRows(Math.max(MIN_ROWS, Math.min(MAX_ROWS, rowsFromGrid)));
+    setCols(Math.max(MIN_COLS, Math.min(MAX_COLS, colsFromGrid)));
+
+    setMeta({
+      matricula: row.matricula,
+      wo_sap: row.wo_sap ?? '',
+      fr: row.fr ?? '',
+      fecha: row.fecha,
+      operador: operadorFromGrid,
+    });
     setGrid(normalized);
     setNominalThickness(nominalFromGrid);
     setEquipoUtId(equipoIdFromGrid);
@@ -804,6 +846,14 @@ export function GridMapping() {
         const v = grid[k];
         if (v) cleanGrid[k] = isNumeric(v) ? format2(v) : v;
       });
+
+      // Metadatos de la cuadrícula
+      cleanGrid[RESERVED_ROWS_KEY] = String(rows);
+      cleanGrid[RESERVED_COLS_KEY] = String(cols);
+      cleanGrid[RESERVED_SWAP_AXES_KEY] = swapAxes ? 'true' : 'false';
+      cleanGrid[RESERVED_INVERT_ROWS_KEY] = invertRows ? 'true' : 'false';
+      cleanGrid[RESERVED_INVERT_COLS_KEY] = invertCols ? 'true' : 'false';
+
       if (nominalThickness && isNumeric(nominalThickness)) cleanGrid[RESERVED_NOMINAL_KEY] = format2(nominalThickness);
       if (meta.operador.trim()) cleanGrid['_operador'] = meta.operador.trim();
       if (referenceImage) cleanGrid['_reference_image'] = referenceImage;
@@ -1019,7 +1069,6 @@ export function GridMapping() {
   const equipoSeleccionado = equiposUT.find((e) => e.id === equipoUtId) ?? null;
 
   // Valor que se codifica en el código de barras.
-  // Prioriza codigo_barras → numero_serie → id_equipo.
   const barcodeValue =
     equipoSeleccionado?.codigo_barras ||
     equipoSeleccionado?.numero_serie ||
@@ -1404,7 +1453,6 @@ export function GridMapping() {
             <tbody>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Equipo UT</td><td className="border border-gray-400 px-2 py-1">{equipoSeleccionado ? equipoSeleccionado.nombre : '—'}</td></tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Nº Serie / ID</td><td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo) : '—'}</td></tr>
-              {/* Código de barras */}
               <tr>
                 <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold align-top">
                   Código de Barras
@@ -1500,4 +1548,53 @@ export function GridMapping() {
       </div>
     </>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Helper: inferir tamaño de la cuadrícula desde las claves de celdas  */
+/* ------------------------------------------------------------------ */
+function inferGridSizeFromKeys(keys: string[], swapAxes: boolean): { rows: number; cols: number } {
+  let maxRow = 0;
+  let maxCol = 0;
+
+  for (const key of keys) {
+    if (!key || key.startsWith('_')) continue;
+
+    // Formato A1, B2, K9... (letras primero, luego número)
+    const mColFirst = key.match(/^([A-Z]+'*)(\d+)$/);
+    // Formato 1A, 2B... (número primero, luego letras)
+    const mRowFirst = key.match(/^(\d+)([A-Z]+'*)$/);
+
+    if (mColFirst) {
+      const colIdx = colIndex(mColFirst[1]);
+      const rowNum = parseInt(mColFirst[2], 10);
+      if (colIdx < 0 || isNaN(rowNum)) continue;
+
+      if (!swapAxes) {
+        // Letras = columnas, números = filas
+        maxCol = Math.max(maxCol, colIdx + 1);
+        maxRow = Math.max(maxRow, rowNum);
+      } else {
+        // Letras = filas, números = columnas
+        maxRow = Math.max(maxRow, colIdx + 1);
+        maxCol = Math.max(maxCol, rowNum);
+      }
+    } else if (mRowFirst) {
+      const rowNum = parseInt(mRowFirst[1], 10);
+      const colIdx = colIndex(mRowFirst[2]);
+      if (colIdx < 0 || isNaN(rowNum)) continue;
+
+      if (!swapAxes) {
+        // Letras = columnas, números = filas
+        maxRow = Math.max(maxRow, rowNum);
+        maxCol = Math.max(maxCol, colIdx + 1);
+      } else {
+        // Letras = filas, números = columnas
+        maxRow = Math.max(maxRow, colIdx + 1);
+        maxCol = Math.max(maxCol, rowNum);
+      }
+    }
+  }
+
+  return { rows: maxRow, cols: maxCol };
 }
