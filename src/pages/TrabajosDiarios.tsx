@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, Loader2 } from 'lucide-react';
+import { Search, Plus, Loader2, Edit3 } from 'lucide-react';
 
 // ============================================================
 // Tipos
@@ -31,7 +31,7 @@ type Trabajo = {
   is_fod: boolean;
 };
 
-// Datos iniciales de ejemplo (basados en la foto) para que no salga vacío
+// Datos de prueba para que se vea la tabla si está vacía
 const MOCK_DATA: Trabajo[] = [
   {
     id: '1', matricula: 'V16957', ibe_doc_ref_nr: 'NP619010', doc_ref_nr: 'R0008710', orden_sap: '41429769',
@@ -40,37 +40,12 @@ const MOCK_DATA: Trabajo[] = [
     palpador_sn: null, ref_standard_pn: null, sello: null, hh: null, turno: 'TURNO DE NOCHE 12/11/2026', fecha_turno: '2026-11-12', is_fod: false
   },
   {
-    id: '2', matricula: null, ibe_doc_ref_nr: null, doc_ref_nr: null, orden_sap: '2040',
-    descripcion: 'ASISTENCIA ML', ndt_meth_tech: null, insp_ndt_acomplished: '749346\n653892', fecha_cierre_inspeccion: '2026-11-12',
-    resultado_inspeccion: null, flota: null, lugar: null, equipo_pn: null, equipo_sn: null, palpador_pn: null,
-    palpador_sn: null, ref_standard_pn: null, sello: null, hh: null, turno: 'TURNO DE NOCHE 12/11/2026', fecha_turno: '2026-11-12', is_fod: false
-  },
-  {
-    id: '3', matricula: null, ibe_doc_ref_nr: null, doc_ref_nr: null, orden_sap: null,
-    descripcion: 'FOD- Comprobación y Control disposición Tooling', ndt_meth_tech: null, insp_ndt_acomplished: '749346', fecha_cierre_inspeccion: '2026-11-12',
-    resultado_inspeccion: null, flota: null, lugar: 'LAB', equipo_pn: null, equipo_sn: null, palpador_pn: null,
-    palpador_sn: null, ref_standard_pn: null, sello: null, hh: null, turno: 'TURNO DE NOCHE 12/11/2026', fecha_turno: '2026-11-12', is_fod: true
-  },
-  {
     id: '4', matricula: 'EC-LUO', ibe_doc_ref_nr: 'FR00116', doc_ref_nr: '51-10-08', orden_sap: '6700501671',
     descripcion: 'MET.64283227 WING LH - CORROSION IN STA3059/RIB06 LH INBOARD FLAP AT TRACK 2. SEE DMR.', ndt_meth_tech: 'ET/UT', insp_ndt_acomplished: '756464\n972921\n471693', fecha_cierre_inspeccion: '2026-11-13',
     resultado_inspeccion: 'NIL', flota: 'A32X', lugar: 'H6', equipo_pn: 'ELOTEST M2-5 DAKOTA CMX DL+', equipo_sn: 'A019WF\n10011', palpador_pn: '314P24 ,187 10MHz', palpador_sn: '17F00ANZ\n432A2', ref_standard_pn: '29A029\n511004PB4', sello: null, hh: null, turno: 'TURNO DE MAÑANA 13/11/2026', fecha_turno: '2026-11-13', is_fod: false
   },
-  {
-    id: '5', matricula: 'EC-LUO', ibe_doc_ref_nr: 'FR00116', doc_ref_nr: '51-10-08', orden_sap: '6700501671',
-    descripcion: 'REALIZAR INFORME 20261113LUO-01', ndt_meth_tech: 'ET/UT', insp_ndt_acomplished: '756464\n972921\n471693', fecha_cierre_inspeccion: '2026-11-13',
-    resultado_inspeccion: 'REPORTED', flota: 'A32X', lugar: 'LAB', equipo_pn: null, equipo_sn: null, palpador_pn: null,
-    palpador_sn: null, ref_standard_pn: null, sello: null, hh: null, turno: 'TURNO DE MAÑANA 13/11/2026', fecha_turno: '2026-11-13', is_fod: false
-  },
-  {
-    id: '6', matricula: null, ibe_doc_ref_nr: null, doc_ref_nr: null, orden_sap: null,
-    descripcion: 'FOD- Comprobación y Control disposición Tooling', ndt_meth_tech: null, insp_ndt_acomplished: '756464\n972921\n471693', fecha_cierre_inspeccion: '2026-11-12',
-    resultado_inspeccion: null, flota: null, lugar: 'LAB', equipo_pn: null, equipo_sn: null, palpador_pn: null,
-    palpador_sn: null, ref_standard_pn: null, sello: null, hh: null, turno: 'TURNO DE MAÑANA 13/11/2026', fecha_turno: '2026-11-13', is_fod: true
-  }
 ];
 
-// Helper para formatear fecha YYYY-MM-DD -> DD/MM/YYYY
 function fmtFecha(iso: string | null | undefined): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -81,14 +56,11 @@ function fmtFecha(iso: string | null | undefined): string {
 // Componente Principal
 // ============================================================
 export function TrabajosDiarios() {
-  const navigate = useNavigate(); // <--- HOOK AÑADIDO
+  const navigate = useNavigate();
   const [trabajos, setTrabajos] = useState<Trabajo[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
 
-  // --------------------------------------------------------
-  // Cargar datos
-  // --------------------------------------------------------
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -99,12 +71,11 @@ export function TrabajosDiarios() {
         .order('created_at', { ascending: true });
 
       if (error) {
-        console.warn('Usando datos de prueba locales porque la tabla no existe o falló:', error.message);
+        console.warn('Usando datos mock:', error.message);
         setTrabajos(MOCK_DATA);
       } else if (data && data.length > 0) {
         setTrabajos(data as Trabajo[]);
       } else {
-        // Si la tabla está vacía, mostramos los mock para que se vea el diseño
         setTrabajos(MOCK_DATA);
       }
       setLoading(false);
@@ -112,13 +83,9 @@ export function TrabajosDiarios() {
     load();
   }, []);
 
-  // --------------------------------------------------------
-  // Filtrado
-  // --------------------------------------------------------
   const filtered = useMemo(() => {
     if (!q.trim()) return trabajos;
     const qLower = q.toLowerCase();
-    
     return trabajos.filter((t) => {
       const searchString = [
         t.matricula, t.ibe_doc_ref_nr, t.doc_ref_nr, t.orden_sap, 
@@ -127,14 +94,10 @@ export function TrabajosDiarios() {
         t.equipo_sn, t.palpador_pn, t.palpador_sn, t.ref_standard_pn,
         t.turno
       ].filter(Boolean).join(' ').toLowerCase();
-      
       return searchString.includes(qLower);
     });
   }, [trabajos, q]);
 
-  // --------------------------------------------------------
-  // Agrupar por Turno
-  // --------------------------------------------------------
   const grouped = useMemo(() => {
     const groups: Record<string, Trabajo[]> = {};
     filtered.forEach((t) => {
@@ -151,9 +114,7 @@ export function TrabajosDiarios() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">Trabajos Diarios</h1>
-          <p className="text-sm text-gray-500">
-            Control de inspecciones NDT por turno
-          </p>
+          <p className="text-sm text-gray-500">Control de inspecciones NDT por turno</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -165,8 +126,6 @@ export function TrabajosDiarios() {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          
-          {/* BOTÓN MODIFICADO */}
           <button
             className="btn-primary flex items-center gap-2"
             onClick={() => navigate('/trabajos-diarios/nuevo')}
@@ -174,11 +133,10 @@ export function TrabajosDiarios() {
             <Plus className="w-4 h-4" />
             Nuevo
           </button>
-
         </div>
       </div>
 
-      {/* TABLA (ESTILO EXCEL) */}
+      {/* TABLA */}
       <div className="card p-0 overflow-x-auto border border-gray-300 shadow-sm">
         {loading ? (
           <div className="p-12 text-center text-gray-500 flex items-center justify-center gap-2">
@@ -210,23 +168,27 @@ export function TrabajosDiarios() {
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">Ref Standard P/N</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">SELLO</th>
                 <th className="border border-gray-400 px-2 py-1 text-center font-semibold">HH</th>
+                <th className="border border-gray-400 px-2 py-1 text-center font-semibold bg-[#425b91]">Acciones</th>
               </tr>
             </thead>
             
             {Object.entries(grouped).map(([turno, rows]) => (
               <tbody key={turno} className="divide-y divide-gray-300 border-b-2 border-gray-400">
-                {/* Cabecera del Turno */}
                 <tr>
-                  <td colSpan={18} className="bg-white text-center font-bold text-[#2563eb] py-2 border border-gray-300 text-xs">
+                  <td colSpan={19} className="bg-white text-center font-bold text-[#2563eb] py-2 border border-gray-300 text-xs">
                     {turno}
                   </td>
                 </tr>
                 
-                {/* Filas de Trabajos */}
                 {rows.map((t) => {
                   const bgRow = t.is_fod ? 'bg-[#ffff00]' : 'bg-white hover:bg-gray-50';
                   return (
-                    <tr key={t.id} className={`${bgRow} transition-colors`}>
+                    <tr 
+                      key={t.id} 
+                      className={`${bgRow} transition-colors cursor-pointer`}
+                      onClick={() => navigate(`/trabajos-diarios/editar/${t.id}`)}
+                      title="Haz clic para editar este trabajo"
+                    >
                       <td className="border border-gray-300 px-2 py-1">{t.matricula || ''}</td>
                       <td className="border border-gray-300 px-2 py-1">{t.ibe_doc_ref_nr || ''}</td>
                       <td className="border border-gray-300 px-2 py-1">{t.doc_ref_nr || ''}</td>
@@ -247,6 +209,20 @@ export function TrabajosDiarios() {
                       <td className="border border-gray-300 px-2 py-1 text-center whitespace-pre-wrap">{t.ref_standard_pn || ''}</td>
                       <td className="border border-gray-300 px-2 py-1 text-center">{t.sello || ''}</td>
                       <td className="border border-gray-300 px-2 py-1 text-center">{t.hh || ''}</td>
+                      
+                      {/* BOTÓN DE EDITAR */}
+                      <td className="border border-gray-300 px-2 py-1 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // Evita que se dispare dos veces si hacemos clic en el icono
+                            navigate(`/trabajos-diarios/editar/${t.id}`);
+                          }}
+                          className="p-1.5 text-airbus-blue hover:bg-airbus-blue/10 rounded transition-colors"
+                          title="Editar"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
