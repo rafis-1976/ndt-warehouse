@@ -22,6 +22,7 @@ import { Informes } from './pages/Informes';
 import { Ajustes } from './pages/Ajustes';
 import { GridMapping } from './pages/GridMapping';
 import { MiPerfil } from './pages/MiPerfil';
+import { ResetPassword } from './pages/ResetPassword';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -47,7 +48,9 @@ export default function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
           } />
-          <Route path="/equipos" element={
+          <Route path="/login" element={<LoginForm />} />
+	  <Route path="/reset-password" element={<ResetPassword />} />
+	  <Route path="/equipos" element={
             <ProtectedRoute><Layout><Equipos /></Layout></ProtectedRoute>
           } />
           <Route path="/sondas" element={
