@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { usePerfil } from '../hooks/usePerfil';
 import {
   Search, FileText, Plus, X, Loader2, AlertCircle, CheckCircle2,
-  Paperclip, Trash2, Edit3, Upload, Eye, File,
+  Paperclip, Trash2, Edit3, Upload, Eye,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 
@@ -25,7 +25,6 @@ type EASA = {
   id: string;
   numero_wo: string;
   matricula: string;
-  fr: string | null;
   fecha: string;
   descripcion: string | null;
   observaciones: string | null;
@@ -39,7 +38,6 @@ type EASA = {
 const FORM_INICIAL = {
   numero_wo: '',
   matricula: '',
-  fr: '',
   fecha: new Date().toISOString().slice(0, 10),
   descripcion: '',
   observaciones: '',
@@ -126,7 +124,7 @@ export function EASAs() {
     const qLower = q.toLowerCase().trim();
     return esas.filter((e) => {
       if (qLower) {
-        const haystack = [e.numero_wo, e.matricula, e.fr, e.descripcion, e.observaciones]
+        const haystack = [e.numero_wo, e.matricula, e.descripcion, e.observaciones]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -160,7 +158,6 @@ export function EASAs() {
     setForm({
       numero_wo: easa.numero_wo,
       matricula: easa.matricula,
-      fr: easa.fr ?? '',
       fecha: easa.fecha,
       descripcion: easa.descripcion ?? '',
       observaciones: easa.observaciones ?? '',
@@ -240,7 +237,6 @@ export function EASAs() {
       const payload = {
         numero_wo: form.numero_wo.trim(),
         matricula: form.matricula.trim(),
-        fr: form.fr.trim() || null,
         fecha: form.fecha,
         descripcion: form.descripcion.trim() || null,
         observaciones: form.observaciones.trim() || null,
@@ -267,14 +263,6 @@ export function EASAs() {
 
       // 1) Borrar archivos marcados (storage + DB)
       if (filesToDelete.size > 0) {
-        const pathsToDelete = Array.from(filesToDelete)
-          .map((id) => existingFiles.find((f) => f.id === id))
-          .filter(Boolean)
-          .map((f) => f!.archivo_path)
-          .filter(Boolean);
-
-        // Nota: los archivos borrados visualmente ya no están en existingFiles,
-        // así que recuperamos sus paths de la DB por id
         const { data: toDelete } = await supabase
           .from('easa_archivos')
           .select('archivo_path')
@@ -284,10 +272,8 @@ export function EASAs() {
           .map((r: any) => r.archivo_path)
           .filter(Boolean);
 
-        const allPaths = [...pathsToDelete, ...pathsFromDB];
-
-        if (allPaths.length > 0) {
-          await supabase.storage.from('easas').remove(allPaths).catch(() => {});
+        if (pathsFromDB.length > 0) {
+          await supabase.storage.from('easas').remove(pathsFromDB).catch(() => {});
         }
         await supabase
           .from('easa_archivos')
@@ -411,7 +397,7 @@ export function EASAs() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-10"
-              placeholder="Buscar por WO, matrícula, FR, descripción..."
+              placeholder="Buscar por WO, matrícula, descripción..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -484,7 +470,7 @@ export function EASAs() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-3">WO / FR</th>
+                  <th className="px-4 py-3">Nº WO</th>
                   <th className="px-4 py-3">Matrícula</th>
                   <th className="px-4 py-3">Fecha</th>
                   <th className="px-4 py-3">Descripción</th>
@@ -498,12 +484,9 @@ export function EASAs() {
                   return (
                     <tr key={e.id} className="hover:bg-gray-50 transition">
                       <td className="px-4 py-3">
-                        <div className="font-mono font-bold text-airbus-blue text-xs">
+                        <span className="font-mono font-bold text-airbus-blue text-xs">
                           {e.numero_wo}
-                        </div>
-                        {e.fr && (
-                          <div className="text-[11px] text-gray-500 mt-0.5">FR {e.fr}</div>
-                        )}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-medium text-gray-800">{e.matricula}</span>
@@ -581,8 +564,8 @@ export function EASAs() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
 
-          {/* WO + Matrícula + FR */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* WO + Matrícula */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nº WO *
@@ -606,15 +589,6 @@ export function EASAs() {
                 onChange={(e) => setForm((f) => ({ ...f, matricula: e.target.value }))}
                 placeholder="EC-NAV"
                 required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">FR</label>
-              <input
-                className="input"
-                value={form.fr}
-                onChange={(e) => setForm((f) => ({ ...f, fr: e.target.value }))}
-                placeholder="248"
               />
             </div>
           </div>
