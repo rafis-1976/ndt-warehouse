@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
-  Loader2, UserPlus, AlertCircle, Hash, Mail, Lock, ShieldCheck,
+  Loader2, UserPlus, AlertCircle, Mail, Lock, ShieldCheck,
   UserCog, UserCheck, Power, Eye, EyeOff, CheckCircle2, ArrowLeft,
   Phone, User, X, Sparkles,
 } from 'lucide-react';
@@ -231,7 +231,6 @@ export function UsuarioNuevo() {
 
             <div className="space-y-2.5">
               <div className="flex items-center gap-2">
-                <Hash className="w-4 h-4 text-airbus-blue shrink-0" />
                 <span className="text-xs text-gray-500 w-20">Nómina:</span>
                 <span className="font-mono font-bold text-airbus-blue">
                   {success.num_nomina}
@@ -361,8 +360,7 @@ export function UsuarioNuevo() {
                 {form.email || 'Sin email todavía'}
               </p>
               {form.num_nomina && (
-                <p className="text-xs text-airbus-light opacity-90 font-mono flex items-center gap-1 mt-0.5">
-                  <Hash className="w-3 h-3" />
+                <p className="text-xs text-airbus-light opacity-90 font-mono mt-0.5">
                   {form.num_nomina}
                 </p>
               )}
@@ -397,32 +395,26 @@ export function UsuarioNuevo() {
         <Section title="Datos del usuario">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Nº de nómina *">
-              <div className="relative">
-                <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  name="new-user-nomina"
-                  autoComplete="off"
-                  className={`input pl-10 font-mono ${
-                    form.num_nomina && !validaciones.nomina
-                      ? 'border-airbus-red focus:ring-airbus-red'
-                      : form.num_nomina && validaciones.nomina
-                        ? 'border-airbus-green'
-                        : ''
-                  }`}
-                  value={form.num_nomina}
-                  onChange={(e) =>
-                    update('num_nomina', e.target.value.replace(/\D/g, ''))
-                  }
-                  placeholder=""
-                  maxLength={10}
-                  autoFocus
-                  required
-                />
-                {form.num_nomina && validaciones.nomina && (
-                  <CheckCircle2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-airbus-green" />
-                )}
-              </div>
+              <input
+                type="text"
+                name="new-user-nomina"
+                autoComplete="off"
+                className={`input font-mono ${
+                  form.num_nomina && !validaciones.nomina
+                    ? 'border-airbus-red focus:ring-airbus-red'
+                    : form.num_nomina && validaciones.nomina
+                      ? 'border-airbus-green'
+                      : ''
+                }`}
+                value={form.num_nomina}
+                onChange={(e) =>
+                  update('num_nomina', e.target.value.replace(/\D/g, ''))
+                }
+                placeholder=""
+                maxLength={10}
+                autoFocus
+                required
+              />
               <p className="mt-1 text-[11px] text-gray-400">
                 Solo dígitos, sin espacios (ej: 471796)
               </p>
