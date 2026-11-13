@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
-  Loader2, Save, AlertCircle, Hash, Mail, User as UserIcon,
+  Loader2, Save, AlertCircle, Mail, User as UserIcon,
   ShieldCheck, UserCog, UserCheck, Power, KeyRound,
   Eye, EyeOff, Sparkles, Copy, Check, Send, Lock, AlertTriangle,
 } from 'lucide-react';
@@ -84,7 +84,7 @@ export function UsuarioForm({ perfil, onSuccess, onCancel }: UsuarioFormProps) {
     telefono: perfil.telefono ?? '',
     rol: perfil.rol ?? 'tecnico',
     activo: perfil.activo ?? true,
-    password: '', // NUEVO: campo opcional
+    password: '', // campo opcional
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -317,8 +317,7 @@ export function UsuarioForm({ perfil, onSuccess, onCancel }: UsuarioFormProps) {
             {form.email}
           </p>
           {form.num_nomina && (
-            <p className="text-xs text-airbus-light opacity-90 font-mono flex items-center gap-1 mt-0.5">
-              <Hash className="w-3 h-3" />
+            <p className="text-xs text-airbus-light opacity-90 font-mono mt-0.5">
               {form.num_nomina}
             </p>
           )}
@@ -331,19 +330,16 @@ export function UsuarioForm({ perfil, onSuccess, onCancel }: UsuarioFormProps) {
       <Section title="Datos básicos">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Nº de nómina *">
-            <div className="relative">
-              <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                className="input pl-10 font-mono"
-                value={form.num_nomina}
-                onChange={(e) =>
-                  update('num_nomina', e.target.value.replace(/\D/g, ''))
-                }
-                placeholder="471796"
-                maxLength={10}
-                required
-              />
-            </div>
+            <input
+              className="input font-mono"
+              value={form.num_nomina}
+              onChange={(e) =>
+                update('num_nomina', e.target.value.replace(/\D/g, ''))
+              }
+              placeholder="471796"
+              maxLength={10}
+              required
+            />
             <p className="mt-1 text-[11px] text-gray-400">
               Solo dígitos, sin espacios
             </p>
@@ -386,7 +382,7 @@ export function UsuarioForm({ perfil, onSuccess, onCancel }: UsuarioFormProps) {
       </Section>
 
       {/* ============================================================
-          CONTRASEÑA (NUEVA SECCIÓN)
+          CONTRASEÑA
           ============================================================ */}
       <Section title="Contraseña">
         <div className="space-y-3">
