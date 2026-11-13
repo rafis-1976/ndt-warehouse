@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, X, Loader2 } from 'lucide-react';
+import { Search, Plus, Loader2 } from 'lucide-react';
 
 // ============================================================
 // Tipos
@@ -80,6 +81,7 @@ function fmtFecha(iso: string | null | undefined): string {
 // Componente Principal
 // ============================================================
 export function TrabajosDiarios() {
+  const navigate = useNavigate(); // <--- HOOK AÑADIDO
   const [trabajos, setTrabajos] = useState<Trabajo[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -163,13 +165,16 @@ export function TrabajosDiarios() {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
+          
+          {/* BOTÓN MODIFICADO */}
           <button
             className="btn-primary flex items-center gap-2"
-            onClick={() => alert('Aquí abrirías un modal para crear un registro.')}
+            onClick={() => navigate('/trabajos-diarios/nuevo')}
           >
             <Plus className="w-4 h-4" />
             Nuevo
           </button>
+
         </div>
       </div>
 
