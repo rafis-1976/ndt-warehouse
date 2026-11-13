@@ -5,7 +5,7 @@ import { usePerfil } from '../hooks/usePerfil';
 import {
   ArrowLeft, User as UserIcon, Mail, Hash, Phone, ShieldCheck,
   UserCog, UserCheck, Lock, Eye, EyeOff, Save, Loader2,
-  AlertCircle, CheckCircle2, KeyRound, AlertTriangle,
+  AlertCircle, CheckCircle2, KeyRound, AlertTriangle, Send,
 } from 'lucide-react';
 
 // ============================================================
@@ -42,7 +42,7 @@ export function MiPerfil() {
   const [datosError, setDatosError] = useState('');
   const [datosOk, setDatosOk] = useState(false);
 
-  // --- Contraseña ---
+  // --- Contraseña (cambio con actual) ---
   const [pwdForm, setPwdForm] = useState({ current: '', nueva: '', confirmar: '' });
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNueva, setShowNueva] = useState(false);
@@ -51,7 +51,10 @@ export function MiPerfil() {
   const [pwdError, setPwdError] = useState('');
   const [pwdOk, setPwdOk] = useState(false);
 
-  // Inicializar datos cuando cargue el perfil
+  // --- Recuperación por email ---
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [emailEnviado, setEmailEnviado] = useState(false);
+
   useEffect(() => {
     if (perfil) {
       setFormDatos({
@@ -101,7 +104,7 @@ export function MiPerfil() {
   };
 
   // ------------------------------------------------------------
-  // Cambiar contraseña (verificando la actual primero)
+  // Cambiar contraseña con la actual
   // ------------------------------------------------------------
   const handleCambiarPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,7 +121,6 @@ export function MiPerfil() {
 
     setSavingPwd(true);
     try {
-      // 1) Reautenticar con la contraseña actual
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: perfil!.email,
         password: pwdForm.current,
@@ -127,7 +129,6 @@ export function MiPerfil() {
         throw new Error('La contraseña actual es incorrecta');
       }
 
-      // 2) Cambiar a la nueva contraseña
       const { error: updateError } = await supabase.auth.updateUser({
         password: pwdForm.nueva,
       });
@@ -144,7 +145,33 @@ export function MiPerfil() {
   };
 
   // ------------------------------------------------------------
-  // Loading / error
+  // Enviar enlace de recuperación por email
+  // ------------------------------------------------------------
+  const handleEnviarEmail = async () => {
+    setPwdError('');
+    setEmailEnviado(false);
+    setEnviandoEmail(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        perfil!.email,
+        { redirectTo: `${window.location.origin}/reset-password` }
+      );
+      if (error) throw error;
+
+      setEmailEnviado(true);
+      setTimeout(() => setEmailEnviado(false), 15000);
+    } catch (err: any) {
+      setPwdError(
+        err.message ??
+          'No se pudo enviar el email. Contacta con un administrador.'
+      );
+    } finally {
+      setEnviandoEmail(false);
+    }
+  };
+
+  // ------------------------------------------------------------
+  // Loading / sin perfil
   // ------------------------------------------------------------
   if (loadingPerfil) {
     return (
@@ -347,17 +374,22 @@ export function MiPerfil() {
       </form>
 
       {/* ============================================================
-          CAMBIAR CONTRASEÑA
+          CAMBIAR CONTRASEÑA + RECUPERAR POR EMAIL
           ============================================================ */}
-      <form onSubmit={handleCambiarPassword} className="card space-y-4">
+      <div className="card space-y-4">
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-airbus-blue" />
           <h3 className="text-xs font-semibold text-airbus-blue uppercase tracking-wider">
-            Cambiar contraseña
+            Contraseña
           </h3>
         </div>
 
-        <div className="space-y-3">
+        {/* ---- Opción A: cambio con contraseña actual ---- */}
+        <form onSubmit={handleCambiarPassword} className="space-y-3">
+          <p className="text-xs text-gray-500">
+            <strong>Opción 1:</strong> Cambiar tu contraseña introduciendo la actual.
+          </p>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Contraseña actual *
@@ -373,7 +405,6 @@ export function MiPerfil() {
                 }
                 placeholder="Tu contraseña actual"
                 autoComplete="current-password"
-                required
               />
               <button
                 type="button"
@@ -389,150 +420,167 @@ export function MiPerfil() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nueva contraseña *
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type={showNueva ? 'text' : 'password'}
-                className={`input pl-10 pr-10 ${
-                  pwdForm.nueva && pwdForm.nueva.length < 8
-                    ? 'border-airbus-red'
-                    : ''
-                }`}
-                value={pwdForm.nueva}
-                onChange={(e) =>
-                  setPwdForm((f) => ({ ...f, nueva: e.target.value }))
-                }
-                placeholder="Mínimo 8 caracteres"
-                autoComplete="new-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowNueva(!showNueva)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 rounded"
-              >
-                {showNueva ? (
-                  <EyeOff className="w-4 h-4 text-gray-400" />
-                ) : (
-                  <Eye className="w-4 h-4 text-gray-400" />
-                )}
-              </button>
-            </div>
-            {pwdForm.nueva && (
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      pwdForm.nueva.length >= 12
-                        ? 'bg-airbus-green w-full'
-                        : pwdForm.nueva.length >= 8
-                          ? 'bg-airbus-orange w-2/3'
-                          : 'bg-airbus-red w-1/3'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold ${
-                    pwdForm.nueva.length >= 12
-                      ? 'text-airbus-green'
-                      : pwdForm.nueva.length >= 8
-                        ? 'text-airbus-orange'
-                        : 'text-airbus-red'
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nueva contraseña *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type={showNueva ? 'text' : 'password'}
+                  className={`input pl-10 pr-10 ${
+                    pwdForm.nueva && pwdForm.nueva.length < 8
+                      ? 'border-airbus-red'
+                      : ''
                   }`}
+                  value={pwdForm.nueva}
+                  onChange={(e) =>
+                    setPwdForm((f) => ({ ...f, nueva: e.target.value }))
+                  }
+                  placeholder="Mínimo 8 caracteres"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNueva(!showNueva)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 rounded"
                 >
-                  {pwdForm.nueva.length >= 12
-                    ? 'Fuerte'
-                    : pwdForm.nueva.length >= 8
-                      ? 'Aceptable'
-                      : 'Débil'}
-                </span>
+                  {showNueva ? (
+                    <EyeOff className="w-4 h-4 text-gray-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
               </div>
-            )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Confirmar *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type={showConfirmar ? 'text' : 'password'}
+                  className={`input pl-10 pr-10 ${
+                    pwdForm.confirmar && pwdForm.confirmar !== pwdForm.nueva
+                      ? 'border-airbus-red'
+                      : ''
+                  }`}
+                  value={pwdForm.confirmar}
+                  onChange={(e) =>
+                    setPwdForm((f) => ({ ...f, confirmar: e.target.value }))
+                  }
+                  placeholder="Repite la nueva"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmar(!showConfirmar)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 rounded"
+                >
+                  {showConfirmar ? (
+                    <EyeOff className="w-4 h-4 text-gray-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Confirmar nueva contraseña *
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type={showConfirmar ? 'text' : 'password'}
-                className={`input pl-10 pr-10 ${
-                  pwdForm.confirmar && pwdForm.confirmar !== pwdForm.nueva
-                    ? 'border-airbus-red'
-                    : ''
-                }`}
-                value={pwdForm.confirmar}
-                onChange={(e) =>
-                  setPwdForm((f) => ({ ...f, confirmar: e.target.value }))
-                }
-                placeholder="Repite la nueva contraseña"
-                autoComplete="new-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmar(!showConfirmar)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 rounded"
-              >
-                {showConfirmar ? (
-                  <EyeOff className="w-4 h-4 text-gray-400" />
-                ) : (
-                  <Eye className="w-4 h-4 text-gray-400" />
-                )}
-              </button>
+          {pwdError && (
+            <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{pwdError}</span>
             </div>
-            {pwdForm.confirmar && pwdForm.confirmar !== pwdForm.nueva && (
-              <p className="mt-1 text-[11px] text-airbus-red">
-                Las contraseñas no coinciden
+          )}
+
+          {pwdOk && (
+            <div className="flex items-center gap-2 bg-airbus-green/10 border border-airbus-green/20 text-airbus-green text-sm p-3 rounded-lg">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Contraseña cambiada correctamente</span>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={savingPwd || !pwdValida}
+              className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savingPwd ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Lock className="w-4 h-4" />
+              )}
+              {savingPwd ? 'Cambiando...' : 'Cambiar contraseña'}
+            </button>
+          </div>
+        </form>
+
+        {/* ---- Divisor ---- */}
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-200" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="px-3 bg-white text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+              o
+            </span>
+          </div>
+        </div>
+
+        {/* ---- Opción B: recuperar por email ---- */}
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            <strong>Opción 2:</strong> Recibir un enlace por email para crear una
+            nueva contraseña (útil si no recuerdas la actual).
+          </p>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <button
+              type="button"
+              onClick={handleEnviarEmail}
+              disabled={enviandoEmail || emailEnviado}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition ${
+                emailEnviado
+                  ? 'bg-airbus-green/10 border-airbus-green/30 text-airbus-green'
+                  : 'bg-white border-gray-300 text-gray-700 hover:border-airbus-blue hover:bg-airbus-blue/5'
+              } disabled:opacity-60`}
+            >
+              {enviandoEmail ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : emailEnviado ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              {enviandoEmail
+                ? 'Enviando...'
+                : emailEnviado
+                  ? 'Email enviado'
+                  : 'Enviar enlace por email'}
+            </button>
+
+            {emailEnviado && (
+              <p className="text-xs text-gray-500">
+                Revisa la bandeja de <strong>{perfil.email}</strong> (mira también
+                el spam).
               </p>
             )}
           </div>
-        </div>
 
-        <div className="bg-airbus-orange/5 border border-airbus-orange/20 rounded-lg p-3 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-airbus-orange shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-600">
-            Por seguridad debes introducir tu contraseña actual. Si tienes la
-            sesión abierta en otros dispositivos, ciérrala manualmente después
-            del cambio.
-          </p>
-        </div>
-
-        {pwdError && (
-          <div className="flex items-start gap-2 bg-airbus-red/10 border border-airbus-red/20 text-airbus-red text-sm p-3 rounded-lg">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{pwdError}</span>
+          <div className="bg-airbus-orange/5 border border-airbus-orange/20 rounded-lg p-3 flex items-start gap-2 mt-2">
+            <AlertTriangle className="w-4 h-4 text-airbus-orange shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-600">
+              El enlace caduca en 1 hora. Si no lo ves en tu bandeja, revisa la
+              carpeta de spam o vuelve a solicitar uno nuevo.
+            </p>
           </div>
-        )}
-
-        {pwdOk && (
-          <div className="flex items-center gap-2 bg-airbus-green/10 border border-airbus-green/20 text-airbus-green text-sm p-3 rounded-lg">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>Contraseña cambiada correctamente</span>
-          </div>
-        )}
-
-        <div className="flex justify-end pt-2">
-          <button
-            type="submit"
-            disabled={savingPwd || !pwdValida}
-            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {savingPwd ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Lock className="w-4 h-4" />
-            )}
-            {savingPwd ? 'Cambiando...' : 'Cambiar contraseña'}
-          </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
