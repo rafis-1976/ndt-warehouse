@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import Barcode from 'react-barcode';
+import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../lib/supabase';
 
 /* ---------------------- Nombres de columna dinámicos ------------------ */
@@ -91,7 +93,7 @@ const LEGEND_GRADIENT =
   COLOR_STOPS.map((s) => `rgb(${s.r},${s.g},${s.b}) ${(s.t * 100).toFixed(0)}%`).join(', ') +
   ')';
 
-// Utilidad para convertir RGB string a Hex (ARGBN) para Excel
+// Utilidad para convertir RGB string a Hex (ARGB) para Excel
 function rgbToHex(rgbStr: string): string {
   const match = rgbStr.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
   if (!match) return 'FFFFFFFF';
@@ -1017,6 +1019,14 @@ export function GridMapping() {
   const nominalNum = nominalThickness && isNumeric(nominalThickness) ? parseFloat(String(nominalThickness).replace(',', '.')) : null;
   const equipoSeleccionado = equiposUT.find((e) => e.id === equipoUtId) ?? null;
 
+  // 🆕 Valor que se codifica en el código de barras y el QR.
+  // Prioriza codigo_barras → numero_serie → id_equipo.
+  const barcodeValue =
+    equipoSeleccionado?.codigo_barras ||
+    equipoSeleccionado?.numero_serie ||
+    equipoSeleccionado?.id_equipo ||
+    '';
+
   return (
     <>
       <style>{`
@@ -1395,7 +1405,49 @@ export function GridMapping() {
             <tbody>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold w-1/3">Equipo UT</td><td className="border border-gray-400 px-2 py-1">{equipoSeleccionado ? equipoSeleccionado.nombre : '—'}</td></tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Nº Serie / ID</td><td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.numero_serie || equipoSeleccionado.id_equipo) : '—'}</td></tr>
-              <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Código de Barras</td><td className="border border-gray-400 px-2 py-1 font-mono">{equipoSeleccionado ? (equipoSeleccionado.codigo_barras || '—') : '—'}</td></tr>
+              {/* 🆕 Código de barras + QR */}
+              <tr>
+                <td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold align-top">
+                  Código de Barras
+                </td>
+                <td className="border border-gray-400 px-2 py-1">
+                  {barcodeValue ? (
+                    <div
+                      className="flex items-center gap-4 flex-wrap"
+                      style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+                    >
+                      <div className="flex flex-col items-center">
+                        <Barcode
+                          value={barcodeValue}
+                          format="CODE128"
+                          width={1.1}
+                          height={45}
+                          fontSize={10}
+                          margin={0}
+                          background="#ffffff"
+                          lineColor="#000000"
+                          displayValue={true}
+                        />
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <QRCodeSVG
+                          value={barcodeValue}
+                          size={70}
+                          level="M"
+                          bgColor="#ffffff"
+                          fgColor="#000000"
+                          includeMargin={false}
+                        />
+                        <span className="text-[7px] text-gray-500 mt-0.5 font-mono">
+                          {barcodeValue}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              </tr>
               <tr><td className="border border-gray-400 px-2 py-1 bg-gray-100 font-bold">Próx. Calibración</td><td className="border border-gray-400 px-2 py-1 font-medium text-gray-800">{equipoSeleccionado?.proxima_calibracion ? fmtFecha(equipoSeleccionado.proxima_calibracion) : '—'}</td></tr>
             </tbody>
           </table>
