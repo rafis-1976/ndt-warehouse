@@ -23,6 +23,7 @@ import { Ajustes } from './pages/Ajustes';
 import { GridMapping } from './pages/GridMapping';
 import { MiPerfil } from './pages/MiPerfil';
 import { ResetPassword } from './pages/ResetPassword';
+import { EASAs } from './pages/EASAs';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/login" element={<LoginForm />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 	  <Route path="/mi-perfil" element={<ProtectedRoute><Layout><MiPerfil /></Layout></ProtectedRoute>} />
+	  <Route path="/esas" element={<ProtectedRoute><Layout><EASAs /></Layout></ProtectedRoute>} />
           <Route path="/dashboard" element={
             <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
           } />
