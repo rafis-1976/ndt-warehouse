@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
   Search, Users as UsersIcon, RefreshCw, ShieldCheck,
-  UserCog, Hash, X, Filter, Mail, CheckCircle2, AlertCircle,
+  UserCog, X, Filter, Mail, CheckCircle2, AlertCircle,
   UserCheck, UserX, Edit3, UserPlus,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
@@ -423,8 +423,7 @@ export function Usuarios() {
                       {/* Nº nómina */}
                       <td className="px-4 py-3">
                         {p.num_nomina ? (
-                          <span className="inline-flex items-center gap-1 font-mono font-bold text-airbus-blue text-xs">
-                            <Hash className="w-3 h-3" />
+                          <span className="font-mono font-bold text-airbus-blue text-xs">
                             {p.num_nomina}
                           </span>
                         ) : (
