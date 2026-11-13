@@ -26,6 +26,7 @@ import { ResetPassword } from './pages/ResetPassword';
 import { EASAs } from './pages/EASAs';
 import { TrabajosDiarios } from './pages/TrabajosDiarios';
 import { TrabajoDiarioNuevo } from './pages/TrabajoDiarioNuevo';
+import { TrabajoDiarioEditar } from './pages/TrabajoDiarioEditar';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -52,6 +53,7 @@ export default function App() {
 	  <Route path="/trabajos-diarios" element={<ProtectedRoute><Layout><TrabajosDiarios /></Layout></ProtectedRoute>} />
 	  <Route path="/trabajos-diarios" element={<ProtectedRoute><Layout><TrabajosDiarios /></Layout></ProtectedRoute>} />
           <Route path="/trabajos-diarios/nuevo" element={<ProtectedRoute><Layout><TrabajoDiarioNuevo /></Layout></ProtectedRoute>} />
+	  <Route path="/trabajos-diarios/editar/:id" element={<ProtectedRoute><Layout><TrabajoDiarioEditar /></Layout></ProtectedRoute>} />
           <Route path="/dashboard" element={
             <ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>
           } />
