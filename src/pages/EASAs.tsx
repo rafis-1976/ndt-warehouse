@@ -1,16 +1,26 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { usePerfil } from '../hooks/usePerfil';
 import {
   Search, FileText, Plus, X, Loader2, AlertCircle, CheckCircle2,
-  Paperclip, Trash2, Edit3, Upload,
+  Paperclip, Trash2, Edit3, Upload, Eye, File,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 
 // ============================================================
 // Tipos
 // ============================================================
+type EASAFile = {
+  id: string;
+  easa_id: string;
+  archivo_path: string;
+  archivo_nombre: string | null;
+  archivo_tipo: string | null;
+  archivo_tamano: number | null;
+  created_at: string;
+};
+
 type EASA = {
   id: string;
   numero_wo: string;
@@ -19,15 +29,13 @@ type EASA = {
   fecha: string;
   descripcion: string | null;
   observaciones: string | null;
-  archivo_path: string | null;
-  archivo_nombre: string | null;
-  archivo_tipo: string | null;
-  archivo_tamano: number | null;
   user_id: string | null;
   created_at: string;
   updated_at: string;
+  easa_archivos: EASAFile[];
 };
 
+// ✅ Todos los campos vacíos excepto la fecha (hoy)
 const FORM_INICIAL = {
   numero_wo: '',
   matricula: '',
@@ -52,6 +60,13 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function fileEmoji(tipo: string | null): string {
+  if (!tipo) return '📎';
+  if (tipo.startsWith('image/')) return '🖼️';
+  if (tipo === 'application/pdf') return '📄';
+  return '📎';
+}
+
 // ============================================================
 // Componente
 // ============================================================
@@ -74,8 +89,13 @@ export function EASAs() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<EASA | null>(null);
   const [form, setForm] = useState({ ...FORM_INICIAL });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [existingFile, setExistingFile] = useState<{ path: string; name: string } | null>(null);
+
+  // Archivos: nuevos (pendientes de subir) y existentes (ya en DB)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [existingFiles, setExistingFiles] = useState<EASAFile[]>([]);
+  const [filesToDelete, setFilesToDelete] = useState<Set<string>>(new Set());
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --------------------------------------------------------
   // Cargar
@@ -84,7 +104,7 @@ export function EASAs() {
     setLoading(true);
     const { data, error } = await supabase
       .from('easas')
-      .select('*')
+      .select('*, easa_archivos(*)')
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -126,9 +146,11 @@ export function EASAs() {
   // --------------------------------------------------------
   const openCreate = () => {
     setEditing(null);
+    // ✅ Todos vacíos, solo fecha = hoy
     setForm({ ...FORM_INICIAL });
-    setSelectedFile(null);
-    setExistingFile(null);
+    setSelectedFiles([]);
+    setExistingFiles([]);
+    setFilesToDelete(new Set());
     setError('');
     setModalOpen(true);
   };
@@ -143,30 +165,48 @@ export function EASAs() {
       descripcion: easa.descripcion ?? '',
       observaciones: easa.observaciones ?? '',
     });
-    setSelectedFile(null);
-    setExistingFile(
-      easa.archivo_path
-        ? { path: easa.archivo_path, name: easa.archivo_nombre ?? 'archivo' }
-        : null
-    );
+    setSelectedFiles([]);
+    setExistingFiles(easa.easa_archivos ?? []);
+    setFilesToDelete(new Set());
     setError('');
     setModalOpen(true);
   };
 
   // --------------------------------------------------------
-  // Ficheros
+  // Selección de archivos
   // --------------------------------------------------------
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      setError(`El archivo supera los ${MAX_FILE_SIZE / (1024 * 1024)} MB`);
-      return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    const valid: File[] = [];
+    for (const f of files) {
+      if (f.size > MAX_FILE_SIZE) {
+        setError(`"${f.name}" supera los ${MAX_FILE_SIZE / (1024 * 1024)} MB y se ha ignorado.`);
+        continue;
+      }
+      valid.push(f);
     }
-    setSelectedFile(file);
-    setError('');
+    if (valid.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...valid]);
+      if (!error) setError('');
+    }
+    // Reset input para permitir seleccionar el mismo archivo dos veces
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingFile = (id: string) => {
+    setExistingFiles((prev) => prev.filter((f) => f.id !== id));
+    setFilesToDelete((prev) => new Set(prev).add(id));
+  };
+
+  // --------------------------------------------------------
+  // Storage helpers
+  // --------------------------------------------------------
   const uploadFile = async (file: File) => {
     const ext = file.name.split('.').pop() || 'bin';
     const path = `${user!.id}/${crypto.randomUUID()}.${ext}`;
@@ -175,11 +215,16 @@ export function EASAs() {
       upsert: false,
     });
     if (error) throw error;
-    return { path, name: file.name, type: file.type, size: file.size };
+    return {
+      path,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    };
   };
 
   // --------------------------------------------------------
-  // Guardar
+  // Guardar (crear o editar)
   // --------------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,28 +235,8 @@ export function EASAs() {
     if (!form.fecha) return setError('La fecha es obligatoria');
 
     setSaving(true);
-    let uploadedPath: string | null = null;
 
     try {
-      let archivoPath = existingFile?.path ?? null;
-      let archivoNombre = existingFile?.name ?? null;
-      let archivoTipo: string | null = editing?.archivo_tipo ?? null;
-      let archivoTamano: number | null = editing?.archivo_tamano ?? null;
-
-      if (selectedFile) {
-        const uploaded = await uploadFile(selectedFile);
-        uploadedPath = uploaded.path;
-        archivoPath = uploaded.path;
-        archivoNombre = uploaded.name;
-        archivoTipo = uploaded.type;
-        archivoTamano = uploaded.size;
-      } else if (!existingFile) {
-        archivoPath = null;
-        archivoNombre = null;
-        archivoTipo = null;
-        archivoTamano = null;
-      }
-
       const payload = {
         numero_wo: form.numero_wo.trim(),
         matricula: form.matricula.trim(),
@@ -219,40 +244,85 @@ export function EASAs() {
         fecha: form.fecha,
         descripcion: form.descripcion.trim() || null,
         observaciones: form.observaciones.trim() || null,
-        archivo_path: archivoPath,
-        archivo_nombre: archivoNombre,
-        archivo_tipo: archivoTipo,
-        archivo_tamano: archivoTamano,
         user_id: user?.id ?? null,
       };
 
+      let easaId: string;
       if (editing) {
         const { error: updErr } = await supabase
           .from('easas')
           .update(payload)
           .eq('id', editing.id);
         if (updErr) throw updErr;
-
-        // Eliminar archivo anterior si se reemplazó o se quitó
-        const fileReplaced = selectedFile && editing.archivo_path;
-        const fileRemoved = !selectedFile && !existingFile && editing.archivo_path;
-        if (fileReplaced || fileRemoved) {
-          await supabase.storage.from('easas').remove([editing.archivo_path!]).catch(() => {});
-        }
-        setToast('EASA actualizada');
+        easaId = editing.id;
       } else {
-        const { error: insErr } = await supabase.from('easas').insert(payload);
+        const { data: ins, error: insErr } = await supabase
+          .from('easas')
+          .insert(payload)
+          .select('id')
+          .single();
         if (insErr) throw insErr;
-        setToast('EASA creada');
+        easaId = (ins as { id: string }).id;
       }
 
+      // 1) Borrar archivos marcados (storage + DB)
+      if (filesToDelete.size > 0) {
+        const pathsToDelete = Array.from(filesToDelete)
+          .map((id) => existingFiles.find((f) => f.id === id))
+          .filter(Boolean)
+          .map((f) => f!.archivo_path)
+          .filter(Boolean);
+
+        // Nota: los archivos borrados visualmente ya no están en existingFiles,
+        // así que recuperamos sus paths de la DB por id
+        const { data: toDelete } = await supabase
+          .from('easa_archivos')
+          .select('archivo_path')
+          .in('id', Array.from(filesToDelete));
+
+        const pathsFromDB = (toDelete ?? [])
+          .map((r: any) => r.archivo_path)
+          .filter(Boolean);
+
+        const allPaths = [...pathsToDelete, ...pathsFromDB];
+
+        if (allPaths.length > 0) {
+          await supabase.storage.from('easas').remove(allPaths).catch(() => {});
+        }
+        await supabase
+          .from('easa_archivos')
+          .delete()
+          .in('id', Array.from(filesToDelete));
+      }
+
+      // 2) Subir nuevos archivos y crear registros
+      if (selectedFiles.length > 0) {
+        const uploadedRecords: any[] = [];
+        for (const file of selectedFiles) {
+          const up = await uploadFile(file);
+          uploadedRecords.push({
+            easa_id: easaId,
+            archivo_path: up.path,
+            archivo_nombre: up.name,
+            archivo_tipo: up.type,
+            archivo_tamano: up.size,
+          });
+        }
+        const { error: filesErr } = await supabase
+          .from('easa_archivos')
+          .insert(uploadedRecords);
+        if (filesErr) throw filesErr;
+      }
+
+      setToast(
+        editing
+          ? 'EASA actualizada'
+          : `EASA creada${selectedFiles.length > 0 ? ` con ${selectedFiles.length} archivo${selectedFiles.length !== 1 ? 's' : ''}` : ''}`
+      );
       setTimeout(() => setToast(null), 3000);
       setModalOpen(false);
       load();
     } catch (err: any) {
-      if (uploadedPath) {
-        await supabase.storage.from('easas').remove([uploadedPath]).catch(() => {});
-      }
       setError(err.message ?? 'Error al guardar');
     } finally {
       setSaving(false);
@@ -260,13 +330,16 @@ export function EASAs() {
   };
 
   // --------------------------------------------------------
-  // Eliminar
+  // Eliminar EASA (y todos sus archivos)
   // --------------------------------------------------------
   const handleDelete = async (easa: EASA) => {
-    if (!confirm(`¿Eliminar la EASA WO ${easa.numero_wo} · ${easa.matricula}?`)) return;
+    if (!confirm(`¿Eliminar la EASA WO ${easa.numero_wo} · ${easa.matricula}? Se borrarán también sus ${easa.easa_archivos?.length ?? 0} archivo(s).`)) return;
     try {
-      if (easa.archivo_path) {
-        await supabase.storage.from('easas').remove([easa.archivo_path]).catch(() => {});
+      const paths = (easa.easa_archivos ?? [])
+        .map((f) => f.archivo_path)
+        .filter(Boolean);
+      if (paths.length > 0) {
+        await supabase.storage.from('easas').remove(paths).catch(() => {});
       }
       const { error } = await supabase.from('easas').delete().eq('id', easa.id);
       if (error) throw error;
@@ -282,11 +355,10 @@ export function EASAs() {
   // --------------------------------------------------------
   // Abrir adjunto
   // --------------------------------------------------------
-  const openAttachment = async (easa: EASA) => {
-    if (!easa.archivo_path) return;
+  const openAttachment = async (path: string) => {
     const { data, error } = await supabase.storage
       .from('easas')
-      .createSignedUrl(easa.archivo_path, 3600);
+      .createSignedUrl(path, 3600);
     if (error) {
       setToastError('No se pudo abrir el archivo: ' + error.message);
       setTimeout(() => setToastError(null), 4000);
@@ -301,9 +373,7 @@ export function EASAs() {
   return (
     <div className="p-6 space-y-4">
 
-      {/* ==================================================== */}
       {/* CABECERA */}
-      {/* ==================================================== */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-airbus-blue">EASAs</h1>
@@ -334,9 +404,7 @@ export function EASAs() {
         </div>
       )}
 
-      {/* ==================================================== */}
       {/* FILTROS */}
-      {/* ==================================================== */}
       <div className="card space-y-3">
         <div className="flex gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[220px]">
@@ -349,9 +417,7 @@ export function EASAs() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">
-              Desde
-            </label>
+            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Desde</label>
             <input
               type="date"
               className="input"
@@ -360,9 +426,7 @@ export function EASAs() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">
-              Hasta
-            </label>
+            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Hasta</label>
             <input
               type="date"
               className="input"
@@ -382,9 +446,7 @@ export function EASAs() {
         </div>
       </div>
 
-      {/* ==================================================== */}
       {/* TABLA */}
-      {/* ==================================================== */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-400 flex items-center justify-center gap-2">
@@ -426,92 +488,91 @@ export function EASAs() {
                   <th className="px-4 py-3">Matrícula</th>
                   <th className="px-4 py-3">Fecha</th>
                   <th className="px-4 py-3">Descripción</th>
-                  <th className="px-4 py-3">Archivo</th>
+                  <th className="px-4 py-3">Adjuntos</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((e) => (
-                  <tr key={e.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3">
-                      <div className="font-mono font-bold text-airbus-blue text-xs">
-                        {e.numero_wo}
-                      </div>
-                      {e.fr && (
-                        <div className="text-[11px] text-gray-500 mt-0.5">
-                          FR {e.fr}
+                {filtered.map((e) => {
+                  const files = e.easa_archivos ?? [];
+                  return (
+                    <tr key={e.id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3">
+                        <div className="font-mono font-bold text-airbus-blue text-xs">
+                          {e.numero_wo}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-gray-800">
-                        {e.matricula}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-gray-700">{fmtFecha(e.fecha)}</span>
-                    </td>
-                    <td className="px-4 py-3 max-w-xs">
-                      <p className="text-gray-700 truncate">
-                        {e.descripcion || (
-                          <span className="text-gray-400 italic">
-                            Sin descripción
-                          </span>
+                        {e.fr && (
+                          <div className="text-[11px] text-gray-500 mt-0.5">FR {e.fr}</div>
                         )}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      {e.archivo_path ? (
-                        <button
-                          onClick={() => openAttachment(e)}
-                          className="inline-flex items-center gap-1.5 text-xs text-airbus-sky hover:text-airbus-blue font-medium"
-                          title={e.archivo_nombre ?? 'Abrir adjunto'}
-                        >
-                          <Paperclip className="w-3.5 h-3.5" />
-                          Ver archivo
-                          {e.archivo_tamano && (
-                            <span className="text-gray-400">
-                              · {formatBytes(e.archivo_tamano)}
-                            </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-gray-800">{e.matricula}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-gray-700">{fmtFecha(e.fecha)}</span>
+                      </td>
+                      <td className="px-4 py-3 max-w-xs">
+                        <p className="text-gray-700 truncate">
+                          {e.descripcion || (
+                            <span className="text-gray-400 italic">Sin descripción</span>
                           )}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-400 italic">
-                          Sin adjunto
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(e)}
-                          className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
-                          title="Editar"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        {esAdminOSupervisor && (
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {files.length === 0 ? (
+                          <span className="text-xs text-gray-400 italic">Sin adjuntos</span>
+                        ) : files.length === 1 ? (
                           <button
-                            onClick={() => handleDelete(e)}
-                            className="p-1.5 text-airbus-red hover:bg-airbus-red/10 rounded transition"
-                            title="Eliminar"
+                            onClick={() => openAttachment(files[0].archivo_path)}
+                            className="inline-flex items-center gap-1.5 text-xs text-airbus-sky hover:text-airbus-blue font-medium"
+                            title={files[0].archivo_nombre ?? 'Abrir adjunto'}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Paperclip className="w-3.5 h-3.5" />
+                            <span className="truncate max-w-[140px]">
+                              {files[0].archivo_nombre ?? 'Ver archivo'}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openEdit(e)}
+                            className="inline-flex items-center gap-1.5 text-xs text-airbus-sky hover:text-airbus-blue font-medium"
+                            title="Ver archivos"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                            {files.length} archivos
                           </button>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => openEdit(e)}
+                            className="p-1.5 text-airbus-sky hover:bg-airbus-sky/10 rounded transition"
+                            title="Editar"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          {esAdminOSupervisor && (
+                            <button
+                              onClick={() => handleDelete(e)}
+                              className="p-1.5 text-airbus-red hover:bg-airbus-red/10 rounded transition"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* ==================================================== */}
       {/* MODAL CREAR / EDITAR */}
-      {/* ==================================================== */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -529,9 +590,7 @@ export function EASAs() {
               <input
                 className="input font-mono"
                 value={form.numero_wo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, numero_wo: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, numero_wo: e.target.value }))}
                 placeholder="6567863537"
                 required
                 autoFocus
@@ -544,23 +603,17 @@ export function EASAs() {
               <input
                 className="input"
                 value={form.matricula}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, matricula: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, matricula: e.target.value }))}
                 placeholder="EC-NAV"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                FR
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">FR</label>
               <input
                 className="input"
                 value={form.fr}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, fr: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, fr: e.target.value }))}
                 placeholder="248"
               />
             </div>
@@ -575,88 +628,127 @@ export function EASAs() {
               type="date"
               className="input"
               value={form.fecha}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, fecha: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
               required
             />
           </div>
 
           {/* Descripción */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Descripción
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
             <textarea
               className="input resize-none"
               rows={2}
               value={form.descripcion}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, descripcion: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
               placeholder="Breve descripción del documento"
             />
           </div>
 
-          {/* Archivo */}
+          {/* ============ ARCHIVOS ============ */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Documento escaneado
-            </label>
-
-            {existingFile && !selectedFile && (
-              <div className="flex items-center gap-2 p-2 mb-2 border border-gray-200 rounded-lg bg-gray-50">
-                <Paperclip className="w-4 h-4 text-airbus-blue shrink-0" />
-                <span className="flex-1 text-xs text-gray-700 truncate font-mono">
-                  {existingFile.name}
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Documentos escaneados
+              </label>
+              {(existingFiles.length > 0 || selectedFiles.length > 0) && (
+                <span className="text-[11px] text-gray-500">
+                  {existingFiles.length + selectedFiles.length} archivo{existingFiles.length + selectedFiles.length !== 1 ? 's' : ''}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setExistingFile(null)}
-                  className="p-1 text-red-500 hover:bg-red-50 rounded"
-                  title="Quitar archivo"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              )}
+            </div>
+
+            {/* Archivos existentes (ya en DB) */}
+            {existingFiles.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {existingFiles.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg bg-gray-50"
+                  >
+                    <span className="text-base shrink-0">{fileEmoji(f.archivo_tipo)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-800 truncate font-mono">
+                        {f.archivo_nombre ?? 'archivo'}
+                      </p>
+                      {f.archivo_tamano && (
+                        <p className="text-[10px] text-gray-500">
+                          {formatBytes(f.archivo_tamano)}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openAttachment(f.archivo_path)}
+                      className="p-1 text-airbus-sky hover:bg-airbus-sky/10 rounded"
+                      title="Ver archivo"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeExistingFile(f.id)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded"
+                      title="Marcar para eliminar (se aplicará al guardar)"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
-            {selectedFile && (
-              <div className="flex items-center gap-2 p-2 mb-2 border border-airbus-green/30 rounded-lg bg-airbus-green/5">
-                <Paperclip className="w-4 h-4 text-airbus-green shrink-0" />
-                <span className="flex-1 text-xs text-gray-700 truncate font-mono">
-                  {selectedFile.name}
-                </span>
-                <span className="text-[10px] text-gray-500">
-                  {formatBytes(selectedFile.size)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFile(null)}
-                  className="p-1 text-red-500 hover:bg-red-50 rounded"
-                  title="Quitar archivo"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+            {/* Archivos nuevos (pendientes de subir) */}
+            {selectedFiles.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {selectedFiles.map((f, i) => (
+                  <div
+                    key={`${f.name}-${i}`}
+                    className="flex items-center gap-2 p-2 border border-airbus-green/30 rounded-lg bg-airbus-green/5"
+                  >
+                    <span className="text-base shrink-0">{fileEmoji(f.type)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-800 truncate font-mono">
+                        {f.name}
+                      </p>
+                      <p className="text-[10px] text-airbus-green font-medium">
+                        Pendiente · {formatBytes(f.size)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeSelectedFile(i)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded"
+                      title="Quitar"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
-            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-airbus-blue hover:bg-airbus-blue/5 transition">
+            {/* Dropzone / botón añadir */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-airbus-blue hover:bg-airbus-blue/5 transition"
+            >
               <Upload className="w-5 h-5 text-airbus-blue" />
               <span className="text-sm text-gray-700 font-medium">
-                {selectedFile || existingFile
-                  ? 'Reemplazar archivo'
-                  : 'Seleccionar archivo'}
+                Añadir archivos (uno o varios)
               </span>
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-            </label>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
             <p className="mt-1 text-[11px] text-gray-400">
-              Imágenes (JPG, PNG) o PDF · máx. {MAX_FILE_SIZE / (1024 * 1024)} MB
+              Imágenes (JPG, PNG) o PDF · máx. {MAX_FILE_SIZE / (1024 * 1024)} MB por archivo
             </p>
           </div>
 
@@ -669,9 +761,7 @@ export function EASAs() {
               className="input resize-none"
               rows={2}
               value={form.observaciones}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, observaciones: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))}
               placeholder="Notas adicionales (opcional)"
             />
           </div>
