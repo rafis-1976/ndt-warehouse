@@ -23,6 +23,7 @@ type EASAFile = {
 
 type EASA = {
   id: string;
+  numero_easa: string | null;
   numero_wo: string;
   matricula: string;
   fecha: string;
@@ -36,6 +37,7 @@ type EASA = {
 
 // ✅ Todos los campos vacíos excepto la fecha (hoy)
 const FORM_INICIAL = {
+  numero_easa: '',
   numero_wo: '',
   matricula: '',
   fecha: new Date().toISOString().slice(0, 10),
@@ -124,7 +126,13 @@ export function EASAs() {
     const qLower = q.toLowerCase().trim();
     return esas.filter((e) => {
       if (qLower) {
-        const haystack = [e.numero_wo, e.matricula, e.descripcion, e.observaciones]
+        const haystack = [
+          e.numero_easa,
+          e.numero_wo,
+          e.matricula,
+          e.descripcion,
+          e.observaciones,
+        ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -156,6 +164,7 @@ export function EASAs() {
   const openEdit = (easa: EASA) => {
     setEditing(easa);
     setForm({
+      numero_easa: easa.numero_easa ?? '',
       numero_wo: easa.numero_wo,
       matricula: easa.matricula,
       fecha: easa.fecha,
@@ -227,6 +236,7 @@ export function EASAs() {
     e.preventDefault();
     setError('');
 
+    if (!form.numero_easa.trim()) return setError('El Nº de EASA es obligatorio');
     if (!form.numero_wo.trim()) return setError('El Nº de WO es obligatorio');
     if (!form.matricula.trim()) return setError('La matrícula es obligatoria');
     if (!form.fecha) return setError('La fecha es obligatoria');
@@ -235,6 +245,7 @@ export function EASAs() {
 
     try {
       const payload = {
+        numero_easa: form.numero_easa.trim(),
         numero_wo: form.numero_wo.trim(),
         matricula: form.matricula.trim(),
         fecha: form.fecha,
@@ -309,7 +320,12 @@ export function EASAs() {
       setModalOpen(false);
       load();
     } catch (err: any) {
-      setError(err.message ?? 'Error al guardar');
+      const msg = err.message ?? 'Error al guardar';
+      if (msg.includes('easas_numero_easa_key')) {
+        setError('Ya existe una EASA con ese Nº de EASA');
+      } else {
+        setError(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -319,7 +335,7 @@ export function EASAs() {
   // Eliminar EASA (y todos sus archivos)
   // --------------------------------------------------------
   const handleDelete = async (easa: EASA) => {
-    if (!confirm(`¿Eliminar la EASA WO ${easa.numero_wo} · ${easa.matricula}? Se borrarán también sus ${easa.easa_archivos?.length ?? 0} archivo(s).`)) return;
+    if (!confirm(`¿Eliminar la EASA ${easa.numero_easa ?? easa.numero_wo}? Se borrarán también sus ${easa.easa_archivos?.length ?? 0} archivo(s).`)) return;
     try {
       const paths = (easa.easa_archivos ?? [])
         .map((f) => f.archivo_path)
@@ -397,7 +413,7 @@ export function EASAs() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-10"
-              placeholder="Buscar por WO, matrícula, descripción..."
+              placeholder="Buscar por Nº EASA, WO, matrícula, descripción..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -470,6 +486,7 @@ export function EASAs() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
+                  <th className="px-4 py-3">Nº EASA</th>
                   <th className="px-4 py-3">Nº WO</th>
                   <th className="px-4 py-3">Matrícula</th>
                   <th className="px-4 py-3">Fecha</th>
@@ -483,6 +500,15 @@ export function EASAs() {
                   const files = e.easa_archivos ?? [];
                   return (
                     <tr key={e.id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3">
+                        <span className="font-mono font-bold text-airbus-navy text-xs">
+                          {e.numero_easa ?? (
+                            <span className="text-gray-400 italic font-normal">
+                              Sin número
+                            </span>
+                          )}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="font-mono font-bold text-airbus-blue text-xs">
                           {e.numero_wo}
@@ -564,6 +590,21 @@ export function EASAs() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
 
+          {/* Nº EASA */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nº de EASA *
+            </label>
+            <input
+              className="input font-mono"
+              value={form.numero_easa}
+              onChange={(e) => setForm((f) => ({ ...f, numero_easa: e.target.value }))}
+              placeholder="EASA-2025-001"
+              required
+              autoFocus
+            />
+          </div>
+
           {/* WO + Matrícula */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -576,7 +617,6 @@ export function EASAs() {
                 onChange={(e) => setForm((f) => ({ ...f, numero_wo: e.target.value }))}
                 placeholder="6567863537"
                 required
-                autoFocus
               />
             </div>
             <div>
