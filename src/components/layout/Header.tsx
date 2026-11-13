@@ -5,7 +5,7 @@ import { usePerfil, type Rol } from '../../hooks/usePerfil';
 import { supabase } from '../../lib/supabase';
 import { estadoCalibracion, estadoEfectivoEquipo } from '../../lib/calibracion';
 import {
-  LogOut, Bell, User, UserCircle, Menu, ShieldCheck, AlertTriangle, Wrench, Hash,
+  LogOut, Bell, User, UserCircle, Menu, ShieldCheck, AlertTriangle, Wrench,
 } from 'lucide-react';
 
 const rolStyles: Record<Rol, { label: string; badge: string; dot: string }> = {
@@ -238,8 +238,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                 </span>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {perfil?.num_nomina && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-mono text-gray-300">
-                      <Hash className="w-2.5 h-2.5" />
+                    <span className="text-[10px] font-mono text-gray-300">
                       {perfil.num_nomina}
                     </span>
                   )}
@@ -283,8 +282,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
 
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       {perfil?.num_nomina && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-airbus-blue/10 text-airbus-blue border border-airbus-blue/30">
-                          <Hash className="w-3 h-3" />
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-airbus-blue/10 text-airbus-blue border border-airbus-blue/30">
                           {perfil.num_nomina}
                         </span>
                       )}
