@@ -5,7 +5,7 @@ import { usePerfil, type Rol } from '../../hooks/usePerfil';
 import { supabase } from '../../lib/supabase';
 import { estadoCalibracion, estadoEfectivoEquipo } from '../../lib/calibracion';
 import {
-  LogOut, Bell, User, Menu, ShieldCheck, AlertTriangle, Wrench, Hash,
+  LogOut, Bell, User, UserCircle, Menu, ShieldCheck, AlertTriangle, Wrench, Hash,
 } from 'lucide-react';
 
 const rolStyles: Record<Rol, { label: string; badge: string; dot: string }> = {
@@ -82,6 +82,11 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   const handleSignOut = async () => {
     await signOut();
     navigate('/login');
+  };
+
+  const handleIrAMiPerfil = () => {
+    setMenuOpen(false);
+    navigate('/mi-perfil');
   };
 
   const rol = perfil?.rol ?? 'tecnico';
@@ -331,6 +336,19 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                       </div>
                     </div>
                   )}
+
+                  {/* ============================================
+                      NUEVA OPCIÓN: MI PERFIL
+                      ============================================ */}
+                  <button
+                    onClick={handleIrAMiPerfil}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2"
+                  >
+                    <UserCircle className="w-4 h-4" />
+                    Mi perfil
+                  </button>
+
+                  <div className="border-t border-gray-100" />
 
                   <button
                     onClick={handleSignOut}
